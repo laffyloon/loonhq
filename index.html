@@ -1195,9 +1195,9 @@ function renderProjects(){
     var sHtml='';
     subs.forEach(function(s){
       var isDone=s.status==='done';
-      sHtml+='<div class="sub'+(isDone?' done-sub':'')+'"><div class="box'+(isDone?' done':'')+'" onclick="toggleSub(''+s.subtask_id+'',this)"></div><div class="sub-text">'+esc(s.name)+(s.due_date?' - '+fmtDate(s.due_date):'')+'</div></div>';
+      sHtml+='<div class="sub'+(isDone?' done-sub':'')+'"><div class="box'+(isDone?' done':'')+'" data-sub="'+s.subtask_id+'"></div><div class="sub-text">'+esc(s.name)+(s.due_date?' - '+fmtDate(s.due_date):'')+'</div></div>';
     });
-    sHtml+='<div style="margin-top:6px"><button class="btn" style="font-size:11.5px" onclick="quickAddSub(''+p.project_id+'')"><i class="ti ti-plus"></i> Add subtask</button></div>';
+    sHtml+='<div style="margin-top:6px"><button class="btn" style="font-size:11.5px" data-addsub="'+p.project_id+'"><i class="ti ti-plus"></i> Add subtask</button></div>';
     card.innerHTML='<div class="pc-hdr"><div class="pc-top"><div class="pc-name">'+esc(p.name)+'</div><span class="bdg '+(p.status==='active'?'bdg-a':'bdg-p')+'">'+p.status+'</span></div>'+(p.description?'<div class="pc-desc">'+esc(p.description)+'</div>':'')+'<div class="pc-meta">'+tStr+'<span class="pc-mi"><i class="ti ti-check"></i> '+done+' of '+subs.length+' done</span></div><div class="prog"><div class="pf" style="width:'+pct+'%"></div></div></div><div class="pc-tasks">'+sHtml+'</div>';
     if(p.status==='active')act.appendChild(card);else pln.appendChild(card);
   });
@@ -1206,6 +1206,12 @@ function renderProjects(){
 }
 function toggleSub(id,el){var d=el.classList.contains('done');el.classList.toggle('done');el.closest('.sub').classList.toggle('done-sub');apiPost({action:'updateSubtask',data:{subtask_id:id,updates:{status:d?'todo':'done'}}}).then(function(){apiGet({action:'getSubtasks'}).then(function(r){state.subtasks=r||[];renderProjects();});});}
 function quickAddSub(pid){var n=prompt('Subtask name:');if(!n)return;apiPost({action:'addSubtask',data:{project_id:pid,name:n.trim(),status:'todo'}}).then(function(){apiGet({action:'getSubtasks'}).then(function(r){state.subtasks=r||[];renderProjects();});});}
+document.addEventListener('click',function(e){
+  var sub=e.target.closest('[data-sub]');
+  if(sub){toggleSub(sub.getAttribute('data-sub'),sub);return;}
+  var add=e.target.closest('[data-addsub]');
+  if(add){quickAddSub(add.getAttribute('data-addsub'));return;}
+});
 
 // ── GROCERY ───────────────────────────────────────────────
 function renderGrocery(){
