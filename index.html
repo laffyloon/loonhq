@@ -170,6 +170,12 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .tag-sched-m{background:var(--blue-light);color:var(--blue)}
 .tag-interval{background:var(--amber-light);color:var(--amber)}
 .tag-proj{background:var(--amber-light);color:var(--amber)}
+.due-tag{font-size:10.5px;padding:2px 8px;border-radius:20px;font-weight:600;white-space:nowrap;flex-shrink:0;display:inline-flex;align-items:center;gap:3px}
+.due-tag i{font-size:12px}
+.due-overdue{background:var(--red);color:#fff}
+.due-today{background:var(--red-light);color:var(--red)}
+.due-soon{background:var(--amber-light);color:var(--amber)}
+.due-future{background:var(--bg2);color:var(--text2)}
 /* mp: NO overflow:hidden, NO white-space:nowrap — wraps inside .tm naturally */
 .mp{font-size:11px;color:var(--text3);display:inline-flex;align-items:center;gap:3px}
 .mp i{font-size:13px;flex-shrink:0}
@@ -233,6 +239,8 @@ textarea.form-input{resize:vertical;min-height:70px}
 .pc-hdr{padding:12px 13px 10px;border-bottom:1px solid var(--border)}
 .pc-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:5px}
 .pc-name{font-size:14px;font-weight:600;line-height:1.3}
+.pc-edit{background:none;border:none;color:var(--text3);cursor:pointer;padding:2px 4px;font-size:15px;display:inline-flex;align-items:center;line-height:1}
+.pc-edit:hover{color:var(--text)}
 .bdg{font-size:10px;padding:2px 8px;border-radius:20px;font-weight:500;flex-shrink:0}
 .bdg-a{background:var(--green-light);color:var(--green-dark)}
 .bdg-p{background:var(--bg2);color:var(--text2)}
@@ -325,6 +333,7 @@ textarea.form-input{resize:vertical;min-height:70px}
 .snooze-opts{display:flex;flex-direction:column;gap:6px}
 .snooze-opt{padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;font-size:13.5px;display:flex;justify-content:space-between;align-items:center;font-family:inherit;color:var(--text);width:100%;text-align:left}
 .snooze-opt:hover{background:var(--bg2)}
+.snooze-opt.sel{background:var(--green-light);border-color:var(--green);color:var(--green-dark);font-weight:600}
 .snooze-opt-sub{font-size:11px;color:var(--text3)}
 
 /* MOBILE */
@@ -445,11 +454,12 @@ textarea.form-input{resize:vertical;min-height:70px}
         <button class="scope-btn scope-pers" id="scope-personal" onclick="setScope('personal')"><i class="ti ti-user"></i> Personal</button>
       </div>
       <div class="tab-bar">
-        <button class="tab-btn on" data-tab="all" onclick="setTaskTab('all')">All</button>
-        <button class="tab-btn" data-tab="today" onclick="setTaskTab('today')">Today</button>
+        <button class="tab-btn on" data-tab="today" onclick="setTaskTab('today')">Today</button>
+        <button class="tab-btn" data-tab="tomorrow" onclick="setTaskTab('tomorrow')">Tomorrow</button>
         <button class="tab-btn" data-tab="week" onclick="setTaskTab('week')">This week</button>
         <button class="tab-btn" data-tab="month" onclick="setTaskTab('month')">This month</button>
         <button class="tab-btn" data-tab="recurring" onclick="setTaskTab('recurring')">Recurring</button>
+        <button class="tab-btn" data-tab="all" onclick="setTaskTab('all')">All</button>
       </div>
       <div class="scroll" id="task-scroll">
         <div class="ptr-indicator" id="ptr"><div class="spinner"></div><span>Refreshing...</span></div>
@@ -608,12 +618,16 @@ textarea.form-input{resize:vertical;min-height:70px}
     </div>
     <div class="type-fields gone" data-type="scheduled">
       <div class="form-row">
-        <div class="form-label">Frequency</div>
-        <select class="form-input" id="t-sched-freq" onchange="updateSchedFields()">
-          <option value="week">Every week</option>
-          <option value="month">Every month</option>
-          <option value="year">Every year</option>
-        </select>
+        <div class="form-label">Repeats every</div>
+        <div class="form-row-h">
+          <input class="form-input" id="t-sched-interval" type="number" min="1" value="1" style="max-width:90px">
+          <select class="form-input" id="t-sched-freq" onchange="updateSchedFields()">
+            <option value="day">day(s)</option>
+            <option value="week" selected>week(s)</option>
+            <option value="month">month(s)</option>
+            <option value="year">year(s)</option>
+          </select>
+        </div>
       </div>
       <div class="form-row" id="sched-week">
         <div class="form-label">On</div>
@@ -660,14 +674,35 @@ textarea.form-input{resize:vertical;min-height:70px}
 <!-- ADD PROJECT -->
 <div class="modal-bg gone" id="modal-project">
   <div class="modal">
-    <div class="modal-title">New project</div>
+    <div class="modal-title" id="project-modal-title">New project</div>
     <div class="form-row"><div class="form-label">Project name</div><input class="form-input" id="p-name" placeholder="e.g. Back garden bed"></div>
     <div class="form-row"><div class="form-label">Description</div><input class="form-input" id="p-desc" placeholder="What&rsquo;s this about?"></div>
     <div class="form-row-h">
-      <div class="form-row"><div class="form-label">Status</div><select class="form-input" id="p-status"><option value="active">Active</option><option value="planned">Planned</option></select></div>
+      <div class="form-row"><div class="form-label">Status</div><select class="form-input" id="p-status"><option value="active">Active</option><option value="planned">Planned</option><option value="done">Done</option></select></div>
       <div class="form-row"><div class="form-label">Target date</div><input class="form-input" id="p-target" type="date"></div>
     </div>
-    <div class="modal-actions"><button class="btn" onclick="closeModal('modal-project')">Cancel</button><button class="btn primary" onclick="submitProject()">Create project</button></div>
+    <div class="modal-actions">
+      <button class="btn danger gone" id="project-delete-btn" onclick="deleteEditingProject()"><i class="ti ti-trash"></i></button>
+      <button class="btn" onclick="closeModal('modal-project')">Cancel</button>
+      <button class="btn primary" id="project-submit-btn" onclick="submitProject()">Create project</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT SUBTASK -->
+<div class="modal-bg gone" id="modal-subtask">
+  <div class="modal">
+    <div class="modal-title">Edit task</div>
+    <div class="form-row"><div class="form-label">Task name</div><input class="form-input" id="st-name"></div>
+    <div class="form-row-h">
+      <div class="form-row"><div class="form-label">Status</div><select class="form-input" id="st-status"><option value="todo">To do</option><option value="next_up">Next up</option><option value="in_progress">In progress</option><option value="done">Done</option></select></div>
+      <div class="form-row"><div class="form-label">Due date</div><input class="form-input" id="st-due" type="date"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn danger" id="subtask-delete-btn" onclick="deleteEditingSubtask()"><i class="ti ti-trash"></i></button>
+      <button class="btn" onclick="closeModal('modal-subtask')">Cancel</button>
+      <button class="btn primary" onclick="submitSubtask()">Save</button>
+    </div>
   </div>
 </div>
 
@@ -699,13 +734,14 @@ textarea.form-input{resize:vertical;min-height:70px}
     <div class="modal-title">Snooze</div>
     <div style="font-size:13px;color:var(--text2)" id="snooze-task-name"></div>
     <div class="snooze-opts">
-      <button class="snooze-opt" onclick="snoozeBy(1)">Tomorrow<span class="snooze-opt-sub" id="snooze-1">--</span></button>
-      <button class="snooze-opt" onclick="snoozeBy(3)">In 3 days<span class="snooze-opt-sub" id="snooze-3">--</span></button>
-      <button class="snooze-opt" onclick="snoozeBy(7)">Next week<span class="snooze-opt-sub" id="snooze-7">--</span></button>
-      <button class="snooze-opt" onclick="snoozeBy(14)">In 2 weeks<span class="snooze-opt-sub" id="snooze-14">--</span></button>
+      <button class="snooze-opt" data-snooze="1">1 day<span class="snooze-opt-sub" id="snooze-1">--</span></button>
+      <button class="snooze-opt" data-snooze="3">3 days<span class="snooze-opt-sub" id="snooze-3">--</span></button>
+      <button class="snooze-opt" data-snooze="7">1 week<span class="snooze-opt-sub" id="snooze-7">--</span></button>
+      <button class="snooze-opt" data-snooze="14">2 weeks<span class="snooze-opt-sub" id="snooze-14">--</span></button>
     </div>
-    <div class="form-row"><div class="form-label">Or pick a date</div><input class="form-input" id="snooze-date" type="date" onchange="snoozeUntil(this.value)"></div>
-    <div class="modal-actions"><button class="btn" onclick="closeModal('modal-snooze')">Cancel</button></div>
+    <div class="form-row"><div class="form-label">Or pick a date</div><input class="form-input" id="snooze-date" type="date" onchange="pickSnoozeDate(this.value)"></div>
+    <div class="form-help">Snooze is measured from the task's due date.</div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal('modal-snooze')">Cancel</button><button class="btn primary" id="snooze-confirm-btn" onclick="confirmSnooze()" disabled>Snooze</button></div>
   </div>
 </div>
 
@@ -723,10 +759,10 @@ textarea.form-input{resize:vertical;min-height:70px}
 var API='https://script.google.com/macros/s/AKfycbzL362NjJliCBSbR9uIo1lacPEk5uYw1C-SO8OvlLQ2QMCVC3lFh7y8Gs8z0Gn0lVSK/exec';
 var PINS={Frankie:'225522',Meredith:'8627'};
 var state={tasks:[],projects:[],subtasks:[],grocery:[],assets:[],task_log:[]};
-var currentUser=null,currentView='tasks',taskScope='household',taskTab='all';
+var currentUser=null,currentView='tasks',taskScope='household',taskTab='today';
 var loginUserPick=null,pickedOwner='',pickedScope='household',pickedUrgency='this_week';
 var selectMode=false,selectedTaskIds=new Set(),longPressTimer=null;
-var snoozingTask=null,editingTask=null,openMenu=null,metricsTab='stats';
+var snoozingTask=null,editingTask=null,openMenu=null,metricsTab='stats',pendingSnooze=null,editingProject=null,editingSubtask=null;
 
 var STATIC_ASSETS=[
   {asset_id:'a-furnace',name:'Furnace (forced air, gas)',category:'Home systems',make_model:'Carrier 24ACC636',installed_date:'Jan 9, 2024',warranty_info:'10-yr parts, lifetime heat exchanger',contractor_name:'Nick @ Tradewinds',contractor_phone:'720-363-7600',notes:'AHS Gold covered this replacement. $100/visit, contract #601933098, starts Jul 2 2026.',flag:'Check AHS Gold before major repairs.',flag_type:'amber',icon:'ti-flame',icon_bg:'#FEF3C7',icon_color:'#D97706',linked_tasks:['Change HVAC filter (every 30 days)','Annual duct check (each fall)'],log:[{t:'Furnace replaced',m:'Jan 9, 2024 - Tradewinds (Nick)'},{t:'Duct cleaning (pre-install)',m:'Jan 2024',b:true}]},
@@ -838,30 +874,46 @@ function setTaskTab(t){
 function toggleLegend(){document.getElementById('leg-body').classList.toggle('open');document.getElementById('leg-chev').classList.toggle('open');}
 
 // ── RECURRENCE ────────────────────────────────────────────
+function schedFreqOf(task){
+  if(task.sched_freq)return String(task.sched_freq);
+  if(task.weekday!==''&&task.weekday!==null&&task.weekday!==undefined&&String(task.weekday).trim()!=='')return 'week';
+  var sm=task.sched_month;
+  if(sm!==''&&sm!==null&&sm!==undefined&&String(sm).trim()!==''&&String(sm)!=='0')return 'year';
+  if(task.day_of_month!==''&&task.day_of_month!==null&&task.day_of_month!==undefined&&String(task.day_of_month).trim()!=='')return 'month';
+  return 'day';
+}
+function monthStepDate(baseY,baseM,monthsToAdd,dom){
+  var m=baseM+monthsToAdd;var ty=baseY+Math.floor(m/12);var tm=((m%12)+12)%12;
+  var lastDay=new Date(ty,tm+1,0).getDate();
+  var day=(String(dom)==='last')?lastDay:Math.min(parseInt(dom)||1,lastDay);
+  return new Date(ty,tm,day);
+}
+function computeFirstDue(task,today){
+  var t=new Date(today);t.setHours(0,0,0,0);
+  if(task.type==='interval'){var days=parseInt(task.recurrence_days)||0;if(!days)return null;var d=new Date(t);d.setDate(d.getDate()+days);return d.toISOString().split('T')[0];}
+  if(task.type!=='scheduled')return task.due_date||'';
+  var freq=schedFreqOf(task);var next;
+  if(freq==='day'){next=new Date(t);}
+  else if(freq==='week'){var target=parseInt(task.weekday)||0;next=new Date(t);while(next.getDay()!==target)next.setDate(next.getDate()+1);}
+  else if(freq==='month'){next=monthStepDate(t.getFullYear(),t.getMonth(),0,task.day_of_month);if(next<t)next=monthStepDate(t.getFullYear(),t.getMonth(),1,task.day_of_month);}
+  else{var ym=(parseInt(task.sched_month)||1)-1;var ld=new Date(t.getFullYear(),ym+1,0).getDate();next=new Date(t.getFullYear(),ym,Math.min(parseInt(task.day_of_month)||1,ld));if(next<t)next=new Date(t.getFullYear()+1,ym,parseInt(task.day_of_month)||1);}
+  if(task.end_date){var e=new Date(task.end_date);e.setHours(0,0,0,0);if(next>e)return null;}
+  return next.toISOString().split('T')[0];
+}
 function computeNextDue(task,fromDate){
   var from=new Date(fromDate);from.setHours(0,0,0,0);
   if(task.end_date){var e=new Date(task.end_date);e.setHours(0,0,0,0);if(from>e)return null;}
   var next=null;
-  if(task.type==='interval'){
-    var days=parseInt(task.recurrence_days)||0;if(!days)return null;
-    next=new Date(from);next.setDate(next.getDate()+days);
-  }else if(task.type==='scheduled'){
-    var hasWeekday=task.weekday!==''&&task.weekday!==null&&task.weekday!==undefined&&String(task.weekday)!=='';
-    if(hasWeekday){
-      var tgt=parseInt(task.weekday);
-      next=new Date(from);next.setDate(next.getDate()+1);
-      while(next.getDay()!==tgt)next.setDate(next.getDate()+1);
-    }else if(task.day_of_month!==''&&task.day_of_month!==null){
-      var schedMonth=task.sched_month;
-      var hasYearMonth=schedMonth!==''&&schedMonth!==null&&schedMonth!==undefined&&String(schedMonth).trim()!==''&&String(schedMonth)!=='0';
-      var dom=task.day_of_month;
-      if(hasYearMonth){
-        var ym=parseInt(schedMonth)-1;var yd=parseInt(dom);
-        next=new Date(from.getFullYear(),ym,yd);
-        if(next<=from)next=new Date(from.getFullYear()+1,ym,yd);
-      }else if(String(dom)==='last'){next=new Date(from.getFullYear(),from.getMonth()+1,0);if(next<=from)next=new Date(from.getFullYear(),from.getMonth()+2,0);}
-      else{var td=parseInt(dom);next=new Date(from.getFullYear(),from.getMonth(),td);if(next<=from)next=new Date(from.getFullYear(),from.getMonth()+1,td);}
-    }
+  if(task.type==='interval'){var days=parseInt(task.recurrence_days)||0;if(!days)return null;next=new Date(from);next.setDate(next.getDate()+days);}
+  else if(task.type==='scheduled'){
+    var freq=schedFreqOf(task);var X=Math.max(1,parseInt(task.sched_interval)||1);
+    var base=task.due_date?new Date(task.due_date+'T12:00:00'):null;
+    if(!base){var f=computeFirstDue(task,from);if(!f)return null;base=new Date(f+'T12:00:00');}
+    base.setHours(0,0,0,0);next=new Date(base);
+    if(freq==='day'){next.setDate(next.getDate()+X);while(next<=from)next.setDate(next.getDate()+X);}
+    else if(freq==='week'){next.setDate(next.getDate()+7*X);while(next<=from)next.setDate(next.getDate()+7*X);}
+    else if(freq==='month'){var k=X;next=monthStepDate(base.getFullYear(),base.getMonth(),k,task.day_of_month);while(next<=from){k+=X;next=monthStepDate(base.getFullYear(),base.getMonth(),k,task.day_of_month);}}
+    else if(freq==='year'){var ky=X;var bd=base.getDate();var ystep=function(kk){var ty=base.getFullYear()+kk;var ld=new Date(ty,base.getMonth()+1,0).getDate();return new Date(ty,base.getMonth(),Math.min(bd,ld));};next=ystep(ky);while(next<=from){ky+=X;next=ystep(ky);}}
   }
   if(!next)return null;
   if(task.end_date){var e2=new Date(task.end_date);e2.setHours(0,0,0,0);if(next>e2)return null;}
@@ -916,6 +968,11 @@ function renderTasks(){
   }
   if(taskTab==='all'){stripe('Must do today',today,[],'r');stripe('This week',week.concat(fWeek),projRows,'a');stripe('This month',month.concat(fMonth),[],'b');if(fNone.length)stripe('Whenever',fNone,[],'t');}
   else if(taskTab==='today'){stripe('Must do today',today,[],'r');}
+  else if(taskTab==='tomorrow'){
+    var tm0=new Date(now);tm0.setDate(now.getDate()+1);
+    var tom=all.filter(function(t){if(t.type==='floating'||!t.due_date)return false;var due=new Date(t.due_date+'T12:00:00');due.setHours(0,0,0,0);return due.getTime()===tm0.getTime();});
+    stripe('Due tomorrow',tom,[],'a');
+  }
   else if(taskTab==='week'){stripe('This week',today.concat(week,fWeek),projRows,'a');}
   else if(taskTab==='month'){stripe('Next 30 days',today.concat(week,month,fWeek,fMonth),projRows,'b');}
   else if(taskTab==='recurring'){var rec=all.filter(function(t){return t.type==='scheduled'||t.type==='interval';});stripe('All recurring',rec,[],'a');}
@@ -956,12 +1013,18 @@ function makeTaskCard(t){
   var tm=document.createElement('div');tm.className='tm';
 
   // Tag
-  var isW=(t.type==='scheduled'&&String(t.weekday)!==''&&t.weekday!==null&&t.weekday!==undefined&&String(t.weekday).trim()!=='');
-  var isY=(t.type==='scheduled'&&!isW&&String(t.sched_month||'').trim()!==''&&String(t.sched_month)!=='0');
-  var tagCls=t.type==='one_off'?'tag-oneoff':t.type==='floating'?'tag-floating':t.type==='scheduled'?(isW?'tag-sched-w':'tag-sched-m'):'tag-interval';
   var DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  var schedLabel=isW?'Every '+DAYS[parseInt(t.weekday)||0]:(isY?'Yearly':'Monthly');
-  var tagLabel={one_off:'One-off',floating:'Floating',scheduled:schedLabel,interval:'Every '+(t.recurrence_days||'?')+'d'}[t.type]||t.type;
+  var freq=t.type==='scheduled'?schedFreqOf(t):'';
+  var X=Math.max(1,parseInt(t.sched_interval)||1);
+  function schedLbl(){
+    if(freq==='day')return X===1?'Daily':'Every '+X+'d';
+    if(freq==='week')return X===1?('Every '+DAYS[parseInt(t.weekday)||0]):('Every '+X+' wks');
+    if(freq==='month')return X===1?'Monthly':'Every '+X+' mo';
+    if(freq==='year')return X===1?'Yearly':'Every '+X+' yrs';
+    return 'Scheduled';
+  }
+  var tagCls=t.type==='one_off'?'tag-oneoff':t.type==='floating'?'tag-floating':t.type==='scheduled'?((freq==='week')?'tag-sched-w':'tag-sched-m'):'tag-interval';
+  var tagLabel={one_off:'One-off',floating:'Floating',scheduled:schedLbl(),interval:'Every '+(t.recurrence_days||'?')+'d'}[t.type]||t.type;
   var tag=document.createElement('span');tag.className='tag '+tagCls;tag.textContent=tagLabel;tm.appendChild(tag);
 
   // Context pills
@@ -970,7 +1033,19 @@ function makeTaskCard(t){
     var mp=document.createElement('span');mp.className='mp';mp.textContent=ul[t.urgency_window]||'';tm.appendChild(mp);
   }
   if(t.due_date&&t.type!=='floating'){
-    var dp=document.createElement('span');dp.className='mp';dp.textContent='Due '+fmtDate(t.due_date);tm.appendChild(dp);
+    var dd=new Date(t.due_date+'T12:00:00');dd.setHours(0,0,0,0);
+    var today0=new Date();today0.setHours(0,0,0,0);
+    var diff=Math.round((dd-today0)/86400000);
+    var dcls,dtext;
+    if(diff<0){dcls='due-overdue';dtext=fmtDateShort(t.due_date);}
+    else if(diff===0){dcls='due-today';dtext='Today';}
+    else if(diff===1){dcls='due-soon';dtext='Tomorrow';}
+    else if(diff<=3){dcls='due-soon';dtext=fmtDateShort(t.due_date);}
+    else{dcls='due-future';dtext=fmtDateShort(t.due_date);}
+    var dp=document.createElement('span');dp.className='due-tag '+dcls;
+    var dic=document.createElement('i');dic.className='ti '+(diff<0?'ti-alert-triangle':'ti-calendar-event');dp.appendChild(dic);
+    dp.appendChild(document.createTextNode(dtext));
+    tm.appendChild(dp);
   }
   if(t.end_date){var ep=document.createElement('span');ep.className='mp';ep.textContent='Until '+fmtDate(t.end_date);tm.appendChild(ep);}
 
@@ -1068,16 +1143,37 @@ function handleComplete(t){
   var wrap=document.querySelector('.tc-wrap[data-task-id="'+t.task_id+'"]');
   if(wrap){wrap.style.height=wrap.offsetHeight+'px';wrap.style.transition='all .2s';setTimeout(function(){wrap.style.height='0';wrap.style.opacity='0';wrap.style.overflow='hidden';},10);}
   setSyncState('loading','Logging...');
-  apiPost({action:'completeTask',data:{task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,end_date:t.end_date,completed_by:currentUser,scope:t.scope||'household',notes:''}}).then(function(){refreshData(true);});
+  apiPost({action:'completeTask',data:{task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_month:t.sched_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,due_date:t.due_date,end_date:t.end_date,completed_by:currentUser,scope:t.scope||'household',notes:''}}).then(function(){refreshData(true);});
 }
 function openSnooze(t){
-  snoozingTask=t;document.getElementById('snooze-task-name').textContent=t.name;
+  snoozingTask=t;pendingSnooze=null;document.getElementById('snooze-task-name').textContent=t.name;
   var base=t.due_date?new Date(t.due_date):new Date();
-  [1,3,7,14].forEach(function(n){var d=new Date(base);d.setDate(d.getDate()+n);document.getElementById('snooze-'+n).textContent=fmtDate(d.toISOString().split('T')[0]);});
-  document.getElementById('snooze-date').value='';openModal('modal-snooze');
+  [1,3,7,14].forEach(function(n){var d=new Date(base);d.setDate(d.getDate()+n);document.getElementById('snooze-'+n).textContent='→ '+fmtDateShort(d.toISOString().split('T')[0]);});
+  document.getElementById('snooze-date').value='';
+  document.querySelectorAll('#modal-snooze .snooze-opt').forEach(function(b){b.classList.remove('sel');});
+  document.getElementById('snooze-confirm-btn').disabled=true;
+  openModal('modal-snooze');
 }
-function snoozeBy(days){if(!snoozingTask)return;setSyncState('loading','Snoozing...');apiPost({action:'snoozeTask',data:{task_id:snoozingTask.task_id,due_date:snoozingTask.due_date,days:days}}).then(function(){closeModal('modal-snooze');refreshData(true);});}
-function snoozeUntil(date){if(!snoozingTask||!date)return;setSyncState('loading','Snoozing...');apiPost({action:'snoozeTask',data:{task_id:snoozingTask.task_id,until_date:date}}).then(function(){closeModal('modal-snooze');refreshData(true);});}
+function pickSnoozeDays(n,btn){
+  pendingSnooze={kind:'days',value:n};
+  document.querySelectorAll('#modal-snooze .snooze-opt').forEach(function(b){b.classList.remove('sel');});
+  btn.classList.add('sel');
+  document.getElementById('snooze-date').value='';
+  document.getElementById('snooze-confirm-btn').disabled=false;
+}
+function pickSnoozeDate(date){
+  if(!date){pendingSnooze=null;document.getElementById('snooze-confirm-btn').disabled=true;return;}
+  pendingSnooze={kind:'until',value:date};
+  document.querySelectorAll('#modal-snooze .snooze-opt').forEach(function(b){b.classList.remove('sel');});
+  document.getElementById('snooze-confirm-btn').disabled=false;
+}
+function confirmSnooze(){
+  if(!snoozingTask||!pendingSnooze)return;
+  setSyncState('loading','Snoozing...');
+  var p=pendingSnooze;
+  var body=p.kind==='until'?{action:'snoozeTask',data:{task_id:snoozingTask.task_id,until_date:p.value}}:{action:'snoozeTask',data:{task_id:snoozingTask.task_id,due_date:snoozingTask.due_date,days:p.value}};
+  apiPost(body).then(function(){closeModal('modal-snooze');refreshData(true);});
+}
 
 // ── TASK MENU ─────────────────────────────────────────────
 function openTaskMenu(e,t){
@@ -1131,13 +1227,12 @@ function openEditTask(t){
   if(t.type==='one_off'){document.getElementById('t-due').value=t.due_date||'';document.getElementById('t-remind').value=t.reminder_offset||'';}
   else if(t.type==='floating'){pickUrgency(t.urgency_window||'this_week');}
   else if(t.type==='scheduled'){
-    var hasW=String(t.weekday)!==''&&t.weekday!==null&&t.weekday!==undefined&&String(t.weekday).trim()!=='';
-    var hasM=String(t.sched_month||'').trim()!==''&&String(t.sched_month)!=='0';
-    var freq=hasW?'week':(hasM?'year':'month');
+    var freq=schedFreqOf(t);
     document.getElementById('t-sched-freq').value=freq;
-    if(freq==='week'){document.getElementById('t-sched-weekday').value=String(t.weekday);}
+    document.getElementById('t-sched-interval').value=String(parseInt(t.sched_interval)||1);
+    if(freq==='week'){document.getElementById('t-sched-weekday').value=String(t.weekday||'1');}
     else if(freq==='month'){document.getElementById('t-sched-monthday').value=String(t.day_of_month||'1');}
-    else{document.getElementById('t-sched-yearmonth').value=String(t.sched_month);document.getElementById('t-sched-yearday').value=String(t.day_of_month||'1');}
+    else if(freq==='year'){document.getElementById('t-sched-yearmonth').value=String(t.sched_month||'1');document.getElementById('t-sched-yearday').value=String(t.day_of_month||'1');}
     document.getElementById('t-end-sched').value=t.end_date||'';
   }else if(t.type==='interval'){document.getElementById('t-days').value=t.recurrence_days||'';document.getElementById('t-end-interval').value=t.end_date||'';}
   updateTaskTypeFields();
@@ -1150,6 +1245,7 @@ function clearTaskForm(){
   document.getElementById('t-remind').value='';document.getElementById('t-days').value='';
   document.getElementById('t-end-sched').value='';document.getElementById('t-end-interval').value='';
   document.getElementById('t-sched-freq').value='week';document.getElementById('t-sched-weekday').value='1';
+  document.getElementById('t-sched-interval').value='1';
   document.getElementById('t-sched-monthday').value='1';document.getElementById('t-sched-yearmonth').value='1';document.getElementById('t-sched-yearday').value='1';
   document.getElementById('owner-either').className='who-opt sel-either';
   document.getElementById('owner-f').className='who-opt';document.getElementById('owner-m').className='who-opt';
@@ -1197,13 +1293,17 @@ function submitTask(){
   else if(type==='floating'){data.urgency_window=pickedUrgency;}
   else if(type==='scheduled'){
     var f=document.getElementById('t-sched-freq').value;
+    var iv=parseInt(document.getElementById('t-sched-interval').value)||1;if(iv<1)iv=1;
+    data.sched_freq=f;data.sched_interval=iv;
     if(f==='week'){data.weekday=parseInt(document.getElementById('t-sched-weekday').value);data.day_of_month='';data.sched_month='';}
     else if(f==='month'){data.day_of_month=document.getElementById('t-sched-monthday').value;data.weekday='';data.sched_month='';}
-    else{data.day_of_month=document.getElementById('t-sched-yearday').value;data.sched_month=document.getElementById('t-sched-yearmonth').value;data.weekday='';}
+    else if(f==='year'){data.day_of_month=document.getElementById('t-sched-yearday').value;data.sched_month=document.getElementById('t-sched-yearmonth').value;data.weekday='';}
+    else{data.weekday='';data.day_of_month='';data.sched_month='';}
     data.end_date=document.getElementById('t-end-sched').value||'';
+    data.due_date='';
   }else if(type==='interval'){
     var days=parseInt(document.getElementById('t-days').value);if(!days||days<1){alert('Enter number of days');return;}
-    data.recurrence_days=days;data.end_date=document.getElementById('t-end-interval').value||'';
+    data.recurrence_days=days;data.end_date=document.getElementById('t-end-interval').value||'';data.due_date='';
   }
   closeModal('modal-task');setSyncState('loading','Saving...');
   if(editingTask){apiPost({action:'updateTask',data:{task_id:editingTask.task_id,updates:data}}).then(function(){refreshData(true);});}
@@ -1228,10 +1328,10 @@ function renderProjects(){
     var sHtml='';
     subs.forEach(function(s){
       var isDone=s.status==='done';
-      sHtml+='<div class="sub'+(isDone?' done-sub':'')+'"><div class="box'+(isDone?' done':'')+'" data-sub="'+s.subtask_id+'"></div><div class="sub-text">'+esc(s.name)+(s.due_date?' - '+fmtDate(s.due_date):'')+'</div></div>';
+      sHtml+='<div class="sub'+(isDone?' done-sub':'')+'"><div class="box'+(isDone?' done':'')+'" data-sub="'+s.subtask_id+'"></div><div class="sub-text" data-editsub="'+s.subtask_id+'">'+esc(s.name)+(s.due_date?' - '+fmtDate(s.due_date):'')+'</div></div>';
     });
     sHtml+='<div style="margin-top:6px"><button class="btn" style="font-size:11.5px" data-addsub="'+p.project_id+'"><i class="ti ti-plus"></i> Add subtask</button></div>';
-    card.innerHTML='<div class="pc-hdr"><div class="pc-top"><div class="pc-name">'+esc(p.name)+'</div><span class="bdg '+(p.status==='active'?'bdg-a':'bdg-p')+'">'+p.status+'</span></div>'+(p.description?'<div class="pc-desc">'+esc(p.description)+'</div>':'')+'<div class="pc-meta">'+tStr+'<span class="pc-mi"><i class="ti ti-check"></i> '+done+' of '+subs.length+' done</span></div><div class="prog"><div class="pf" style="width:'+pct+'%"></div></div></div><div class="pc-tasks">'+sHtml+'</div>';
+    card.innerHTML='<div class="pc-hdr"><div class="pc-top"><div class="pc-name">'+esc(p.name)+'</div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0"><span class="bdg '+(p.status==='active'?'bdg-a':'bdg-p')+'">'+p.status+'</span><button class="pc-edit" data-editproj="'+p.project_id+'"><i class="ti ti-pencil"></i></button></div></div>'+(p.description?'<div class="pc-desc">'+esc(p.description)+'</div>':'')+'<div class="pc-meta">'+tStr+'<span class="pc-mi"><i class="ti ti-check"></i> '+done+' of '+subs.length+' done</span></div><div class="prog"><div class="pf" style="width:'+pct+'%"></div></div></div><div class="pc-tasks">'+sHtml+'</div>';
     if(p.status==='active')act.appendChild(card);else pln.appendChild(card);
   });
   if(!act.children.length)act.innerHTML='<div style="font-size:12.5px;color:var(--text3)">No active projects yet.</div>';
@@ -1242,8 +1342,14 @@ function quickAddSub(pid){var n=prompt('Subtask name:');if(!n)return;apiPost({ac
 document.addEventListener('click',function(e){
   var sub=e.target.closest('[data-sub]');
   if(sub){toggleSub(sub.getAttribute('data-sub'),sub);return;}
+  var esub=e.target.closest('[data-editsub]');
+  if(esub){openEditSubtask(esub.getAttribute('data-editsub'));return;}
+  var eproj=e.target.closest('[data-editproj]');
+  if(eproj){openEditProject(eproj.getAttribute('data-editproj'));return;}
   var add=e.target.closest('[data-addsub]');
   if(add){quickAddSub(add.getAttribute('data-addsub'));return;}
+  var sn=e.target.closest('.snooze-opt[data-snooze]');
+  if(sn){pickSnoozeDays(parseInt(sn.getAttribute('data-snooze')),sn);return;}
 });
 
 // ── GROCERY ───────────────────────────────────────────────
@@ -1361,17 +1467,69 @@ function metCard(n,l){return '<div class="metrics-card"><div class="metrics-num"
 // ── MODALS ────────────────────────────────────────────────
 function openModal(id){document.getElementById(id).classList.remove('gone');}
 function closeModal(id){document.getElementById(id).classList.add('gone');}
-document.addEventListener('click',function(e){['modal-task','modal-project','modal-grocery','modal-qs','modal-snooze','modal-mobile-menu'].forEach(function(id){if(e.target.id===id)closeModal(id);});});
+document.addEventListener('click',function(e){['modal-task','modal-project','modal-subtask','modal-grocery','modal-qs','modal-snooze','modal-mobile-menu'].forEach(function(id){if(e.target.id===id)closeModal(id);});});
 
 // ── PROJECT / GROCERY ─────────────────────────────────────
-function openAddProject(){document.getElementById('p-name').value='';document.getElementById('p-desc').value='';document.getElementById('p-target').value='';openModal('modal-project');}
-function submitProject(){var n=document.getElementById('p-name').value.trim();if(!n){alert('Name required');return;}closeModal('modal-project');setSyncState('loading','Saving...');apiPost({action:'addProject',data:{name:n,description:document.getElementById('p-desc').value.trim(),status:document.getElementById('p-status').value,target_date:document.getElementById('p-target').value||''}}).then(function(){refreshData(true);});}
+function openAddProject(){
+  editingProject=null;
+  document.getElementById('project-modal-title').textContent='New project';
+  document.getElementById('project-submit-btn').textContent='Create project';
+  document.getElementById('project-delete-btn').classList.add('gone');
+  document.getElementById('p-name').value='';document.getElementById('p-desc').value='';
+  document.getElementById('p-status').value='active';document.getElementById('p-target').value='';
+  openModal('modal-project');
+}
+function openEditProject(pid){
+  var p=state.projects.filter(function(x){return String(x.project_id)===String(pid);})[0];if(!p)return;
+  editingProject=p;
+  document.getElementById('project-modal-title').textContent='Edit project';
+  document.getElementById('project-submit-btn').textContent='Save changes';
+  document.getElementById('project-delete-btn').classList.remove('gone');
+  document.getElementById('p-name').value=p.name||'';document.getElementById('p-desc').value=p.description||'';
+  document.getElementById('p-status').value=p.status||'active';document.getElementById('p-target').value=p.target_date||'';
+  openModal('modal-project');
+}
+function submitProject(){
+  var n=document.getElementById('p-name').value.trim();if(!n){alert('Name required');return;}
+  var data={name:n,description:document.getElementById('p-desc').value.trim(),status:document.getElementById('p-status').value,target_date:document.getElementById('p-target').value||''};
+  closeModal('modal-project');setSyncState('loading','Saving...');
+  if(editingProject){apiPost({action:'updateProject',data:{project_id:editingProject.project_id,updates:data}}).then(function(){refreshData(true);});}
+  else{apiPost({action:'addProject',data:data}).then(function(){refreshData(true);});}
+}
+function deleteEditingProject(){
+  if(!editingProject)return;
+  if(!confirm('Delete this project and all its tasks?'))return;
+  closeModal('modal-project');setSyncState('loading','Deleting...');
+  apiPost({action:'deleteProject',data:{project_id:editingProject.project_id}}).then(function(){refreshData(true);});
+}
+function openEditSubtask(sid){
+  var s=state.subtasks.filter(function(x){return String(x.subtask_id)===String(sid);})[0];if(!s)return;
+  editingSubtask=s;
+  document.getElementById('st-name').value=s.name||'';
+  document.getElementById('st-status').value=s.status||'todo';
+  document.getElementById('st-due').value=s.due_date||'';
+  openModal('modal-subtask');
+}
+function submitSubtask(){
+  if(!editingSubtask)return;
+  var n=document.getElementById('st-name').value.trim();if(!n){alert('Name required');return;}
+  var updates={name:n,status:document.getElementById('st-status').value,due_date:document.getElementById('st-due').value||''};
+  closeModal('modal-subtask');setSyncState('loading','Saving...');
+  apiPost({action:'updateSubtask',data:{subtask_id:editingSubtask.subtask_id,updates:updates}}).then(function(){apiGet({action:'getSubtasks'}).then(function(r){state.subtasks=r||[];renderProjects();setSyncState('ok','Saved');});});
+}
+function deleteEditingSubtask(){
+  if(!editingSubtask)return;
+  if(!confirm('Delete this task?'))return;
+  closeModal('modal-subtask');setSyncState('loading','Deleting...');
+  apiPost({action:'deleteSubtask',data:{subtask_id:editingSubtask.subtask_id}}).then(function(){apiGet({action:'getSubtasks'}).then(function(r){state.subtasks=r||[];renderProjects();setSyncState('ok','Deleted');});});
+}
 function openAddGrocery(){document.getElementById('g-name').value='';openModal('modal-grocery');}
 function submitGrocery(){var n=document.getElementById('g-name').value.trim();if(!n)return;closeModal('modal-grocery');setSyncState('loading','Saving...');apiPost({action:'addGroceryItem',data:{name:n,category:document.getElementById('g-cat').value,added_by:currentUser}}).then(function(){refreshData(true);});}
 
 // ── UTILS ─────────────────────────────────────────────────
 function esc(s){if(s===null||s===undefined)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function fmtDate(d){if(!d)return'';try{var dt=new Date(d+'T12:00:00');if(isNaN(dt))return String(d);return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return String(d);}}
+function fmtDateShort(d){if(!d)return'';try{var dt=new Date(d+'T12:00:00');if(isNaN(dt))return String(d);var DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];return DOW[dt.getDay()]+' '+(dt.getMonth()+1)+'/'+dt.getDate();}catch(e){return String(d);}}
 </script>
 
 </body>
