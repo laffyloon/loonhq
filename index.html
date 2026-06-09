@@ -123,7 +123,7 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .legend-wrap{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
 .legend-trigger{display:flex;align-items:center;gap:7px;padding:9px 13px;cursor:pointer;user-select:none}
 .legend-trigger:hover{background:var(--bg)}
-.legend-trigger-text{font-size:12.5px;color:var(--text2);flex:1}
+.legend-trigger-text{font-size:12.5px;color:var(--text2);flex:1;min-width:0;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .legend-trigger-text strong{color:var(--text);font-weight:500}
 .leg-chev{font-size:14px;color:var(--text3);transition:transform .2s;flex-shrink:0}
 .leg-chev.open{transform:rotate(180deg)}
@@ -160,7 +160,7 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .circ.sel{background:var(--green);border-color:var(--green)}
 .circ.sel::after{content:'\2713';font-size:11px;color:#fff;font-weight:700}
 /* KEY FIX: flex:1 + min-width:0 is correct. NO overflow:hidden here. */
-.ti{flex:1;min-width:0}
+.tcontent{flex:1;min-width:0}
 .tn{font-size:14px;color:var(--text);line-height:1.35;word-break:break-word;overflow-wrap:anywhere}
 .tm{display:flex;align-items:center;gap:5px;margin-top:5px;flex-wrap:wrap}
 .tag{font-size:10.5px;padding:2px 8px;border-radius:20px;font-weight:500;white-space:nowrap;flex-shrink:0}
@@ -255,6 +255,9 @@ textarea.form-input{resize:vertical;min-height:70px}
 .grp{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px}
 .grp-lbl{font-size:10.5px;font-weight:600;color:var(--text3);letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between}
 .gi{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:14px;cursor:pointer;min-height:32px}
+.groc-add{width:100%;border:none;background:transparent;font-size:14px;padding:8px 0;outline:none;color:var(--text);font-family:inherit;-webkit-appearance:none;min-height:32px}
+.groc-add::placeholder{color:var(--text3)}
+.groc-empty{font-size:12.5px;color:var(--text3);padding:3px 0}
 .gi.got{color:var(--text3);text-decoration:line-through}
 .gbox{width:20px;height:20px;border-radius:5px;border:1.5px solid var(--border2);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s}
 .gbox.done{background:var(--green);border-color:var(--green)}
@@ -453,7 +456,7 @@ textarea.form-input{resize:vertical;min-height:70px}
         <div class="legend-wrap">
           <div class="legend-trigger" onclick="toggleLegend()">
             <i class="ti ti-info-circle" style="font-size:15px;color:var(--text3);flex-shrink:0"></i>
-            <span class="legend-trigger-text"><strong>Task types</strong> &mdash; tap for details</span>
+            <span class="legend-trigger-text"><strong>Task types</strong> <span style="color:var(--text3)">&middot; tap to learn</span></span>
             <i class="ti ti-chevron-down leg-chev" id="leg-chev"></i>
           </div>
           <div class="legend-body" id="leg-body">
@@ -587,7 +590,7 @@ textarea.form-input{resize:vertical;min-height:70px}
         <div class="form-row"><div class="form-label">Due date (optional)</div><input class="form-input" id="t-due" type="date"></div>
         <div class="form-row"><div class="form-label">Reminder</div>
           <select class="form-input" id="t-remind">
-            <option value="">None</option><option value="same_day">Same day</option>
+            <option value="">None</option>
             <option value="1_day">1 day before</option><option value="2_days">2 days before</option>
             <option value="3_days">3 days before</option><option value="1_week">1 week before</option>
           </select>
@@ -604,23 +607,30 @@ textarea.form-input{resize:vertical;min-height:70px}
       </div>
     </div>
     <div class="type-fields gone" data-type="scheduled">
-      <div class="form-row-h">
-        <div class="form-row"><div class="form-label">Repeats on</div>
-          <select class="form-input" id="t-scheduled">
-            <optgroup label="Every week on...">
-              <option value="w:1">Monday</option><option value="w:2">Tuesday</option><option value="w:3">Wednesday</option>
-              <option value="w:4">Thursday</option><option value="w:5">Friday</option><option value="w:6">Saturday</option><option value="w:0">Sunday</option>
-            </optgroup>
-            <optgroup label="Every month on...">
-              <option value="m:1">1st</option><option value="m:2">2nd</option><option value="m:3">3rd</option>
-              <option value="m:4">4th</option><option value="m:5">5th</option><option value="m:10">10th</option>
-              <option value="m:15">15th</option><option value="m:20">20th</option><option value="m:25">25th</option>
-              <option value="m:28">28th</option><option value="m:last">Last day</option>
-            </optgroup>
-          </select>
-        </div>
-        <div class="form-row"><div class="form-label">End date (optional)</div><input class="form-input" id="t-end-sched" type="date"></div>
+      <div class="form-row">
+        <div class="form-label">Frequency</div>
+        <select class="form-input" id="t-sched-freq" onchange="updateSchedFields()">
+          <option value="week">Every week</option>
+          <option value="month">Every month</option>
+          <option value="year">Every year</option>
+        </select>
       </div>
+      <div class="form-row" id="sched-week">
+        <div class="form-label">On</div>
+        <select class="form-input" id="t-sched-weekday">
+          <option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option>
+          <option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option>
+        </select>
+      </div>
+      <div class="form-row gone" id="sched-month">
+        <div class="form-label">On day</div>
+        <select class="form-input" id="t-sched-monthday"><option value="1">1st</option><option value="2">2nd</option><option value="3">3rd</option><option value="4">4th</option><option value="5">5th</option><option value="6">6th</option><option value="7">7th</option><option value="8">8th</option><option value="9">9th</option><option value="10">10th</option><option value="11">11th</option><option value="12">12th</option><option value="13">13th</option><option value="14">14th</option><option value="15">15th</option><option value="16">16th</option><option value="17">17th</option><option value="18">18th</option><option value="19">19th</option><option value="20">20th</option><option value="21">21st</option><option value="22">22nd</option><option value="23">23rd</option><option value="24">24th</option><option value="25">25th</option><option value="26">26th</option><option value="27">27th</option><option value="28">28th</option><option value="29">29th</option><option value="30">30th</option><option value="31">31st</option><option value="last">Last day</option></select>
+      </div>
+      <div class="form-row-h gone" id="sched-year">
+        <div class="form-row"><div class="form-label">Month</div><select class="form-input" id="t-sched-yearmonth"><option value="1">January</option><option value="2">February</option><option value="3">March</option><option value="4">April</option><option value="5">May</option><option value="6">June</option><option value="7">July</option><option value="8">August</option><option value="9">September</option><option value="10">October</option><option value="11">November</option><option value="12">December</option></select></div>
+        <div class="form-row"><div class="form-label">Day</div><select class="form-input" id="t-sched-yearday"><option value="1">1st</option><option value="2">2nd</option><option value="3">3rd</option><option value="4">4th</option><option value="5">5th</option><option value="6">6th</option><option value="7">7th</option><option value="8">8th</option><option value="9">9th</option><option value="10">10th</option><option value="11">11th</option><option value="12">12th</option><option value="13">13th</option><option value="14">14th</option><option value="15">15th</option><option value="16">16th</option><option value="17">17th</option><option value="18">18th</option><option value="19">19th</option><option value="20">20th</option><option value="21">21st</option><option value="22">22nd</option><option value="23">23rd</option><option value="24">24th</option><option value="25">25th</option><option value="26">26th</option><option value="27">27th</option><option value="28">28th</option><option value="29">29th</option><option value="30">30th</option><option value="31">31st</option></select></div>
+      </div>
+      <div class="form-row"><div class="form-label">End date (optional)</div><input class="form-input" id="t-end-sched" type="date"></div>
       <div class="form-help">Leave end date blank to repeat forever.</div>
     </div>
     <div class="type-fields gone" data-type="interval">
@@ -842,8 +852,14 @@ function computeNextDue(task,fromDate){
       next=new Date(from);next.setDate(next.getDate()+1);
       while(next.getDay()!==tgt)next.setDate(next.getDate()+1);
     }else if(task.day_of_month!==''&&task.day_of_month!==null){
+      var schedMonth=task.sched_month;
+      var hasYearMonth=schedMonth!==''&&schedMonth!==null&&schedMonth!==undefined&&String(schedMonth).trim()!==''&&String(schedMonth)!=='0';
       var dom=task.day_of_month;
-      if(String(dom)==='last'){next=new Date(from.getFullYear(),from.getMonth()+1,0);if(next<=from)next=new Date(from.getFullYear(),from.getMonth()+2,0);}
+      if(hasYearMonth){
+        var ym=parseInt(schedMonth)-1;var yd=parseInt(dom);
+        next=new Date(from.getFullYear(),ym,yd);
+        if(next<=from)next=new Date(from.getFullYear()+1,ym,yd);
+      }else if(String(dom)==='last'){next=new Date(from.getFullYear(),from.getMonth()+1,0);if(next<=from)next=new Date(from.getFullYear(),from.getMonth()+2,0);}
       else{var td=parseInt(dom);next=new Date(from.getFullYear(),from.getMonth(),td);if(next<=from)next=new Date(from.getFullYear(),from.getMonth()+1,td);}
     }
   }
@@ -927,7 +943,7 @@ function makeTaskCard(t){
   div.appendChild(circ);
 
   // Body: tap = open edit modal
-  var ti=document.createElement('div');ti.className='ti';
+  var ti=document.createElement('div');ti.className='tcontent';
   ti.addEventListener('click',function(e){
     if(selectMode){toggleSelect(t.task_id);return;}
     openEditTask(t);
@@ -941,9 +957,11 @@ function makeTaskCard(t){
 
   // Tag
   var isW=(t.type==='scheduled'&&String(t.weekday)!==''&&t.weekday!==null&&t.weekday!==undefined&&String(t.weekday).trim()!=='');
+  var isY=(t.type==='scheduled'&&!isW&&String(t.sched_month||'').trim()!==''&&String(t.sched_month)!=='0');
   var tagCls=t.type==='one_off'?'tag-oneoff':t.type==='floating'?'tag-floating':t.type==='scheduled'?(isW?'tag-sched-w':'tag-sched-m'):'tag-interval';
   var DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  var tagLabel={one_off:'One-off',floating:'Floating',scheduled:isW?'Every '+DAYS[parseInt(t.weekday)||0]:'Monthly',interval:'Every '+(t.recurrence_days||'?')+'d'}[t.type]||t.type;
+  var schedLabel=isW?'Every '+DAYS[parseInt(t.weekday)||0]:(isY?'Yearly':'Monthly');
+  var tagLabel={one_off:'One-off',floating:'Floating',scheduled:schedLabel,interval:'Every '+(t.recurrence_days||'?')+'d'}[t.type]||t.type;
   var tag=document.createElement('span');tag.className='tag '+tagCls;tag.textContent=tagLabel;tm.appendChild(tag);
 
   // Context pills
@@ -983,7 +1001,7 @@ function makeProjRow(pr){
   div.style.background='var(--amber-light)';div.style.borderStyle='dashed';div.style.borderColor='var(--amber)';
   div.addEventListener('click',function(){go('projects');});
   var c=document.createElement('div');c.className='circ';c.style.borderColor='var(--amber)';div.appendChild(c);
-  var ti=document.createElement('div');ti.className='ti';
+  var ti=document.createElement('div');ti.className='tcontent';
   var tn=document.createElement('div');tn.className='tn';
   tn.innerHTML=esc(pr.project.name)+' <span style="color:var(--text3);font-weight:400;font-size:12px">- '+pr.subtasks.length+' ready</span>';
   var tm=document.createElement('div');tm.className='tm';
@@ -1113,8 +1131,13 @@ function openEditTask(t){
   if(t.type==='one_off'){document.getElementById('t-due').value=t.due_date||'';document.getElementById('t-remind').value=t.reminder_offset||'';}
   else if(t.type==='floating'){pickUrgency(t.urgency_window||'this_week');}
   else if(t.type==='scheduled'){
-    var isW=String(t.weekday)!==''&&t.weekday!==null&&t.weekday!==undefined&&String(t.weekday).trim()!=='';
-    document.getElementById('t-scheduled').value=isW?('w:'+t.weekday):('m:'+(t.day_of_month||'1'));
+    var hasW=String(t.weekday)!==''&&t.weekday!==null&&t.weekday!==undefined&&String(t.weekday).trim()!=='';
+    var hasM=String(t.sched_month||'').trim()!==''&&String(t.sched_month)!=='0';
+    var freq=hasW?'week':(hasM?'year':'month');
+    document.getElementById('t-sched-freq').value=freq;
+    if(freq==='week'){document.getElementById('t-sched-weekday').value=String(t.weekday);}
+    else if(freq==='month'){document.getElementById('t-sched-monthday').value=String(t.day_of_month||'1');}
+    else{document.getElementById('t-sched-yearmonth').value=String(t.sched_month);document.getElementById('t-sched-yearday').value=String(t.day_of_month||'1');}
     document.getElementById('t-end-sched').value=t.end_date||'';
   }else if(t.type==='interval'){document.getElementById('t-days').value=t.recurrence_days||'';document.getElementById('t-end-interval').value=t.end_date||'';}
   updateTaskTypeFields();
@@ -1126,6 +1149,8 @@ function clearTaskForm(){
   document.getElementById('t-due').value='';document.getElementById('t-type').value='one_off';
   document.getElementById('t-remind').value='';document.getElementById('t-days').value='';
   document.getElementById('t-end-sched').value='';document.getElementById('t-end-interval').value='';
+  document.getElementById('t-sched-freq').value='week';document.getElementById('t-sched-weekday').value='1';
+  document.getElementById('t-sched-monthday').value='1';document.getElementById('t-sched-yearmonth').value='1';document.getElementById('t-sched-yearday').value='1';
   document.getElementById('owner-either').className='who-opt sel-either';
   document.getElementById('owner-f').className='who-opt';document.getElementById('owner-m').className='who-opt';
   document.getElementById('scope-opt-house').className='scope-opt sel-house';
@@ -1156,6 +1181,13 @@ function pickUrgency(u){
 function updateTaskTypeFields(){
   var type=document.getElementById('t-type').value;
   document.querySelectorAll('.type-fields').forEach(function(el){el.classList.toggle('gone',el.dataset.type!==type);});
+  if(type==='scheduled')updateSchedFields();
+}
+function updateSchedFields(){
+  var f=document.getElementById('t-sched-freq').value;
+  document.getElementById('sched-week').classList.toggle('gone',f!=='week');
+  document.getElementById('sched-month').classList.toggle('gone',f!=='month');
+  document.getElementById('sched-year').classList.toggle('gone',f!=='year');
 }
 function submitTask(){
   var name=document.getElementById('t-name').value.trim();if(!name){alert('Task name required');return;}
@@ -1164,9 +1196,10 @@ function submitTask(){
   if(type==='one_off'){data.due_date=document.getElementById('t-due').value||'';data.reminder_offset=document.getElementById('t-remind').value||'';}
   else if(type==='floating'){data.urgency_window=pickedUrgency;}
   else if(type==='scheduled'){
-    var val=document.getElementById('t-scheduled').value;var parts=val.split(':');
-    if(parts[0]==='w'){data.weekday=parseInt(parts[1]);data.day_of_month='';}
-    else{data.day_of_month=parts[1];data.weekday='';}
+    var f=document.getElementById('t-sched-freq').value;
+    if(f==='week'){data.weekday=parseInt(document.getElementById('t-sched-weekday').value);data.day_of_month='';data.sched_month='';}
+    else if(f==='month'){data.day_of_month=document.getElementById('t-sched-monthday').value;data.weekday='';data.sched_month='';}
+    else{data.day_of_month=document.getElementById('t-sched-yearday').value;data.sched_month=document.getElementById('t-sched-yearmonth').value;data.weekday='';}
     data.end_date=document.getElementById('t-end-sched').value||'';
   }else if(type==='interval'){
     var days=parseInt(document.getElementById('t-days').value);if(!days||days<1){alert('Enter number of days');return;}
@@ -1214,24 +1247,48 @@ document.addEventListener('click',function(e){
 });
 
 // ── GROCERY ───────────────────────────────────────────────
+function makeGrocEl(item){
+  var got=item.status==='got';
+  var d=document.createElement('div');d.className='gi'+(got?' got':'');
+  d.innerHTML='<div class="gbox'+(got?' done':'')+'"></div> '+esc(item.name);
+  d.onclick=function(){toggleGrocery(item.item_id,d);};
+  return d;
+}
+function makeGrocAdd(cat){
+  var inp=document.createElement('input');
+  inp.className='groc-add';inp.type='text';inp.placeholder='+ Add item';
+  inp.setAttribute('enterkeyhint','done');inp.setAttribute('autocapitalize','sentences');
+  inp.addEventListener('keydown',function(e){
+    if(e.key==='Enter'||e.keyCode===13){
+      e.preventDefault();
+      var name=inp.value.trim();if(!name)return;
+      inp.value='';
+      var tmp={item_id:'tmp_'+Date.now(),name:name,category:cat,status:'need'};
+      state.grocery.push(tmp);
+      var ph=inp.parentNode.querySelector('.groc-empty');if(ph)ph.remove();
+      inp.parentNode.insertBefore(makeGrocEl(tmp),inp);
+      inp.focus();
+      apiPost({action:'addGroceryItem',data:{name:name,category:cat,added_by:currentUser}});
+    }
+  });
+  return inp;
+}
 function renderGrocery(){
-  var food=document.getElementById('groc-food'),hh=document.getElementById('groc-household'),cost=document.getElementById('groc-costco');
-  food.innerHTML='';hh.innerHTML='';cost.innerHTML='';
+  var cols={Food:document.getElementById('groc-food'),Household:document.getElementById('groc-household'),Costco:document.getElementById('groc-costco')};
+  cols.Food.innerHTML='';cols.Household.innerHTML='';cols.Costco.innerHTML='';
   var cnt={Food:0,Costco:0,Household:0};
   state.grocery.forEach(function(item){
-    var got=item.status==='got';
-    var d=document.createElement('div');d.className='gi'+(got?' got':'');
-    d.innerHTML='<div class="gbox'+(got?' done':'')+'"></div> '+esc(item.name);
-    d.onclick=function(){toggleGrocery(item.item_id,d);};
-    var cat=item.category||'Food';cnt[cat]=(cnt[cat]||0)+1;
-    if(cat==='Household')hh.appendChild(d);else if(cat==='Costco')cost.appendChild(d);else food.appendChild(d);
+    var cat=item.category||'Food';if(!cols[cat])cat='Food';cnt[cat]=(cnt[cat]||0)+1;
+    cols[cat].appendChild(makeGrocEl(item));
+  });
+  ['Food','Household','Costco'].forEach(function(cat){
+    var col=cols[cat];
+    if(!cnt[cat]){var e=document.createElement('div');e.className='groc-empty';e.textContent='Nothing yet.';col.appendChild(e);}
+    col.appendChild(makeGrocAdd(cat));
   });
   document.getElementById('count-food').textContent=cnt.Food?'('+cnt.Food+')':'';
   document.getElementById('count-costco').textContent=cnt.Costco?'('+cnt.Costco+')':'';
   document.getElementById('count-household').textContent=cnt.Household?'('+cnt.Household+')':'';
-  if(!food.children.length)food.innerHTML='<div style="font-size:12.5px;color:var(--text3)">No food items.</div>';
-  if(!hh.children.length)hh.innerHTML='<div style="font-size:12.5px;color:var(--text3)">No household items.</div>';
-  if(!cost.children.length)cost.innerHTML='<div style="font-size:12.5px;color:var(--text3)">No Costco items.</div>';
 }
 function toggleGrocery(id,el){var got=el.classList.contains('got');el.classList.toggle('got');el.querySelector('.gbox').classList.toggle('done');apiPost({action:'updateGrocery',data:{item_id:id,updates:{status:got?'need':'got'}}});}
 function clearGrocery(){if(!confirm('Remove all checked items?'))return;state.grocery=state.grocery.filter(function(g){return g.status!=='got';});renderGrocery();apiPost({action:'clearChecked',data:{}});}
