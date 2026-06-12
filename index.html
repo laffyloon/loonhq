@@ -140,9 +140,11 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .stripe{padding-left:11px;display:flex;flex-direction:column;gap:6px;width:100%}
 .stripe.r{border-left:3px solid var(--red)}.stripe.a{border-left:3px solid var(--amber)}
 .stripe.b{border-left:3px solid var(--blue)}.stripe.t{border-left:3px solid var(--green)}
+.stripe.o{border-left:3px solid var(--amber)}.stripe.g{border-left:3px solid var(--green)}.stripe.n{border-left:3px solid var(--border2)}
 .s-lbl{font-size:10.5px;font-weight:600;margin-bottom:3px;letter-spacing:.04em;text-transform:uppercase}
 .stripe.r .s-lbl{color:var(--red)}.stripe.a .s-lbl{color:var(--amber)}
 .stripe.b .s-lbl{color:var(--blue)}.stripe.t .s-lbl{color:var(--green-dark)}
+.stripe.o .s-lbl{color:var(--amber)}.stripe.g .s-lbl{color:var(--green-dark)}.stripe.n .s-lbl{color:var(--text3)}
 
 /* ═══════════════════════════════════════════════
    TASK CARDS — THE CRITICAL FIX
@@ -170,12 +172,14 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .tag-sched-m{background:var(--blue-light);color:var(--blue)}
 .tag-interval{background:var(--amber-light);color:var(--amber)}
 .tag-proj{background:var(--amber-light);color:var(--amber)}
-.due-tag{font-size:10.5px;padding:2px 8px;border-radius:20px;font-weight:600;white-space:nowrap;flex-shrink:0;display:inline-flex;align-items:center;gap:3px}
+.due-tag{font-size:10.5px;padding:2px 8px;border-radius:20px;font-weight:600;white-space:nowrap;flex-shrink:0;display:inline-flex;align-items:center;gap:3px;background:#fff;border:1.5px solid}
 .due-tag i{font-size:12px}
-.due-overdue{background:var(--red);color:#fff}
-.due-today{background:var(--red-light);color:var(--red)}
-.due-soon{background:var(--amber-light);color:var(--amber)}
-.due-future{background:var(--bg2);color:var(--text2)}
+.due-overdue{border-color:var(--red);color:var(--red)}
+.due-today{border-color:var(--red);color:var(--red)}
+.due-soon{border-color:var(--amber);color:var(--amber)}
+.due-week{border-color:var(--green);color:var(--green-dark)}
+.due-month{border-color:var(--blue);color:var(--blue)}
+.due-future{border-color:var(--border2);color:var(--text3)}
 /* mp: NO overflow:hidden, NO white-space:nowrap — wraps inside .tm naturally */
 .mp{font-size:11px;color:var(--text3);display:inline-flex;align-items:center;gap:3px}
 .mp i{font-size:13px;flex-shrink:0}
@@ -208,6 +212,9 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .form-input:focus{border-color:var(--green)}
 select.form-input{background:var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236B6760' d='M6 8.5L1.5 4h9z'/%3E%3C/svg%3E") no-repeat right 12px center}
 textarea.form-input{resize:vertical;min-height:70px}
+input[type=date].form-input{-webkit-appearance:none;appearance:none;min-height:44px;line-height:1.2;font-family:inherit;color:var(--text)}
+input[type=date].form-input::-webkit-date-and-time-value{text-align:left}
+input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
 .form-row-h{display:flex;gap:8px}
 .form-row-h .form-row{flex:1}
 .form-help{font-size:11px;color:var(--text3)}
@@ -644,15 +651,17 @@ textarea.form-input{resize:vertical;min-height:70px}
         <div class="form-row"><div class="form-label">Month</div><select class="form-input" id="t-sched-yearmonth"><option value="1">January</option><option value="2">February</option><option value="3">March</option><option value="4">April</option><option value="5">May</option><option value="6">June</option><option value="7">July</option><option value="8">August</option><option value="9">September</option><option value="10">October</option><option value="11">November</option><option value="12">December</option></select></div>
         <div class="form-row"><div class="form-label">Day</div><select class="form-input" id="t-sched-yearday"><option value="1">1st</option><option value="2">2nd</option><option value="3">3rd</option><option value="4">4th</option><option value="5">5th</option><option value="6">6th</option><option value="7">7th</option><option value="8">8th</option><option value="9">9th</option><option value="10">10th</option><option value="11">11th</option><option value="12">12th</option><option value="13">13th</option><option value="14">14th</option><option value="15">15th</option><option value="16">16th</option><option value="17">17th</option><option value="18">18th</option><option value="19">19th</option><option value="20">20th</option><option value="21">21st</option><option value="22">22nd</option><option value="23">23rd</option><option value="24">24th</option><option value="25">25th</option><option value="26">26th</option><option value="27">27th</option><option value="28">28th</option><option value="29">29th</option><option value="30">30th</option><option value="31">31st</option></select></div>
       </div>
+      <div class="form-row"><div class="form-label">Starts on (optional)</div><input class="form-input" id="t-sched-start" type="date"><div class="form-help" style="margin-top:4px">Leave blank to start today.</div></div>
       <div class="form-row"><div class="form-label">End date (optional)</div><input class="form-input" id="t-end-sched" type="date"></div>
       <div class="form-help">Leave end date blank to repeat forever.</div>
     </div>
     <div class="type-fields gone" data-type="interval">
       <div class="form-row-h">
         <div class="form-row"><div class="form-label">Every X days</div><input class="form-input" id="t-days" type="number" min="1" placeholder="30"></div>
+        <div class="form-row"><div class="form-label">Starts on (optional)</div><input class="form-input" id="t-interval-start" type="date"></div>
         <div class="form-row"><div class="form-label">End date (optional)</div><input class="form-input" id="t-end-interval" type="date"></div>
       </div>
-      <div class="form-help">Resets from completion date. Leave blank to repeat forever.</div>
+      <div class="form-help">Resets from completion date. Leave blank to start today and repeat forever.</div>
     </div>
     <div class="form-row" id="t-owner-row">
       <div class="form-label">Owner</div>
@@ -889,8 +898,12 @@ function monthStepDate(baseY,baseM,monthsToAdd,dom){
   return new Date(ty,tm,day);
 }
 function computeFirstDue(task,today){
-  var t=new Date(today);t.setHours(0,0,0,0);
-  if(task.type==='interval'){var days=parseInt(task.recurrence_days)||0;if(!days)return null;var d=new Date(t);d.setDate(d.getDate()+days);return d.toISOString().split('T')[0];}
+  var todayMid=new Date(today);todayMid.setHours(0,0,0,0);
+  var start=task.sched_start?new Date(String(task.sched_start).split('T')[0]+'T12:00:00'):null;
+  if(start)start.setHours(0,0,0,0);
+  var useStart=!!(start&&start>todayMid);
+  var t=useStart?new Date(start):new Date(todayMid);
+  if(task.type==='interval'){var days=parseInt(task.recurrence_days)||0;if(!days)return null;var d=new Date(t);if(!useStart)d.setDate(d.getDate()+days);return d.toISOString().split('T')[0];}
   if(task.type!=='scheduled')return task.due_date||'';
   var freq=schedFreqOf(task);var next;
   if(freq==='day'){next=new Date(t);}
@@ -907,7 +920,7 @@ function computeNextDue(task,fromDate){
   if(task.type==='interval'){var days=parseInt(task.recurrence_days)||0;if(!days)return null;next=new Date(from);next.setDate(next.getDate()+days);}
   else if(task.type==='scheduled'){
     var freq=schedFreqOf(task);var X=Math.max(1,parseInt(task.sched_interval)||1);
-    var base=task.due_date?new Date(task.due_date+'T12:00:00'):null;
+    var base=task.due_date?new Date(String(task.due_date).split('T')[0]+'T12:00:00'):null;
     if(!base){var f=computeFirstDue(task,from);if(!f)return null;base=new Date(f+'T12:00:00');}
     base.setHours(0,0,0,0);next=new Date(base);
     if(freq==='day'){next.setDate(next.getDate()+X);while(next<=from)next.setDate(next.getDate()+X);}
@@ -932,24 +945,26 @@ function renderTasks(){
     return true;
   });
   var now=new Date();now.setHours(0,0,0,0);
+  var tm0=new Date(now);tm0.setDate(now.getDate()+1);
   var we=new Date(now);we.setDate(now.getDate()+7);
   var me=new Date(now);me.setDate(now.getDate()+30);
-  var today=[],week=[],month=[],fWeek=[],fMonth=[],fNone=[];
+  var today=[],tomorrow=[],week=[],month=[],later=[];
   all.forEach(function(t){
     if(t.type==='floating'){
-      if(t.urgency_window==='this_week')fWeek.push(t);
-      else if(t.urgency_window==='no_rush')fNone.push(t);
-      else fMonth.push(t);
+      if(t.urgency_window==='this_week')week.push(t);
+      else if(t.urgency_window==='no_rush')later.push(t);
+      else month.push(t);
       return;
     }
-    if(!t.due_date){fNone.push(t);return;}
-    var due=new Date(t.due_date);due.setHours(0,0,0,0);
+    if(!t.due_date){later.push(t);return;}
+    var due=new Date(String(t.due_date).split('T')[0]+'T12:00:00');due.setHours(0,0,0,0);
     var surf=due;
-    if(t.reminder_offset&&t.due_date){var ob={same_day:0,'1_day':1,'2_days':2,'3_days':3,'1_week':7};var bk=ob[t.reminder_offset]||0;surf=new Date(due);surf.setDate(surf.getDate()-bk);}
+    if(t.reminder_offset){var ob={same_day:0,'1_day':1,'2_days':2,'3_days':3,'1_week':7};var bk=ob[t.reminder_offset]||0;surf=new Date(due);surf.setDate(surf.getDate()-bk);}
     if(due<=now||surf<=now)today.push(t);
+    else if(due.getTime()===tm0.getTime())tomorrow.push(t);
     else if(due<=we)week.push(t);
     else if(due<=me)month.push(t);
-    else fNone.push(t);
+    else later.push(t);
   });
   var projRows=[];
   if(taskScope==='household'){
@@ -966,16 +981,27 @@ function renderTasks(){
     (projs||[]).forEach(function(pr){w.appendChild(makeProjRow(pr));});
     el.appendChild(w);
   }
-  if(taskTab==='all'){stripe('Must do today',today,[],'r');stripe('This week',week.concat(fWeek),projRows,'a');stripe('This month',month.concat(fMonth),[],'b');if(fNone.length)stripe('Whenever',fNone,[],'t');}
-  else if(taskTab==='today'){stripe('Must do today',today,[],'r');}
-  else if(taskTab==='tomorrow'){
-    var tm0=new Date(now);tm0.setDate(now.getDate()+1);
-    var tom=all.filter(function(t){if(t.type==='floating'||!t.due_date)return false;var due=new Date(t.due_date+'T12:00:00');due.setHours(0,0,0,0);return due.getTime()===tm0.getTime();});
-    stripe('Due tomorrow',tom,[],'a');
+  if(taskTab==='all'){
+    stripe('Today',today,[],'r');
+    stripe('Tomorrow',tomorrow,[],'o');
+    stripe('This week',week,projRows,'g');
+    stripe('This month',month,[],'b');
+    stripe('Later',later,[],'n');
   }
-  else if(taskTab==='week'){stripe('This week',today.concat(week,fWeek),projRows,'a');}
-  else if(taskTab==='month'){stripe('Next 30 days',today.concat(week,month,fWeek,fMonth),projRows,'b');}
-  else if(taskTab==='recurring'){var rec=all.filter(function(t){return t.type==='scheduled'||t.type==='interval';});stripe('All recurring',rec,[],'a');}
+  else if(taskTab==='today'){stripe('Today',today,[],'r');}
+  else if(taskTab==='tomorrow'){stripe('Tomorrow',tomorrow,[],'o');}
+  else if(taskTab==='week'){
+    stripe('Today',today,[],'r');
+    stripe('Tomorrow',tomorrow,[],'o');
+    stripe('This week',week,projRows,'g');
+  }
+  else if(taskTab==='month'){
+    stripe('Today',today,[],'r');
+    stripe('Tomorrow',tomorrow,[],'o');
+    stripe('This week',week,[],'g');
+    stripe('This month',month,projRows,'b');
+  }
+  else if(taskTab==='recurring'){var rec=all.filter(function(t){return t.type==='scheduled'||t.type==='interval';});stripe('All recurring',rec,[],'g');}
   if(!el.children.length)el.innerHTML='<div style="font-size:13.5px;color:var(--text3);padding:30px 0;text-align:center">No tasks here. Nice work!</div>';
 }
 
@@ -1033,14 +1059,16 @@ function makeTaskCard(t){
     var mp=document.createElement('span');mp.className='mp';mp.textContent=ul[t.urgency_window]||'';tm.appendChild(mp);
   }
   if(t.due_date&&t.type!=='floating'){
-    var dd=new Date(t.due_date+'T12:00:00');dd.setHours(0,0,0,0);
+    var dds=String(t.due_date).split('T')[0];
+    var dd=new Date(dds+'T12:00:00');dd.setHours(0,0,0,0);
     var today0=new Date();today0.setHours(0,0,0,0);
     var diff=Math.round((dd-today0)/86400000);
     var dcls,dtext;
     if(diff<0){dcls='due-overdue';dtext=fmtDateShort(t.due_date);}
     else if(diff===0){dcls='due-today';dtext='Today';}
     else if(diff===1){dcls='due-soon';dtext='Tomorrow';}
-    else if(diff<=3){dcls='due-soon';dtext=fmtDateShort(t.due_date);}
+    else if(diff<=7){dcls='due-week';dtext=fmtDateShort(t.due_date);}
+    else if(diff<=30){dcls='due-month';dtext=fmtDateShort(t.due_date);}
     else{dcls='due-future';dtext=fmtDateShort(t.due_date);}
     var dp=document.createElement('span');dp.className='due-tag '+dcls;
     var dic=document.createElement('i');dic.className='ti '+(diff<0?'ti-alert-triangle':'ti-calendar-event');dp.appendChild(dic);
@@ -1143,7 +1171,7 @@ function handleComplete(t){
   var wrap=document.querySelector('.tc-wrap[data-task-id="'+t.task_id+'"]');
   if(wrap){wrap.style.height=wrap.offsetHeight+'px';wrap.style.transition='all .2s';setTimeout(function(){wrap.style.height='0';wrap.style.opacity='0';wrap.style.overflow='hidden';},10);}
   setSyncState('loading','Logging...');
-  apiPost({action:'completeTask',data:{task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_month:t.sched_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,due_date:t.due_date,end_date:t.end_date,completed_by:currentUser,scope:t.scope||'household',notes:''}}).then(function(){refreshData(true);});
+  apiPost({action:'completeTask',data:{task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_month:t.sched_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,due_date:t.due_date,end_date:t.end_date,completed_by:currentUser,scope:t.scope||'household',notes:''}}).then(function(){refreshData(true);}).catch(function(){setSyncState('error','Could not complete');refreshData(true);});
 }
 function openSnooze(t){
   snoozingTask=t;pendingSnooze=null;document.getElementById('snooze-task-name').textContent=t.name;
@@ -1224,7 +1252,7 @@ function openEditTask(t){
   document.getElementById('owner-either').className='who-opt'+(pickedOwner===''?' sel-either':'');
   document.getElementById('owner-f').className='who-opt'+(pickedOwner==='Frankie'?' sel-f':'');
   document.getElementById('owner-m').className='who-opt'+(pickedOwner==='Meredith'?' sel-m':'');
-  if(t.type==='one_off'){document.getElementById('t-due').value=t.due_date||'';document.getElementById('t-remind').value=t.reminder_offset||'';}
+  if(t.type==='one_off'){document.getElementById('t-due').value=dval(t.due_date);document.getElementById('t-remind').value=t.reminder_offset||'';}
   else if(t.type==='floating'){pickUrgency(t.urgency_window||'this_week');}
   else if(t.type==='scheduled'){
     var freq=schedFreqOf(t);
@@ -1233,8 +1261,9 @@ function openEditTask(t){
     if(freq==='week'){document.getElementById('t-sched-weekday').value=String(t.weekday||'1');}
     else if(freq==='month'){document.getElementById('t-sched-monthday').value=String(t.day_of_month||'1');}
     else if(freq==='year'){document.getElementById('t-sched-yearmonth').value=String(t.sched_month||'1');document.getElementById('t-sched-yearday').value=String(t.day_of_month||'1');}
-    document.getElementById('t-end-sched').value=t.end_date||'';
-  }else if(t.type==='interval'){document.getElementById('t-days').value=t.recurrence_days||'';document.getElementById('t-end-interval').value=t.end_date||'';}
+    document.getElementById('t-sched-start').value=dval(t.sched_start);
+    document.getElementById('t-end-sched').value=dval(t.end_date);
+  }else if(t.type==='interval'){document.getElementById('t-days').value=t.recurrence_days||'';document.getElementById('t-interval-start').value=dval(t.sched_start);document.getElementById('t-end-interval').value=dval(t.end_date);}
   updateTaskTypeFields();
   document.getElementById('t-owner-row').style.display=pickedScope==='personal'?'none':'flex';
   openModal('modal-task');
@@ -1243,6 +1272,7 @@ function clearTaskForm(){
   document.getElementById('t-name').value='';document.getElementById('t-notes').value='';
   document.getElementById('t-due').value='';document.getElementById('t-type').value='one_off';
   document.getElementById('t-remind').value='';document.getElementById('t-days').value='';
+  document.getElementById('t-sched-start').value='';document.getElementById('t-interval-start').value='';
   document.getElementById('t-end-sched').value='';document.getElementById('t-end-interval').value='';
   document.getElementById('t-sched-freq').value='week';document.getElementById('t-sched-weekday').value='1';
   document.getElementById('t-sched-interval').value='1';
@@ -1299,11 +1329,12 @@ function submitTask(){
     else if(f==='month'){data.day_of_month=document.getElementById('t-sched-monthday').value;data.weekday='';data.sched_month='';}
     else if(f==='year'){data.day_of_month=document.getElementById('t-sched-yearday').value;data.sched_month=document.getElementById('t-sched-yearmonth').value;data.weekday='';}
     else{data.weekday='';data.day_of_month='';data.sched_month='';}
+    data.sched_start=document.getElementById('t-sched-start').value||'';
     data.end_date=document.getElementById('t-end-sched').value||'';
     data.due_date='';
   }else if(type==='interval'){
     var days=parseInt(document.getElementById('t-days').value);if(!days||days<1){alert('Enter number of days');return;}
-    data.recurrence_days=days;data.end_date=document.getElementById('t-end-interval').value||'';data.due_date='';
+    data.recurrence_days=days;data.sched_start=document.getElementById('t-interval-start').value||'';data.end_date=document.getElementById('t-end-interval').value||'';data.due_date='';
   }
   closeModal('modal-task');setSyncState('loading','Saving...');
   if(editingTask){apiPost({action:'updateTask',data:{task_id:editingTask.task_id,updates:data}}).then(function(){refreshData(true);});}
@@ -1486,7 +1517,7 @@ function openEditProject(pid){
   document.getElementById('project-submit-btn').textContent='Save changes';
   document.getElementById('project-delete-btn').classList.remove('gone');
   document.getElementById('p-name').value=p.name||'';document.getElementById('p-desc').value=p.description||'';
-  document.getElementById('p-status').value=p.status||'active';document.getElementById('p-target').value=p.target_date||'';
+  document.getElementById('p-status').value=p.status||'active';document.getElementById('p-target').value=dval(p.target_date);
   openModal('modal-project');
 }
 function submitProject(){
@@ -1528,8 +1559,9 @@ function submitGrocery(){var n=document.getElementById('g-name').value.trim();if
 
 // ── UTILS ─────────────────────────────────────────────────
 function esc(s){if(s===null||s===undefined)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function fmtDate(d){if(!d)return'';try{var dt=new Date(d+'T12:00:00');if(isNaN(dt))return String(d);return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return String(d);}}
-function fmtDateShort(d){if(!d)return'';try{var dt=new Date(d+'T12:00:00');if(isNaN(dt))return String(d);var DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];return DOW[dt.getDay()]+' '+(dt.getMonth()+1)+'/'+dt.getDate();}catch(e){return String(d);}}
+function fmtDate(d){if(!d)return'';try{var ds=String(d).split('T')[0];var dt=new Date(ds+'T12:00:00');if(isNaN(dt))return String(d);return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return String(d);}}
+function dval(d){return d?String(d).split('T')[0]:'';}
+function fmtDateShort(d){if(!d)return'';try{var ds=String(d).split('T')[0];var dt=new Date(ds+'T12:00:00');if(isNaN(dt))return String(d);var DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];return DOW[dt.getDay()]+' '+(dt.getMonth()+1)+'/'+dt.getDate();}catch(e){return String(d);}}
 </script>
 
 </body>
