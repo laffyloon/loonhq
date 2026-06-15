@@ -121,3 +121,31 @@ FEATURES:
 - Avoid bullet-point overload in conversational responses — use prose
 - Sustainability = efficiency + resilience + durability, not perfection
 - For any plumbing/drain/appliance advice: Frankie had a basement water main backup, washing machine suspected contributor, no scope done yet
+
+  ## Versioning rules
+- Major versions (v8, v9...) = significant new features or architectural changes
+- Minor versions (v7.1, v7.2...) = bug fixes, UI tweaks, small additions
+- The file in the repo is always index.html — never named with a version number
+- Apps Script file in the repo is named LoonHQ_AppScript_vX.js matching the current version
+- Commit message format: "Deploy LoonHQ vX" or "Deploy LoonHQ vX.Y"
+- Commit description: short blurb 8-15 words summarizing what changed
+
+## Apps Script deploy instructions (ALWAYS follow this exactly)
+NEVER create a new deployment. Always update the existing one.
+1. User pastes the new Apps Script into script.google.com → Save
+2. Deploy → Manage deployments → pencil ✏️ on the EXISTING deployment → New version → Deploy
+3. The URL must never change — it is hardcoded in build_v4.py and the frontend
+4. If setupHeaders() is needed (schema changes), tell the user to run it manually from the editor
+5. Always tell the user which of these steps they need to do — don't assume they remember
+
+## HTML deploy instructions
+GitHub Pages deploys automatically when index.html is pushed to main.
+Claude Code handles this directly — no manual steps needed from the user.
+
+## What to tell the user after each session
+Always end a session with a clear summary of:
+1. What was changed and what version it is
+2. Whether Apps Script needs updating (and the exact manual steps if so)
+3. Whether setupHeaders() needs to be run
+4. Anything else the user needs to do manually
+5. What to test first after deploying
