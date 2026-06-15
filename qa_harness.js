@@ -313,6 +313,128 @@ run('selectUser', ()=>selectUser('Frankie', new FakeEl('button')));
 run('updateUserDisplay', ()=>updateUserDisplay());
 run('quickSwitch', ()=>quickSwitch('Meredith'));
 
+// ── v8.1 new tests ───────────────────────────────────────
+run('toggleLegend no-op', ()=>toggleLegend());
+run('toggleSearch', ()=>{ toggleSearch(); toggleSearch(); });
+run('onSearchInput filters', ()=>{
+  taskSearch=''; taskScope='household'; taskTab='all';
+  el('search-inp').value='recycling'; onSearchInput(); taskSearch='';
+});
+run('search filter excludes non-matching', ()=>{
+  const sv=state.tasks,sp=state.projects,ss=state.subtasks;
+  state.tasks=[{task_id:'sa',name:'Walk dog',type:'one_off',due_date:plus(1),scope:'household',status:'active',notes:''},{task_id:'sb',name:'Wash dishes',type:'one_off',due_date:plus(2),scope:'household',status:'active',notes:''}];
+  state.projects=[];state.subtasks=[];
+  taskSearch='dog'; taskScope='household'; taskTab='all'; renderTasks();
+  const n=el('task-list').children.length;
+  state.tasks=sv;state.projects=sp;state.subtasks=ss; taskSearch='';
+  if(n!==1) throw new Error('expected 1 stripe got '+n);
+});
+run('reminder bucketing renders', ()=>{
+  const sv=state.tasks;
+  state.tasks=[{task_id:'r1',name:'Reminder task',type:'one_off',due_date:plus(2),reminder_offset:'3_days',scope:'household',status:'active',notes:''}];
+  taskScope='household'; taskTab='today'; renderTasks();
+  state.tasks=sv;
+});
+run('nthWeekdayOfMonth first Monday Jan 2026', ()=>{
+  const d=nthWeekdayOfMonth(1,1,2026,0);
+  if(d.getDay()!==1) throw new Error('not Monday: '+d.getDay());
+  if(d.getDate()>7) throw new Error('not first week: '+d.getDate());
+});
+run('nthWeekdayOfMonth last Friday Jan 2026', ()=>{
+  const d=nthWeekdayOfMonth(-1,5,2026,0);
+  if(d.getDay()!==5) throw new Error('not Friday: '+d.getDay());
+});
+run('nthWeekdayOfMonth second Tuesday', ()=>{
+  const d=nthWeekdayOfMonth(2,2,2026,0);
+  if(d.getDay()!==2) throw new Error('not Tuesday');
+  if(d.getDate()<8||d.getDate()>14) throw new Error('not second week: '+d.getDate());
+});
+run('sched_pattern first-1 computeFirstDue (month)', ()=>{
+  const r=computeFirstDue({type:'scheduled',sched_freq:'month',day_of_month:'',sched_pattern:'first-1'},today);
+  if(!r) throw new Error('null result');
+  const d=new Date(r+'T12:00:00');
+  if(d.getDay()!==1) throw new Error('not Monday: '+d.getDay());
+  if(d.getDate()>7) throw new Error('not in first week: '+d.getDate());
+});
+run('sched_pattern last-5 computeFirstDue (month)', ()=>{
+  const r=computeFirstDue({type:'scheduled',sched_freq:'month',day_of_month:'',sched_pattern:'last-5'},today);
+  if(!r) throw new Error('null result');
+  const d=new Date(r+'T12:00:00');
+  if(d.getDay()!==5) throw new Error('not Friday: '+d.getDay());
+});
+run('sched_pattern first-1 computeFirstDue (week)', ()=>{
+  const r=computeFirstDue({type:'scheduled',sched_freq:'week',weekday:1,sched_pattern:'first-1'},today);
+  if(!r) throw new Error('null result');
+  const d=new Date(r+'T12:00:00');
+  if(d.getDay()!==1) throw new Error('not Monday: '+d.getDay());
+});
+run('asset link icon renders in task card', ()=>{
+  const sv=state.tasks;
+  state.tasks=[{task_id:'al1',name:'Asset task',type:'one_off',due_date:plus(1),scope:'household',status:'active',linked_asset_id:'a-furnace',notes:''}];
+  taskScope='household'; taskTab='all'; renderTasks();
+  state.tasks=sv;
+});
+run('project link icon renders in task card', ()=>{
+  const sv=state.tasks;
+  state.tasks=[{task_id:'pl1',name:'Proj task',type:'one_off',due_date:plus(1),scope:'household',status:'active',linked_project_id:'p1',notes:''}];
+  taskScope='household'; taskTab='all'; renderTasks();
+  state.tasks=sv;
+});
+run('done projects filtered from active/planned', ()=>{
+  const sv=state.projects;
+  state.projects=[
+    {project_id:'pd1',name:'Done proj',description:'',status:'done',target_date:''},
+    {project_id:'pa1',name:'Active proj',description:'',status:'active',target_date:''},
+  ];
+  renderProjects();
+  const html=el('proj-active')._innerHTML||'';
+  state.projects=sv;
+  if(html.includes('Done proj')) throw new Error('done project in active section');
+});
+run('past projects section exists', ()=>{
+  const sv=state.projects;
+  state.projects=[{project_id:'pd2',name:'Old proj',description:'',status:'done',target_date:''}];
+  renderProjects();
+  state.projects=sv;
+});
+run('togglePastProjects', ()=>togglePastProjects());
+run('openBatchSnooze', ()=>{ enterBatch(); toggleSelect('t1'); openBatchSnooze(); closeModal('modal-batch-snooze'); exitBatch(); });
+run('batch snooze days payload', ()=>{
+  __posts.length=0;
+  enterBatch(); toggleSelect('t1'); toggleSelect('t8');
+  pendingBatchSnooze={kind:'days',value:3};
+  confirmBatchSnooze();
+  const b=__posts[__posts.length-1];
+  if(b.action!=='snoozeTask') throw new Error('not snoozeTask: '+b.action);
+  if(!b.data.until_date) throw new Error('until_date missing');
+});
+run('batch snooze date payload', ()=>{
+  __posts.length=0;
+  enterBatch(); toggleSelect('t1');
+  pendingBatchSnooze={kind:'until',value:'2026-08-01'};
+  confirmBatchSnooze();
+  const b=__posts[__posts.length-1];
+  if(b.data.until_date!=='2026-08-01') throw new Error('wrong date: '+b.data.until_date);
+});
+run('populateProjectDropdown', ()=>populateProjectDropdown());
+run('submitTask includes linked_project_id', ()=>{
+  __posts.length=0; editingTask=null; pickedScope='household'; pickedOwner='';
+  el('t-name').value='Linked task'; el('t-type').value='one_off'; el('t-due').value=plus(4);
+  el('t-remind').value=''; el('t-notes').value=''; el('t-proj-link').value='p1';
+  submitTask();
+  const d=__posts[__posts.length-1].data;
+  if(d.linked_project_id!=='p1') throw new Error('linked_project_id not p1: '+d.linked_project_id);
+});
+run('submitTask scheduled includes sched_pattern', ()=>{
+  __posts.length=0; editingTask=null; el('t-name').value='Pattern task';
+  el('t-type').value='scheduled'; el('t-sched-freq').value='week'; el('t-sched-interval').value='1';
+  el('t-sched-weekday').value='1'; el('t-sched-pattern').value='first-1'; el('t-end-sched').value='';
+  submitTask();
+  const d=__posts[__posts.length-1].data;
+  if(d.sched_pattern!=='first-1') throw new Error('sched_pattern not first-1: '+d.sched_pattern);
+});
+run('renderAll with history tab active', ()=>{ currentView='metrics'; metricsTab='history'; renderAll(); metricsTab='stats'; });
+
 // ---- report ----
 let fails = 0;
 for (const [s,n] of tests){ if(s==='FAIL'){ console.log('FAIL  '+n); fails++; } }

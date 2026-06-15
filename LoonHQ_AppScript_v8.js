@@ -7,7 +7,8 @@ var SHEET_ID = '1nOj60hRcDAyYsnrkNBA3XzMeEHl5y_IxWhQ5v28uOhA';
 var HEADERS = {
   tasks:   ['task_id','name','type','weekday','day_of_month','recurrence_days','due_date','end_date',
             'urgency_window','reminder_offset','linked_asset_id','owner','scope','status','notes',
-            'created_at','sched_month','sched_freq','sched_interval','sched_start'],
+            'created_at','sched_month','sched_freq','sched_interval','sched_start',
+            'linked_project_id','sched_pattern'],
   projects:['project_id','name','description','status','target_date','created_at'],
   subtasks:['subtask_id','project_id','name','status','due_date','sort_order'],
   grocery: ['item_id','name','category','status','added_by','checked_at'],

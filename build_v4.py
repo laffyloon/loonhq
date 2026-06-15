@@ -21,6 +21,7 @@ CSS = """
   --yellow:#B58A0E;--yellow-light:#FBF1CF;
   --terra:#C25E3A;--terra-light:#FAECE5;
   --slate:#2D6A9F;--slate-light:#E2EEF8;
+  --magenta:#BE185D;--magenta-light:#FCE7F3;
   --radius:10px;--radius-sm:6px;
   font-family:'DM Sans',sans-serif;
   --safe-bottom:env(safe-area-inset-bottom,0px);
@@ -183,11 +184,30 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .who{width:22px;height:22px;border-radius:50%;font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center}
 .who-f{background:var(--purple-light);color:var(--purple)}
 .who-m{background:var(--yellow-light);color:var(--yellow)}
-.who-either{background:var(--bg2);color:var(--text3);border:1.5px dashed var(--border2)}
+.who-either{background:var(--terra-light);color:var(--terra)}
 .who-either::before{content:'F\00B7M';font-size:8px;font-weight:700;letter-spacing:-0.5px}
 .task-menu-btn{background:none;border:none;color:var(--text3);font-size:18px;padding:0 2px;cursor:pointer;line-height:1;align-self:center;flex-shrink:0}
 .task-menu-btn:hover{color:var(--text)}
 
+/* SEARCH BAR */
+.search-bar{padding:6px 12px;border-bottom:1px solid var(--border);background:var(--bg);display:none;align-items:center;gap:6px}
+.search-bar.on{display:flex}
+.search-input-wrap{flex:1;position:relative;display:flex;align-items:center}
+.search-inp{width:100%;padding:7px 30px 7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13.5px;background:var(--card);color:var(--text);outline:none}
+.search-inp:focus{border-color:var(--green)}
+.search-clear{position:absolute;right:6px;background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;padding:0;line-height:1;display:none}
+.search-clear.on{display:block}
+/* LINK ICONS */
+.link-icon{font-size:13px;cursor:pointer;margin-left:2px;flex-shrink:0;opacity:.75}
+.link-icon:hover{opacity:1}
+.link-icon-asset{color:var(--magenta)}
+.link-icon-proj{color:var(--blue)}
+/* REMINDER STRIPE */
+.stripe.reminder .s-lbl::before{content:'';margin-right:0}
+
+/* PAST PROJECTS */
+.past-proj-toggle{background:none;border:none;font-size:12.5px;color:var(--text3);cursor:pointer;padding:8px 0;display:flex;align-items:center;gap:4px;font-family:inherit}
+.past-proj-toggle:hover{color:var(--text2)}
 /* BATCH BAR */
 .batch-bar{position:absolute;bottom:0;left:0;right:0;background:var(--text);color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;z-index:35;padding-bottom:calc(12px + var(--safe-bottom));transform:translateY(100%);transition:transform .25s}
 .batch-bar.on{transform:translateY(0)}
@@ -256,7 +276,7 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
 .pc-tasks{padding:8px 14px 11px}
 .sub{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:var(--text2)}
 .sub.done-sub{color:var(--text3);text-decoration:line-through}
-.box{width:18px;height:18px;border-radius:4px;border:1.5px solid var(--border2);flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s}
+.box{width:18px;height:18px;border-radius:50%;border:1.5px solid var(--border2);flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s}
 .box:hover{border-color:var(--green)}.box.done{background:var(--green);border-color:var(--green)}
 .box.done::after{content:'\\2713';font-size:10px;color:#fff;font-weight:700}
 .sub-text{flex:1;min-width:0;word-break:break-word}
@@ -473,6 +493,7 @@ def HTML_BODY(logo, icon):
     <div class="mobile-sub-hdr">
       <div class="mobile-sub-title" id="mob-sub-title">Tasks</div>
       <div class="mob-hdr-actions">
+        <button class="hdr-icon-btn" onclick="toggleSearch()"><i class="ti ti-search"></i></button>
         <button class="btn btn-icon" onclick="refreshData()" title="Refresh"><i class="ti ti-refresh"></i></button>
         <button class="btn btn-icon" id="mob-more-btn" style="display:none" onclick="openMobileMenu()"><i class="ti ti-dots"></i></button>
       </div>
@@ -480,6 +501,7 @@ def HTML_BODY(logo, icon):
     <div class="topbar">
       <div class="pg-title" id="pgtitle">Tasks</div>
       <div class="top-actions">
+        <button class="btn btn-icon" id="desk-search-btn" onclick="toggleSearch()"><i class="ti ti-search"></i></button>
         <button class="btn btn-icon" onclick="refreshData()"><i class="ti ti-refresh"></i></button>
         <button class="btn primary" id="topbtn" onclick="handleAdd()"><i class="ti ti-plus"></i> <span id="topbtnlbl">Add task</span></button>
       </div>
@@ -500,30 +522,21 @@ def HTML_BODY(logo, icon):
         <button class="tab-btn" data-tab="recurring" onclick="setTaskTab('recurring')">Recurring</button>
         <button class="tab-btn" data-tab="all" onclick="setTaskTab('all')">All</button>
       </div>
+      <div class="search-bar" id="search-bar">
+        <div class="search-input-wrap">
+          <input class="search-inp" id="search-inp" type="search" placeholder="Search tasks..." oninput="onSearchInput()">
+          <button class="search-clear" id="search-clear" onclick="clearSearch()">&#x2715;</button>
+        </div>
+      </div>
       <div class="scroll" id="task-scroll">
         <div class="ptr-indicator" id="ptr"><div class="spinner"></div><span>Refreshing...</span></div>
-        <div class="legend-wrap">
-          <div class="legend-trigger" onclick="toggleLegend()">
-            <i class="ti ti-info-circle" style="font-size:15px;color:var(--text3);flex-shrink:0"></i>
-            <span class="legend-trigger-text"><strong>Task types</strong> <span style="color:var(--text3)">&middot; tap to learn</span></span>
-            <i class="ti ti-chevron-down leg-chev" id="leg-chev"></i>
-          </div>
-          <div class="legend-body" id="leg-body">
-            <div class="legend-grid">
-              <div class="legend-item"><span class="legend-tag tag-oneoff">One-off</span><div class="legend-desc"><strong>Single task,</strong> optional due date. Won&rsquo;t repeat.</div></div>
-              <div class="legend-item"><span class="legend-tag tag-floating">Floating</span><div class="legend-desc"><strong>No deadline</strong> &mdash; pick an urgency window instead.</div></div>
-              <div class="legend-item"><span class="legend-tag tag-sched-w">Scheduled</span><div class="legend-desc"><strong>Calendar-anchored.</strong> Same day each week or same date each month.</div></div>
-              <div class="legend-item"><span class="legend-tag tag-interval">Interval</span><div class="legend-desc"><strong>Every X days</strong> from last completion. Resets on check-off.</div></div>
-            </div>
-            <div style="margin-top:10px;font-size:11.5px;color:var(--text3);line-height:1.5"><strong style="color:var(--text2)">Tip:</strong> swipe right to complete, swipe left to snooze. Long-press to multi-select.</div>
-          </div>
-        </div>
         <div id="task-list"></div>
       </div>
       <div class="batch-bar" id="batch-bar">
         <div class="batch-count" id="batch-count">0 selected</div>
         <div class="batch-actions">
           <button class="batch-btn" onclick="exitBatch()">Cancel</button>
+          <button class="batch-btn" onclick="openBatchSnooze()"><i class="ti ti-clock"></i> Snooze</button>
           <button class="batch-btn g" onclick="batchCompleteSelected()"><i class="ti ti-check"></i> Complete all</button>
         </div>
       </div>
@@ -536,6 +549,10 @@ def HTML_BODY(logo, icon):
         <div id="proj-active"></div>
         <div class="sh" style="margin-top:6px"><div class="sl">Planned</div></div>
         <div id="proj-planned"></div>
+        <div id="past-proj-wrap" style="margin-top:6px">
+          <button class="past-proj-toggle" onclick="togglePastProjects()" id="past-proj-btn"><i class="ti ti-chevron-right" id="past-proj-chev"></i> Past projects</button>
+          <div id="proj-done" class="gone"></div>
+        </div>
       </div>
     </div>
 
@@ -570,7 +587,7 @@ def HTML_BODY(logo, icon):
     <div id="v-metrics" class="view gone">
       <div class="tab-bar" id="metrics-tab-bar">
         <button class="tab-btn on" onclick="setMetricsTab('stats')">Stats</button>
-        <button class="tab-btn" onclick="setMetricsTab('history')">History</button>
+        <button class="tab-btn" onclick="setMetricsTab('history')">Task History</button>
       </div>
       <div id="metrics-stats-panel" class="scroll">
         <div style="display:flex;justify-content:flex-end">
@@ -643,7 +660,7 @@ def HTML_BODY(logo, icon):
     </div>
     <div class="form-row"><div class="form-label">Task name</div><input class="form-input" id="t-name" placeholder="e.g. Take out trash"></div>
     <div class="form-row">
-      <div class="form-label">Type</div>
+      <div class="form-label" style="display:flex;align-items:center;gap:5px">Type <button type="button" class="btn" style="padding:1px 5px;font-size:11px;border-radius:4px;line-height:1.4" onclick="openModal('modal-type-info')"><i class="ti ti-info-circle"></i></button></div>
       <select class="form-input" id="t-type" onchange="updateTaskTypeFields()">
         <option value="one_off">One-off &mdash; single task</option>
         <option value="floating">Floating &mdash; no deadline</option>
@@ -692,6 +709,25 @@ def HTML_BODY(logo, icon):
           <option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option>
         </select>
       </div>
+      <div class="form-row gone" id="sched-pattern-row">
+        <div class="form-label">Pattern</div>
+        <select class="form-input" id="t-sched-pattern">
+          <option value="">Every week</option>
+          <option value="first-1">First Monday of month</option>
+          <option value="first-2">First Tuesday of month</option>
+          <option value="first-3">First Wednesday of month</option>
+          <option value="first-4">First Thursday of month</option>
+          <option value="first-5">First Friday of month</option>
+          <option value="first-6">First Saturday of month</option>
+          <option value="first-0">First Sunday of month</option>
+          <option value="second-1">Second Monday of month</option>
+          <option value="second-5">Second Friday of month</option>
+          <option value="third-1">Third Monday of month</option>
+          <option value="fourth-5">Fourth Friday of month</option>
+          <option value="last-1">Last Monday of month</option>
+          <option value="last-5">Last Friday of month</option>
+        </select>
+      </div>
       <div class="form-row gone" id="sched-month">
         <div class="form-label">On day</div>
         <select class="form-input" id="t-sched-monthday"><option value="1">1st</option><option value="2">2nd</option><option value="3">3rd</option><option value="4">4th</option><option value="5">5th</option><option value="6">6th</option><option value="7">7th</option><option value="8">8th</option><option value="9">9th</option><option value="10">10th</option><option value="11">11th</option><option value="12">12th</option><option value="13">13th</option><option value="14">14th</option><option value="15">15th</option><option value="16">16th</option><option value="17">17th</option><option value="18">18th</option><option value="19">19th</option><option value="20">20th</option><option value="21">21st</option><option value="22">22nd</option><option value="23">23rd</option><option value="24">24th</option><option value="25">25th</option><option value="26">26th</option><option value="27">27th</option><option value="28">28th</option><option value="29">29th</option><option value="30">30th</option><option value="31">31st</option><option value="last">Last day</option></select>
@@ -722,6 +758,7 @@ def HTML_BODY(logo, icon):
     </div>
     <div class="form-row"><div class="form-label">Notes (optional)</div><input class="form-input" id="t-notes" placeholder="Any extra context"></div>
     <div class="form-row" id="t-asset-row"><div class="form-label">Link to asset (optional)</div><select class="form-input" id="t-asset-link"><option value="">No asset link</option></select></div>
+    <div class="form-row" id="t-proj-row"><div class="form-label">Link to project (optional)</div><select class="form-input" id="t-proj-link"><option value="">No project link</option></select></div>
     <div class="modal-actions">
       <button class="btn danger gone" id="task-delete-btn" onclick="deleteEditingTask()"><i class="ti ti-trash"></i></button>
       <button class="btn" onclick="closeModal('modal-task')">Cancel</button>
@@ -886,6 +923,40 @@ def HTML_BODY(logo, icon):
     <div class="modal-actions"><button class="btn" onclick="closeModal('modal-reassign')">Cancel</button></div>
   </div>
 </div>
+
+<!-- TYPE INFO MODAL -->
+<div class="modal-bg gone" id="modal-type-info">
+  <div class="modal">
+    <div class="modal-title">Task types</div>
+    <div style="display:flex;flex-direction:column;gap:12px;font-size:13.5px">
+      <div><strong>One-off</strong> - Single task with optional due date. Won't repeat.</div>
+      <div><strong>Floating</strong> - No deadline. Pick an urgency window instead.</div>
+      <div><strong>Scheduled</strong> - Calendar-anchored. Same day each week or same date each month.</div>
+      <div><strong>Interval</strong> - Every X days from last completion. Resets on check-off.</div>
+    </div>
+    <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Tip: swipe right to complete, swipe left to snooze. Long-press to multi-select.</div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal('modal-type-info')">Got it</button></div>
+  </div>
+</div>
+
+<!-- BATCH SNOOZE MODAL -->
+<div class="modal-bg gone" id="modal-batch-snooze">
+  <div class="modal">
+    <div class="modal-title">Snooze selected tasks</div>
+    <div style="font-size:13px;color:var(--text2)" id="batch-snooze-count"></div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="snooze-opt" data-bsnooze="1"><i class="ti ti-clock"></i> 1 day</button>
+      <button class="snooze-opt" data-bsnooze="3"><i class="ti ti-clock"></i> 3 days</button>
+      <button class="snooze-opt" data-bsnooze="7"><i class="ti ti-clock"></i> 1 week</button>
+      <button class="snooze-opt" data-bsnooze="14"><i class="ti ti-clock"></i> 2 weeks</button>
+    </div>
+    <div class="form-row"><div class="form-label">Or pick a date</div><input class="form-input" id="batch-snooze-date" type="date" oninput="onBatchSnoozeDateInput()"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('modal-batch-snooze')">Cancel</button>
+      <button class="btn primary" id="batch-snooze-confirm" onclick="confirmBatchSnooze()" disabled>Snooze all</button>
+    </div>
+  </div>
+</div>
 """
 
 # ─── JAVASCRIPT ───────────────────────────────────────────────────────────────
@@ -900,6 +971,7 @@ var selectMode=false,selectedTaskIds=new Set(),longPressTimer=null;
 var snoozingTask=null,editingTask=null,openMenu=null,metricsTab='stats',pendingSnooze=null,editingProject=null,editingSubtask=null;
 var editingAsset=null,openAssetId=null,pickedAssetStatus='green';
 var _drillAll=[],_drillF=[],_drillM=[],_histMenuLog=null;
+var taskSearch='',searchVisible=false,pendingBatchSnooze=null;
 
 var STATIC_ASSETS=[
   {asset_id:'a-furnace',name:'Furnace (forced air, gas)',category:'Home systems',make_model:'Carrier 24ACC636',installed_date:'Jan 9, 2024',warranty_info:'10-yr parts, lifetime heat exchanger',contractor_name:'Nick @ Tradewinds',contractor_phone:'720-363-7600',notes:'AHS Gold covered this replacement. $100/visit, contract #601933098, starts Jul 2 2026.',flag:'Check AHS Gold before major repairs.',flag_type:'amber',icon:'ti-flame',icon_bg:'#FEF3C7',icon_color:'#D97706',linked_tasks:['Change HVAC filter (every 30 days)','Annual duct check (each fall)'],log:[{t:'Furnace replaced',m:'Jan 9, 2024 - Tradewinds (Nick)'},{t:'Duct cleaning (pre-install)',m:'Jan 2024',b:true}]},
@@ -975,7 +1047,7 @@ function refreshData(silent){
   });
 }
 function setSyncState(s,msg){var d=document.getElementById('sync-dot'),l=document.getElementById('sync-lbl');if(d)d.className='sync-dot'+(s==='err'?' err':s==='loading'?' loading':'');if(l)l.textContent=msg;}
-function renderAll(){renderTasks();renderProjects();renderGrocery();renderAssets();if(currentView==='metrics')renderStats();}
+function renderAll(){renderTasks();renderProjects();renderGrocery();renderAssets();if(currentView==='metrics'){if(metricsTab==='history')renderHistory();else renderStats();}}
 
 // ── NAV ───────────────────────────────────────────────────
 var pageNames={tasks:'Tasks',projects:'Projects',grocery:'Shopping List',assets:'Assets',metrics:'Activity'};
@@ -1010,7 +1082,28 @@ function setTaskTab(t){
   document.querySelectorAll('[data-tab]').forEach(function(b){b.classList.toggle('on',b.dataset.tab===t);});
   exitBatch();renderTasks();
 }
-function toggleLegend(){document.getElementById('leg-body').classList.toggle('open');document.getElementById('leg-chev').classList.toggle('open');}
+function toggleLegend(){}
+// ── SEARCH ────────────────────────────────────────────────
+function toggleSearch(){
+  searchVisible=!searchVisible;
+  var bar=document.getElementById('search-bar');
+  if(bar)bar.classList.toggle('on',searchVisible);
+  if(searchVisible){var inp=document.getElementById('search-inp');if(inp)setTimeout(function(){inp.focus();},50);}
+  else{clearSearch();}
+}
+function onSearchInput(){
+  var v=((document.getElementById('search-inp')||{}).value||'');
+  taskSearch=v;
+  var clr=document.getElementById('search-clear');
+  if(clr)clr.classList.toggle('on',!!v);
+  renderTasks();
+}
+function clearSearch(){
+  taskSearch='';
+  var inp=document.getElementById('search-inp');if(inp)inp.value='';
+  var clr=document.getElementById('search-clear');if(clr)clr.classList.remove('on');
+  renderTasks();
+}
 
 // ── RECURRENCE ────────────────────────────────────────────
 function schedFreqOf(task){
@@ -1021,6 +1114,11 @@ function schedFreqOf(task){
   if(task.day_of_month!==''&&task.day_of_month!==null&&task.day_of_month!==undefined&&String(task.day_of_month).trim()!=='')return 'month';
   return 'day';
 }
+function nthWeekdayOfMonth(n,weekday,year,month){
+  if(n===-1){var last=new Date(year,month+1,0);var diff=(last.getDay()-weekday+7)%7;return new Date(year,month,last.getDate()-diff);}
+  var first=new Date(year,month,1);var diff=(weekday-first.getDay()+7)%7;return new Date(year,month,1+diff+(n-1)*7);
+}
+function parsePat(pat){var parts=pat.split('-');var nthMap={first:1,second:2,third:3,fourth:4,last:-1};var n=nthMap[parts[0]];if(n===undefined)return null;var w=parseInt(parts[1]);if(isNaN(w))return null;return{n:n,w:w};}
 function monthStepDate(baseY,baseM,monthsToAdd,dom){
   var m=baseM+monthsToAdd;var ty=baseY+Math.floor(m/12);var tm=((m%12)+12)%12;
   var lastDay=new Date(ty,tm+1,0).getDate();
@@ -1037,8 +1135,16 @@ function computeFirstDue(task,today){
   if(task.type!=='scheduled')return task.due_date||'';
   var freq=schedFreqOf(task);var next;
   if(freq==='day'){next=new Date(t);}
-  else if(freq==='week'){var target=parseInt(task.weekday)||0;next=new Date(t);while(next.getDay()!==target)next.setDate(next.getDate()+1);}
-  else if(freq==='month'){next=monthStepDate(t.getFullYear(),t.getMonth(),0,task.day_of_month);if(next<t)next=monthStepDate(t.getFullYear(),t.getMonth(),1,task.day_of_month);}
+  else if(freq==='week'){
+    var pat=task.sched_pattern||'';var pp=pat?parsePat(pat):null;
+    if(pp){next=nthWeekdayOfMonth(pp.n,pp.w,t.getFullYear(),t.getMonth());if(next<t)next=nthWeekdayOfMonth(pp.n,pp.w,t.getFullYear(),t.getMonth()+1);}
+    else{var target=parseInt(task.weekday)||0;next=new Date(t);while(next.getDay()!==target)next.setDate(next.getDate()+1);}
+  }
+  else if(freq==='month'){
+    var pat=task.sched_pattern||'';var pp=pat?parsePat(pat):null;
+    if(pp){next=nthWeekdayOfMonth(pp.n,pp.w,t.getFullYear(),t.getMonth());if(next<t)next=nthWeekdayOfMonth(pp.n,pp.w,t.getFullYear(),t.getMonth()+1);}
+    else{next=monthStepDate(t.getFullYear(),t.getMonth(),0,task.day_of_month);if(next<t)next=monthStepDate(t.getFullYear(),t.getMonth(),1,task.day_of_month);}
+  }
   else{var ym=(parseInt(task.sched_month)||1)-1;var ld=new Date(t.getFullYear(),ym+1,0).getDate();next=new Date(t.getFullYear(),ym,Math.min(parseInt(task.day_of_month)||1,ld));if(next<t)next=new Date(t.getFullYear()+1,ym,parseInt(task.day_of_month)||1);}
   if(task.end_date){var e=new Date(task.end_date);e.setHours(0,0,0,0);if(next>e)return null;}
   return next.toISOString().split('T')[0];
@@ -1054,8 +1160,16 @@ function computeNextDue(task,fromDate){
     if(!base){var f=computeFirstDue(task,from);if(!f)return null;base=new Date(f+'T12:00:00');}
     base.setHours(0,0,0,0);next=new Date(base);
     if(freq==='day'){next.setDate(next.getDate()+X);while(next<=from)next.setDate(next.getDate()+X);}
-    else if(freq==='week'){next.setDate(next.getDate()+7*X);while(next<=from)next.setDate(next.getDate()+7*X);}
-    else if(freq==='month'){var k=X;next=monthStepDate(base.getFullYear(),base.getMonth(),k,task.day_of_month);while(next<=from){k+=X;next=monthStepDate(base.getFullYear(),base.getMonth(),k,task.day_of_month);}}
+    else if(freq==='week'){
+      var pat2=task.sched_pattern||'';var pp2=pat2?parsePat(pat2):null;
+      if(pp2){var nm=new Date(base);nm.setMonth(nm.getMonth()+X);next=nthWeekdayOfMonth(pp2.n,pp2.w,nm.getFullYear(),nm.getMonth());while(next<=from){nm.setMonth(nm.getMonth()+X);next=nthWeekdayOfMonth(pp2.n,pp2.w,nm.getFullYear(),nm.getMonth());}}
+      else{next.setDate(next.getDate()+7*X);while(next<=from)next.setDate(next.getDate()+7*X);}
+    }
+    else if(freq==='month'){
+      var pat2=task.sched_pattern||'';var pp2=pat2?parsePat(pat2):null;
+      if(pp2){var k=X;next=nthWeekdayOfMonth(pp2.n,pp2.w,base.getFullYear(),base.getMonth()+k);while(next<=from){k+=X;next=nthWeekdayOfMonth(pp2.n,pp2.w,base.getFullYear(),base.getMonth()+k);}}
+      else{var k=X;next=monthStepDate(base.getFullYear(),base.getMonth(),k,task.day_of_month);while(next<=from){k+=X;next=monthStepDate(base.getFullYear(),base.getMonth(),k,task.day_of_month);}}
+    }
     else if(freq==='year'){var ky=X;var bd=base.getDate();var ystep=function(kk){var ty=base.getFullYear()+kk;var ld=new Date(ty,base.getMonth()+1,0).getDate();return new Date(ty,base.getMonth(),Math.min(bd,ld));};next=ystep(ky);while(next<=from){ky+=X;next=ystep(ky);}}
   }
   if(!next)return null;
@@ -1072,13 +1186,14 @@ function renderTasks(){
     var sc=t.scope||'household';
     if(sc!==taskScope)return false;
     if(sc==='personal'&&t.owner&&t.owner!==currentUser)return false;
+    if(taskSearch){var q=taskSearch.toLowerCase();if(!(t.name||'').toLowerCase().includes(q)&&!(t.notes||'').toLowerCase().includes(q))return false;}
     return true;
   });
   var now=new Date();now.setHours(0,0,0,0);
   var tm0=new Date(now);tm0.setDate(now.getDate()+1);
   var we=new Date(now);we.setDate(now.getDate()+7);
   var me=new Date(now);me.setDate(now.getDate()+30);
-  var today=[],tomorrow=[],week=[],month=[],later=[];
+  var today=[],reminders=[],tomorrow=[],week=[],month=[],later=[];
   all.forEach(function(t){
     if(t.type==='floating'){
       if(t.urgency_window==='this_week')week.push(t);
@@ -1090,7 +1205,8 @@ function renderTasks(){
     var due=new Date(String(t.due_date).split('T')[0]+'T12:00:00');due.setHours(0,0,0,0);
     var surf=due;
     if(t.reminder_offset){var ob={same_day:0,'1_day':1,'2_days':2,'3_days':3,'1_week':7};var bk=ob[t.reminder_offset]||0;surf=new Date(due);surf.setDate(surf.getDate()-bk);}
-    if(due<=now||surf<=now)today.push(t);
+    if(due<=now)today.push(t);
+    else if(surf<=now)reminders.push(t);
     else if(due.getTime()===tm0.getTime())tomorrow.push(t);
     else if(due<=we)week.push(t);
     else if(due<=me)month.push(t);
@@ -1113,20 +1229,23 @@ function renderTasks(){
   }
   if(taskTab==='all'){
     stripe('Today',today,[],'r');
+    stripe('Reminders',reminders,[],'n');
     stripe('Tomorrow',tomorrow,[],'o');
     stripe('This week',week,projRows,'g');
     stripe('This month',month,[],'b');
     stripe('Later',later,[],'n');
   }
-  else if(taskTab==='today'){stripe('Today',today,[],'r');}
+  else if(taskTab==='today'){stripe('Today',today,[],'r');stripe('Reminders',reminders,[],'n');}
   else if(taskTab==='tomorrow'){stripe('Tomorrow',tomorrow,[],'o');}
   else if(taskTab==='week'){
     stripe('Today',today,[],'r');
+    stripe('Reminders',reminders,[],'n');
     stripe('Tomorrow',tomorrow,[],'o');
     stripe('This week',week,projRows,'g');
   }
   else if(taskTab==='month'){
     stripe('Today',today,[],'r');
+    stripe('Reminders',reminders,[],'n');
     stripe('Tomorrow',tomorrow,[],'o');
     stripe('This week',week,[],'g');
     stripe('This month',month,projRows,'b');
@@ -1182,6 +1301,20 @@ function makeTaskCard(t){
   var tagCls=t.type==='one_off'?'tag-oneoff':t.type==='floating'?'tag-floating':t.type==='scheduled'?((freq==='week')?'tag-sched-w':'tag-sched-m'):'tag-interval';
   var tagLabel={one_off:'One-off',floating:'Floating',scheduled:schedLbl(),interval:'Every '+(t.recurrence_days||'?')+'d'}[t.type]||t.type;
   var tag=document.createElement('span');tag.className='tag '+tagCls;tag.textContent=tagLabel;tm.appendChild(tag);
+
+  // Link icons
+  if(t.linked_asset_id){
+    var ai=document.createElement('i');
+    ai.className='ti ti-tool link-icon link-icon-asset';ai.title='Linked asset';
+    ai.addEventListener('click',function(e){e.stopPropagation();openAssetPanel(t.linked_asset_id);});
+    tm.appendChild(ai);
+  }
+  if(t.linked_project_id){
+    var pli=document.createElement('i');
+    pli.className='ti ti-clipboard-list link-icon link-icon-proj';pli.title='Linked project';
+    pli.addEventListener('click',function(e){e.stopPropagation();go('projects');});
+    tm.appendChild(pli);
+  }
 
   // Context pills
   if(t.type==='floating'&&t.urgency_window){
@@ -1295,6 +1428,43 @@ function batchCompleteSelected(){
   exitBatch();setSyncState('loading','Completing...');
   apiPost({action:'batchComplete',data:{tasks:picks,completed_by:currentUser}}).then(function(){refreshData(true);});
 }
+function openBatchSnooze(){
+  var n=selectedTaskIds.size;if(!n)return;
+  var cnt=document.getElementById('batch-snooze-count');if(cnt)cnt.textContent=n+' task'+(n>1?'s':'')+' selected';
+  var di=document.getElementById('batch-snooze-date');if(di)di.value='';
+  var cb=document.getElementById('batch-snooze-confirm');if(cb)cb.disabled=true;
+  document.querySelectorAll('#modal-batch-snooze .snooze-opt').forEach(function(b){b.classList.remove('sel');});
+  pendingBatchSnooze=null;
+  openModal('modal-batch-snooze');
+}
+function onBatchSnoozeOptClick(n){
+  pendingBatchSnooze={kind:'days',value:n};
+  document.querySelectorAll('#modal-batch-snooze .snooze-opt').forEach(function(b){b.classList.remove('sel');});
+  var di=document.getElementById('batch-snooze-date');if(di)di.value='';
+  var cb=document.getElementById('batch-snooze-confirm');if(cb)cb.disabled=false;
+}
+function onBatchSnoozeDateInput(){
+  var v=((document.getElementById('batch-snooze-date')||{}).value||'');
+  if(v){
+    pendingBatchSnooze={kind:'until',value:v};
+    document.querySelectorAll('#modal-batch-snooze .snooze-opt').forEach(function(b){b.classList.remove('sel');});
+    var cb=document.getElementById('batch-snooze-confirm');if(cb)cb.disabled=false;
+  }else{pendingBatchSnooze=null;var cb=document.getElementById('batch-snooze-confirm');if(cb)cb.disabled=true;}
+}
+function confirmBatchSnooze(){
+  if(!pendingBatchSnooze||!selectedTaskIds.size)return;
+  var tasks=[];
+  selectedTaskIds.forEach(function(id){var t=state.tasks.find(function(x){return x.task_id===id;});if(t)tasks.push(t);});
+  var p=pendingBatchSnooze;
+  var calls=tasks.map(function(t){
+    var base=snoozeBase(t);var targetDate;
+    if(p.kind==='until'){targetDate=p.value;}
+    else{var d=new Date(base);d.setDate(d.getDate()+p.value);targetDate=d.toISOString().split('T')[0];}
+    return apiPost({action:'snoozeTask',data:{task_id:t.task_id,until_date:targetDate}});
+  });
+  closeModal('modal-batch-snooze');exitBatch();setSyncState('loading','Snoozing...');
+  Promise.all(calls).then(function(){refreshData(true);});
+}
 
 // ── COMPLETE / SNOOZE ─────────────────────────────────────
 function handleComplete(t){
@@ -1380,11 +1550,11 @@ function openAddTask(){
   document.getElementById('task-modal-title').textContent='Add task';
   document.getElementById('task-submit-btn').textContent='Add task';
   document.getElementById('task-delete-btn').classList.add('gone');
-  populateAssetDropdown();
+  populateAssetDropdown();populateProjectDropdown();
   clearTaskForm();openModal('modal-task');
 }
 function openEditTask(t){
-  populateAssetDropdown();
+  populateAssetDropdown();populateProjectDropdown();
   editingTask=t;pickedScope=t.scope||'household';pickedOwner=t.owner||'';pickedUrgency=t.urgency_window||'this_week';
   document.getElementById('task-modal-title').textContent='Edit task';
   document.getElementById('task-submit-btn').textContent='Save changes';
@@ -1394,6 +1564,7 @@ function openEditTask(t){
   document.getElementById('t-type').value=t.type||'one_off';
   document.getElementById('t-notes').value=t.notes||'';
   var asel=document.getElementById('t-asset-link');if(asel)asel.value=t.linked_asset_id||'';
+  var psel=document.getElementById('t-proj-link');if(psel)psel.value=t.linked_project_id||'';
   document.getElementById('owner-either').className='who-opt'+(pickedOwner===''?' sel-either':'');
   document.getElementById('owner-f').className='who-opt'+(pickedOwner==='Frankie'?' sel-f':'');
   document.getElementById('owner-m').className='who-opt'+(pickedOwner==='Meredith'?' sel-m':'');
@@ -1403,7 +1574,7 @@ function openEditTask(t){
     var freq=schedFreqOf(t);
     document.getElementById('t-sched-freq').value=freq;
     document.getElementById('t-sched-interval').value=String(parseInt(t.sched_interval)||1);
-    if(freq==='week'){document.getElementById('t-sched-weekday').value=String(t.weekday||'1');}
+    if(freq==='week'){document.getElementById('t-sched-weekday').value=String(t.weekday||'1');var patEl=document.getElementById('t-sched-pattern');if(patEl)patEl.value=t.sched_pattern||'';}
     else if(freq==='month'){document.getElementById('t-sched-monthday').value=String(t.day_of_month||'1');}
     else if(freq==='year'){document.getElementById('t-sched-yearmonth').value=String(t.sched_month||'1');document.getElementById('t-sched-yearday').value=String(t.day_of_month||'1');}
     document.getElementById('t-sched-start').value=dval(t.sched_start);
@@ -1422,6 +1593,8 @@ function clearTaskForm(){
   document.getElementById('t-sched-freq').value='week';document.getElementById('t-sched-weekday').value='1';
   document.getElementById('t-sched-interval').value='1';
   document.getElementById('t-sched-monthday').value='1';document.getElementById('t-sched-yearmonth').value='1';document.getElementById('t-sched-yearday').value='1';
+  var psel=document.getElementById('t-proj-link');if(psel)psel.value='';
+  var patEl=document.getElementById('t-sched-pattern');if(patEl)patEl.value='';
   document.getElementById('owner-either').className='who-opt sel-either';
   document.getElementById('owner-f').className='who-opt';document.getElementById('owner-m').className='who-opt';
   document.getElementById('scope-opt-house').className='scope-opt sel-house';
@@ -1459,6 +1632,7 @@ function updateSchedFields(){
   document.getElementById('sched-week').classList.toggle('gone',f!=='week');
   document.getElementById('sched-month').classList.toggle('gone',f!=='month');
   document.getElementById('sched-year').classList.toggle('gone',f!=='year');
+  var pr=document.getElementById('sched-pattern-row');if(pr)pr.classList.toggle('gone',f!=='week');
 }
 function submitTask(){
   var name=document.getElementById('t-name').value.trim();if(!name){alert('Task name required');return;}
@@ -1483,6 +1657,9 @@ function submitTask(){
   }
   var assetSel=document.getElementById('t-asset-link');
   data.linked_asset_id=assetSel?assetSel.value||'':'';
+  var projSel=document.getElementById('t-proj-link');
+  data.linked_project_id=projSel?projSel.value||'':'';
+  if(type==='scheduled'){var patEl=document.getElementById('t-sched-pattern');data.sched_pattern=patEl?patEl.value||'':'';}
   closeModal('modal-task');setSyncState('loading','Saving...');
   if(editingTask){apiPost({action:'updateTask',data:{task_id:editingTask.task_id,updates:data}}).then(function(){refreshData(true);});}
   else{apiPost({action:'addTask',data:data}).then(function(){refreshData(true);});}
@@ -1495,9 +1672,10 @@ function deleteEditingTask(){
 
 // ── PROJECTS ──────────────────────────────────────────────
 function renderProjects(){
-  var act=document.getElementById('proj-active'),pln=document.getElementById('proj-planned');
-  act.innerHTML='';pln.innerHTML='';
-  state.projects.forEach(function(p){
+  var act=document.getElementById('proj-active'),pln=document.getElementById('proj-planned'),dn=document.getElementById('proj-done');
+  act.innerHTML='';pln.innerHTML='';if(dn)dn.innerHTML='';
+  var doneProjs=[];
+  state.projects.filter(function(p){return p.status!=='done';}).forEach(function(p){
     var subs=state.subtasks.filter(function(s){return String(s.project_id)===String(p.project_id);});
     var done=subs.filter(function(s){return s.status==='done';}).length;
     var pct=subs.length?Math.round(done/subs.length*100):0;
@@ -1512,8 +1690,24 @@ function renderProjects(){
     card.innerHTML='<div class="pc-hdr"><div class="pc-top"><div class="pc-name">'+esc(p.name)+'</div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0"><span class="bdg '+(p.status==='active'?'bdg-a':'bdg-p')+'">'+p.status+'</span><button class="pc-edit" data-editproj="'+p.project_id+'"><i class="ti ti-pencil"></i></button></div></div>'+(p.description?'<div class="pc-desc">'+esc(p.description)+'</div>':'')+'<div class="pc-meta">'+tStr+'<span class="pc-mi"><i class="ti ti-check"></i> '+done+' of '+subs.length+' done</span></div><div class="prog"><div class="pf" style="width:'+pct+'%"></div></div></div><div class="pc-tasks">'+sHtml+'</div>';
     if(p.status==='active')act.appendChild(card);else pln.appendChild(card);
   });
+  state.projects.filter(function(p){return p.status==='done';}).forEach(function(p){doneProjs.push(p);});
+  if(dn){
+    doneProjs.forEach(function(p){
+      var subs=state.subtasks.filter(function(s){return String(s.project_id)===String(p.project_id);});
+      var card=document.createElement('div');card.className='pc';card.style.opacity='.75';
+      card.innerHTML='<div class="pc-hdr"><div class="pc-top"><div class="pc-name">'+esc(p.name)+'</div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0"><span class="bdg bdg-p">done</span><button class="pc-edit" data-editproj="'+p.project_id+'"><i class="ti ti-pencil"></i></button></div></div>'+(p.description?'<div class="pc-desc">'+esc(p.description)+'</div>':'')+'<div class="pc-meta">'+(p.target_date?'<span class="pc-mi"><i class="ti ti-calendar"></i> '+fmtDate(p.target_date)+'</span>':'')+'<span class="pc-mi"><i class="ti ti-check"></i> '+subs.length+' subtasks</span></div></div>';
+      dn.appendChild(card);
+    });
+    if(!doneProjs.length&&dn)dn.innerHTML='<div style="font-size:12.5px;color:var(--text3)">No past projects.</div>';
+  }
+  var pw=document.getElementById('past-proj-wrap');if(pw)pw.style.display=doneProjs.length?'block':'none';
   if(!act.children.length)act.innerHTML='<div style="font-size:12.5px;color:var(--text3)">No active projects yet.</div>';
   if(!pln.children.length)pln.innerHTML='<div style="font-size:12.5px;color:var(--text3)">No planned projects.</div>';
+}
+function togglePastProjects(){
+  var d=document.getElementById('proj-done');var c=document.getElementById('past-proj-chev');
+  if(d)d.classList.toggle('gone');
+  if(c)c.className=d&&!d._classes&&!d.classList.contains('gone')?'ti ti-chevron-down':'ti ti-chevron-right';
 }
 function toggleSub(id,el){var d=el.classList.contains('done');el.classList.toggle('done');el.closest('.sub').classList.toggle('done-sub');apiPost({action:'updateSubtask',data:{subtask_id:id,updates:{status:d?'todo':'done'}}}).then(function(){apiGet({action:'getSubtasks'}).then(function(r){state.subtasks=r||[];renderProjects();});});}
 function quickAddSub(pid){var n=prompt('Subtask name:');if(!n)return;apiPost({action:'addSubtask',data:{project_id:pid,name:n.trim(),status:'todo'}}).then(function(){apiGet({action:'getSubtasks'}).then(function(r){state.subtasks=r||[];renderProjects();});});}
@@ -1528,6 +1722,8 @@ document.addEventListener('click',function(e){
   if(add){quickAddSub(add.getAttribute('data-addsub'));return;}
   var sn=e.target.closest('.snooze-opt[data-snooze]');
   if(sn){pickSnoozeDays(parseInt(sn.getAttribute('data-snooze')),sn);return;}
+  var bsn=e.target.closest('.snooze-opt[data-bsnooze]');
+  if(bsn){onBatchSnoozeOptClick(parseInt(bsn.getAttribute('data-bsnooze')));bsn.classList.add('sel');return;}
 });
 
 // ── GROCERY ───────────────────────────────────────────────
@@ -1688,6 +1884,11 @@ function populateAssetDropdown(){
   sel.innerHTML='<option value="">No asset link</option>';
   (state.assets||[]).forEach(function(a){var o=document.createElement('option');o.value=a.asset_id;o.textContent=a.name;sel.appendChild(o);});
 }
+function populateProjectDropdown(){
+  var sel=document.getElementById('t-proj-link');if(!sel)return;
+  sel.innerHTML='<option value="">No project link</option>';
+  (state.projects||[]).filter(function(p){return p.status!=='done';}).forEach(function(p){var o=document.createElement('option');o.value=p.project_id;o.textContent=p.name;sel.appendChild(o);});
+}
 
 // ── ACTIVITY TABS ─────────────────────────────────────────
 function setMetricsTab(tab){
@@ -1735,11 +1936,17 @@ function renderTrendChart(){
   if(!weeks.length){wrapEl.innerHTML='';return;}
   log.forEach(function(l){var dt=new Date(l.completed_at);if(dt<cutoff)return;var wi=Math.floor((dt-cutoff)/604800000);if(wi>=weeks.length)wi=weeks.length-1;if(wi<0)wi=0;if(l.completed_by==='Frankie')weeks[wi].f++;else if(l.completed_by==='Meredith')weeks[wi].m++;});
   var maxV=Math.max.apply(null,weeks.map(function(w){return Math.max(w.f,w.m);}));if(!maxV)maxV=1;
-  var W=280,H=90,px=14,py=10,n=weeks.length;
-  function pts(key){return weeks.map(function(w,i){var x=px+Math.round(i/(n-1||1)*(W-px*2));var y=H-py-Math.round(w[key]/maxV*(H-py*2));return x+','+y;}).join(' ');}
+  var W=280,H=100,px=28,py=12,n=weeks.length;
+  function pts(key){return weeks.map(function(w,i){var x=px+Math.round(i/(n-1||1)*(W-px-14));var y=H-py-Math.round(w[key]/maxV*(H-py*2));return x+','+y;}).join(' ');}
   var fPts=pts('f'),mPts=pts('m');
+  // Y-axis gridlines and labels (increments of 5)
+  var yMax=Math.ceil(maxV/5)*5;if(yMax<5)yMax=5;var yLines='';
+  for(var yv=0;yv<=yMax;yv+=5){var yy=H-py-Math.round(yv/maxV*(H-py*2));yLines+='<line x1="'+px+'" y1="'+yy+'" x2="'+(W-14)+'" y2="'+yy+'" stroke="var(--border)" stroke-width="0.5"/><text x="'+(px-4)+'" y="'+(yy+4)+'" font-size="7" fill="var(--text3)" text-anchor="end">'+yv+'</text>';}
+  // X-axis week labels (M/D)
+  var xLabels='';var step=Math.max(1,Math.ceil(n/6));
+  weeks.forEach(function(w,i){if(i%step!==0&&i!==n-1)return;var x=px+Math.round(i/(n-1||1)*(W-px-14));var m=w.start.getMonth()+1;var d=w.start.getDate();xLabels+='<text x="'+x+'" y="'+(H-1)+'" font-size="7" fill="var(--text3)" text-anchor="middle">'+m+'/'+d+'</text>';});
   var wopt=function(v,lbl){return '<option value="'+v+'"'+(tdays===v?' selected':'')+'>'+lbl+'</option>';};
-  wrapEl.innerHTML='<div class="trend-title">Completions over time <select id="trend-window" onchange="renderTrendChart()" style="font-size:11.5px;padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)">'+wopt(90,'90 days')+wopt(60,'60 days')+'</select></div><svg width="100%" viewBox="0 0 '+W+' '+H+'" style="overflow:visible"><polyline points="'+fPts+'" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><polyline points="'+mPts+'" fill="none" stroke="var(--yellow)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg><div class="trend-legend"><span><span class="trend-legend-dot" style="background:var(--purple)"></span>Frankie</span><span><span class="trend-legend-dot" style="background:var(--yellow)"></span>Meredith</span></div>';
+  wrapEl.innerHTML='<div class="trend-title">Completions over time <select id="trend-window" onchange="renderTrendChart()" style="font-size:11.5px;padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)">'+wopt(90,'90 days')+wopt(60,'60 days')+'</select></div><svg width="100%" viewBox="0 0 '+W+' '+H+'" style="overflow:visible">'+yLines+'<polyline points="'+fPts+'" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><polyline points="'+mPts+'" fill="none" stroke="var(--yellow)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'+xLabels+'</svg><div class="trend-legend"><span><span class="trend-legend-dot" style="background:var(--purple)"></span>Frankie</span><span><span class="trend-legend-dot" style="background:var(--yellow)"></span>Meredith</span></div>';
 }
 function renderHistory(){
   var search=((document.getElementById('history-search')||{}).value||'').toLowerCase();
@@ -1791,7 +1998,7 @@ function renderMetrics(){renderStats();}
 // ── MODALS ────────────────────────────────────────────────
 function openModal(id){document.getElementById(id).classList.remove('gone');}
 function closeModal(id){document.getElementById(id).classList.add('gone');}
-document.addEventListener('click',function(e){['modal-task','modal-project','modal-subtask','modal-grocery','modal-qs','modal-snooze','modal-mobile-menu','modal-edit-asset','modal-maint-note','modal-metric-drill','modal-reassign'].forEach(function(id){if(e.target.id===id)closeModal(id);});});
+document.addEventListener('click',function(e){['modal-task','modal-project','modal-subtask','modal-grocery','modal-qs','modal-snooze','modal-mobile-menu','modal-edit-asset','modal-maint-note','modal-metric-drill','modal-reassign','modal-batch-snooze','modal-type-info'].forEach(function(id){if(e.target.id===id)closeModal(id);});});
 
 // ── PROJECT / GROCERY ─────────────────────────────────────
 function openAddProject(){
