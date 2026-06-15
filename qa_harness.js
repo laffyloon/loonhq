@@ -56,6 +56,7 @@ global.document = {
   querySelectorAll: function(){ return []; },
   querySelector: function(){ return new FakeEl('div'); },
   addEventListener: function(){},
+  removeEventListener: function(){},
   body: new FakeEl('body'),
 };
 global.window = {};
@@ -230,16 +231,49 @@ run('toggleLegend', ()=>toggleLegend());
 run('handleComplete one_off', ()=>handleComplete(state.tasks[0]));
 run('handleComplete scheduled', ()=>handleComplete(state.tasks[2]));
 run('handleComplete sends due_date+freq', ()=>{ __posts.length=0; handleComplete(state.tasks[2]); const d=__posts[__posts.length-1].data; if(!('due_date' in d)) throw new Error('due_date missing'); if(!('sched_freq' in d)) throw new Error('sched_freq missing'); if(!('sched_interval' in d)) throw new Error('sched_interval missing'); });
-run('openSnooze', ()=>openSnooze(state.tasks[0]));
+run('openSnooze future task uses due_date base', ()=>{ snoozingTask=state.tasks[4]; openSnooze(state.tasks[4]); }); // t5 due_date=plus(15)
+run('openSnooze overdue task uses today base', ()=>{ openSnooze(state.tasks[7]); }); // t8 due_date=plus(-3)
 run('pickSnoozeDays sets pending', ()=>{ pickSnoozeDays(3, new FakeEl('button')); if(!pendingSnooze||pendingSnooze.value!==3||pendingSnooze.kind!=='days') throw new Error('pending not set'); });
-run('confirmSnooze days', ()=>{ __posts.length=0; snoozingTask=state.tasks[0]; pickSnoozeDays(7,new FakeEl('button')); confirmSnooze(); const b=__posts[__posts.length-1]; if(b.action!=='snoozeTask') throw new Error('not snoozeTask'); if(b.data.days!==7) throw new Error('days not 7'); });
+run('confirmSnooze days overdue -> base=today, sends until_date', ()=>{
+  __posts.length=0; snoozingTask=state.tasks[7]; // t8 overdue (plus(-3))
+  pickSnoozeDays(7,new FakeEl('button')); confirmSnooze();
+  const b=__posts[__posts.length-1];
+  if(b.action!=='snoozeTask') throw new Error('not snoozeTask');
+  if(!b.data.until_date) throw new Error('until_date missing');
+  // overdue: base=today, so until_date should be today+7
+  if(b.data.until_date!==plus(7)) throw new Error('expected '+plus(7)+', got '+b.data.until_date);
+});
+run('confirmSnooze days future -> base=due_date, sends until_date', ()=>{
+  __posts.length=0; snoozingTask=state.tasks[4]; // t5 due_date=plus(15)
+  pickSnoozeDays(3,new FakeEl('button')); confirmSnooze();
+  const b=__posts[__posts.length-1];
+  if(!b.data.until_date) throw new Error('until_date missing');
+  if(b.data.until_date!==plus(18)) throw new Error('expected '+plus(18)+', got '+b.data.until_date);
+});
 run('pickSnoozeDate + confirm', ()=>{ __posts.length=0; snoozingTask=state.tasks[0]; pickSnoozeDate('2026-07-01'); if(pendingSnooze.kind!=='until') throw new Error('kind not until'); confirmSnooze(); const b=__posts[__posts.length-1]; if(b.data.until_date!=='2026-07-01') throw new Error('until not set'); });
 run('enterBatch/toggleSelect/batchComplete', ()=>{ enterBatch(); toggleSelect('t1'); toggleSelect('t2'); batchCompleteSelected(); });
 
-// asset panel
-run('openAssetPanel furnace', ()=>openAssetPanel('a-furnace'));
+// asset panel — requires state.assets
+state.assets = [
+  {asset_id:'a-furnace', name:'Furnace', category:'Home systems', status:'amber', notes:'AHS Gold covered.', install_date:'2024-01-09', last_service_date:'', next_service_date:'', warranty_expiry:'', icon:'ti-flame', icon_bg:'#FEF3C7', icon_color:'#D97706'},
+  {asset_id:'a-wh', name:'Water heater', category:'Home systems', status:'red', notes:'Old.', install_date:'2015-03-01', last_service_date:'', next_service_date:'', warranty_expiry:'', icon:'ti-droplet', icon_bg:'#FEF2F2', icon_color:'#DC2626'},
+  {asset_id:'a-ac', name:'AC', category:'Home systems', status:'green', notes:'', install_date:'', last_service_date:'2025-05-05', next_service_date:'', warranty_expiry:''},
+];
+state.maintenance_logs = [
+  {log_id:'m1', asset_id:'a-furnace', date:'2024-01-09', note:'Furnace replaced by Tradewinds'},
+];
+run('renderAssets with state.assets', ()=>renderAssets());
+run('openAssetPanel furnace', ()=>{ openAssetPanel('a-furnace'); if(openAssetId!=='a-furnace') throw new Error('openAssetId not set'); });
 run('openAssetPanel water heater', ()=>openAssetPanel('a-wh'));
-run('closePanel', ()=>closePanel());
+run('openAssetPanel shows maintenance log', ()=>{ openAssetPanel('a-furnace'); const children=el('p-log').children; if(!children.length) throw new Error('no log items'); const html=children[0]._innerHTML; if(!html.includes('Tradewinds')) throw new Error('log entry missing: '+html); });
+run('closePanel', ()=>{ closePanel(); if(openAssetId!==null) throw new Error('openAssetId not cleared'); });
+run('openAddAsset', ()=>{ openAddAsset(); if(editingAsset!==null) throw new Error('editingAsset should be null'); });
+run('openEditAsset', ()=>{ openAssetId='a-furnace'; openEditAsset(); if(!editingAsset) throw new Error('editingAsset not set'); });
+run('submitEditAsset add -> addAsset', ()=>{ __posts.length=0; editingAsset=null; el('ea-name').value='New boiler'; el('ea-category').value='Home systems'; el('ea-status').value='green'; el('ea-install').value=''; el('ea-last-service').value=''; el('ea-next-service').value=''; el('ea-warranty').value=''; el('ea-notes').value=''; submitEditAsset(); if(__posts[__posts.length-1].action!=='addAsset') throw new Error('not addAsset'); });
+run('submitEditAsset edit -> updateAsset', ()=>{ __posts.length=0; editingAsset=state.assets[0]; el('ea-name').value='Furnace updated'; el('ea-category').value='Home systems'; el('ea-status').value='amber'; el('ea-install').value='2024-01-09'; el('ea-last-service').value=''; el('ea-next-service').value=''; el('ea-warranty').value=''; el('ea-notes').value='updated'; submitEditAsset(); if(__posts[__posts.length-1].action!=='updateAsset') throw new Error('not updateAsset'); });
+run('deleteEditingAsset -> deleteAsset', ()=>{ __posts.length=0; editingAsset=state.assets[0]; deleteEditingAsset(); if(__posts[__posts.length-1].action!=='deleteAsset') throw new Error('not deleteAsset'); });
+run('openAddMaintenanceNote', ()=>{ openAssetId='a-furnace'; openAddMaintenanceNote(); });
+run('submitMaintenanceNote -> addMaintenanceNote', ()=>{ __posts.length=0; openAssetId='a-furnace'; el('mn-note').value='Test note'; el('mn-date').value='2026-06-12'; submitMaintenanceNote(); if(__posts[__posts.length-1].action!=='addMaintenanceNote') throw new Error('not addMaintenanceNote'); });
 
 // grocery
 run('toggleGrocery', ()=>{ const e=new FakeEl('div'); e._classes=new Set(); e.querySelector=()=>new FakeEl('div'); toggleGrocery('g1', e); });
@@ -256,6 +290,23 @@ run('deleteEditingProject -> deleteProject', ()=>{ __posts.length=0; openEditPro
 run('openEditSubtask loads', ()=>{ openEditSubtask('s1'); if(!editingSubtask) throw new Error('not editing sub'); });
 run('submitSubtask -> updateSubtask', ()=>{ __posts.length=0; openEditSubtask('s1'); el('st-name').value='Edited sub'; submitSubtask(); if(__posts[__posts.length-1].action!=='updateSubtask') throw new Error('not updateSubtask'); });
 run('deleteEditingSubtask -> deleteSubtask', ()=>{ __posts.length=0; openEditSubtask('s1'); deleteEditingSubtask(); if(__posts[__posts.length-1].action!=='deleteSubtask') throw new Error('not deleteSubtask'); });
+
+// metric drill-down
+run('openMetricDrillDown all', ()=>{ el('metrics-window').value='30'; renderStats(); openMetricDrillDown(0); });
+run('openMetricDrillDown Frankie', ()=>openMetricDrillDown(1));
+run('openMetricDrillDown Meredith', ()=>openMetricDrillDown(2));
+run('renderTrendChart', ()=>{ el('metrics-window').value='30'; renderStats(); const w=el('metrics-trend'); if(w._innerHTML===undefined) throw new Error('trend not rendered'); });
+
+// history edit actions
+run('renderHistory with action buttons', ()=>{ el('history-search').value=''; renderHistory(); });
+run('openHistoryActionMenu', ()=>{ _histMenuLog=state.task_log[0]; openHistoryActionMenu({currentTarget:{getBoundingClientRect:()=>({right:100,bottom:50})}}, state.task_log[0]); closeTaskMenu(); });
+run('markIncomplete -> uncompleteTask', ()=>{ __posts.length=0; _histMenuLog=state.task_log[0]; markIncomplete(); if(__posts[__posts.length-1].action!=='uncompleteTask') throw new Error('not uncompleteTask'); });
+run('openReassignMenu opens modal', ()=>{ _histMenuLog=state.task_log[0]; openReassignMenu(); });
+run('submitReassign -> reassignCompletion', ()=>{ __posts.length=0; _histMenuLog=state.task_log[1]; submitReassign('Frankie'); if(__posts[__posts.length-1].action!=='reassignCompletion') throw new Error('not reassignCompletion'); if(__posts[__posts.length-1].data.completed_by!=='Frankie') throw new Error('wrong person'); });
+
+// populateAssetDropdown
+run('populateAssetDropdown', ()=>populateAssetDropdown());
+run('openAddTaskForAsset pre-fills asset', ()=>{ openAssetId='a-furnace'; openAddTaskForAsset(); if(el('t-asset-link').value!=='a-furnace') throw new Error('asset not pre-filled'); });
 
 // login flow
 run('selectUser', ()=>selectUser('Frankie', new FakeEl('button')));

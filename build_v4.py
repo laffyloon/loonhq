@@ -166,11 +166,11 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .tag-floating{background:var(--green-light);color:var(--green-dark)}
 .tag-sched-w{background:var(--purple-light);color:var(--purple)}
 .tag-sched-m{background:var(--blue-light);color:var(--blue)}
-.tag-interval{background:var(--amber-light);color:var(--amber)}
-.tag-proj{background:var(--amber-light);color:var(--amber)}
+.tag-interval{background:var(--slate-light);color:var(--slate)}
+.tag-proj{background:var(--green-light);color:var(--green-dark)}
 .due-tag{font-size:10.5px;padding:2px 8px;border-radius:20px;font-weight:600;white-space:nowrap;flex-shrink:0;display:inline-flex;align-items:center;gap:3px;background:#fff;border:1.5px solid}
 .due-tag i{font-size:12px}
-.due-overdue{border-color:var(--red);color:var(--red)}
+.due-overdue{border-color:var(--red);color:var(--red);background:var(--red-light);font-weight:600}
 .due-today{border-color:var(--red);color:var(--red)}
 .due-soon{border-color:var(--amber);color:var(--amber)}
 .due-week{border-color:var(--green);color:var(--green-dark)}
@@ -183,7 +183,8 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .who{width:22px;height:22px;border-radius:50%;font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center}
 .who-f{background:var(--purple-light);color:var(--purple)}
 .who-m{background:var(--yellow-light);color:var(--yellow)}
-.who-either{background:var(--terra-light);color:var(--terra)}
+.who-either{background:var(--bg2);color:var(--text3);border:1.5px dashed var(--border2)}
+.who-either::before{content:'F\00B7M';font-size:8px;font-weight:700;letter-spacing:-0.5px}
 .task-menu-btn{background:none;border:none;color:var(--text3);font-size:18px;padding:0 2px;cursor:pointer;line-height:1;align-self:center;flex-shrink:0}
 .task-menu-btn:hover{color:var(--text)}
 
@@ -384,6 +385,40 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
 .action-sheet-item:hover,.action-sheet-item:active{background:var(--bg)}
 .action-sheet-item i{font-size:18px;color:var(--text3)}
 .action-sheet-cancel{justify-content:center;color:var(--text2);font-size:13px}
+
+/* ASSET STATUS DOT */
+.status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;display:inline-block}
+.status-dot.green{background:#22C55E}.status-dot.amber{background:var(--amber)}.status-dot.red{background:var(--red)}
+.asset-status-bar{display:flex;align-items:center;gap:6px;padding:9px 13px;border-bottom:1px solid var(--border);background:var(--bg);font-size:12px}
+.asset-status-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:500;border:1px solid}
+.asset-status-pill.green{background:#F0FDF4;color:#16A34A;border-color:#86EFAC}
+.asset-status-pill.amber{background:var(--amber-light);color:var(--amber);border-color:#FCD34D}
+.asset-status-pill.red{background:var(--red-light);color:var(--red);border-color:#FCA5A5}
+
+/* STATUS PICK in asset modal */
+.status-pick{display:flex;gap:7px}
+.status-opt{padding:7px 14px;border-radius:20px;border:1.5px solid var(--border);font-size:12.5px;cursor:pointer;background:var(--bg);color:var(--text2);transition:all .15s;font-family:inherit;display:flex;align-items:center;gap:5px}
+.status-opt.sel-green{background:#F0FDF4;color:#16A34A;border-color:#86EFAC}
+.status-opt.sel-amber{background:var(--amber-light);color:var(--amber);border-color:#FCD34D}
+.status-opt.sel-red{background:var(--red-light);color:var(--red);border-color:#FCA5A5}
+
+/* TREND CHART */
+.trend-wrap{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px}
+.trend-title{font-size:12.5px;font-weight:500;margin-bottom:10px;display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.trend-legend{display:flex;gap:14px;margin-top:8px;font-size:11px;color:var(--text2)}
+.trend-legend-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px;flex-shrink:0}
+
+/* METRIC DRILL-DOWN */
+.drill-list{display:flex;flex-direction:column;gap:5px;max-height:55vh;overflow-y:auto}
+.drill-item{padding:9px 12px;background:var(--bg);border-radius:var(--radius-sm)}
+.drill-item-name{font-size:13px;font-weight:500}
+.drill-item-sub{font-size:11px;color:var(--text3);margin-top:2px}
+
+/* HISTORY ITEM with action button */
+.history-item{display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)}
+.history-item:last-child{border-bottom:none}
+.history-menu-btn{background:none;border:none;color:var(--text3);font-size:16px;padding:2px 4px;cursor:pointer;flex-shrink:0;line-height:1;align-self:center;border-radius:4px}
+.history-menu-btn:hover{background:var(--bg2);color:var(--text)}
 """
 
 # ─── HTML BODY ────────────────────────────────────────────────────────────────
@@ -522,7 +557,7 @@ def HTML_BODY(logo, icon):
     <!-- ASSETS -->
     <div id="v-assets" class="view gone">
       <div class="scroll">
-        <div class="sh"><div class="sl">Home systems</div></div>
+        <div class="sh"><div class="sl">Home systems</div><button class="btn" onclick="openAddAsset()"><i class="ti ti-plus"></i> Add asset</button></div>
         <div class="asset-rows" id="asset-systems"></div>
         <div class="sh" style="margin-top:8px"><div class="sl">Appliances</div></div>
         <div class="asset-rows" id="asset-appliances"></div>
@@ -547,6 +582,7 @@ def HTML_BODY(logo, icon):
         </div>
         <div class="metrics-grid" id="metrics-nums"></div>
         <div class="bar-wrap" id="metrics-bars"></div>
+        <div class="trend-wrap" id="metrics-trend"></div>
       </div>
       <div id="metrics-history-panel" class="scroll gone">
         <input class="history-search" id="history-search" placeholder="Search completions..." oninput="renderHistory()">
@@ -557,13 +593,29 @@ def HTML_BODY(logo, icon):
     <!-- ASSET PANEL -->
     <div id="panel" class="panel" style="display:none">
       <div class="ph">
-        <div><div class="ptitle" id="p-title"></div><div class="psub" id="p-sub"></div></div>
-        <button class="xbtn" onclick="closePanel()"><i class="ti ti-x"></i></button>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:7px"><div class="status-dot" id="p-status-dot"></div><div class="ptitle" id="p-title"></div></div>
+          <div class="psub" id="p-sub"></div>
+        </div>
+        <div style="display:flex;gap:5px;align-items:center">
+          <button class="btn btn-icon" onclick="openEditAsset()" title="Edit"><i class="ti ti-pencil"></i></button>
+          <button class="xbtn" onclick="closePanel()"><i class="ti ti-x"></i></button>
+        </div>
       </div>
       <div id="p-flags"></div>
       <div class="ig" id="p-grid"></div>
-      <div id="p-tasks-wrap" style="display:none"><div class="dlbl">Linked tasks</div><div id="p-tasks"></div></div>
-      <div><div class="dlbl">Maintenance log</div><div id="p-log"></div></div>
+      <div id="p-tasks-wrap" style="display:none">
+        <div class="dlbl" style="margin-bottom:6px">Linked tasks (<span id="p-tasks-count">0</span> active)</div>
+        <div id="p-tasks"></div>
+        <button class="btn" style="margin-top:8px;font-size:12px" onclick="openAddTaskForAsset()"><i class="ti ti-plus"></i> Add task</button>
+      </div>
+      <div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div class="dlbl">Maintenance log</div>
+          <button class="btn" style="font-size:11.5px" onclick="openAddMaintenanceNote()"><i class="ti ti-plus"></i> Add note</button>
+        </div>
+        <div id="p-log"></div>
+      </div>
     </div>
   </div>
 
@@ -669,6 +721,7 @@ def HTML_BODY(logo, icon):
       </div>
     </div>
     <div class="form-row"><div class="form-label">Notes (optional)</div><input class="form-input" id="t-notes" placeholder="Any extra context"></div>
+    <div class="form-row" id="t-asset-row"><div class="form-label">Link to asset (optional)</div><select class="form-input" id="t-asset-link"><option value="">No asset link</option></select></div>
     <div class="modal-actions">
       <button class="btn danger gone" id="task-delete-btn" onclick="deleteEditingTask()"><i class="ti ti-trash"></i></button>
       <button class="btn" onclick="closeModal('modal-task')">Cancel</button>
@@ -739,6 +792,7 @@ def HTML_BODY(logo, icon):
   <div class="modal">
     <div class="modal-title">Snooze</div>
     <div style="font-size:13px;color:var(--text2)" id="snooze-task-name"></div>
+    <div style="font-size:11.5px;color:var(--text3)" id="snooze-from"></div>
     <div class="snooze-opts">
       <button class="snooze-opt" data-snooze="1">1 day<span class="snooze-opt-sub" id="snooze-1">--</span></button>
       <button class="snooze-opt" data-snooze="3">3 days<span class="snooze-opt-sub" id="snooze-3">--</span></button>
@@ -746,7 +800,7 @@ def HTML_BODY(logo, icon):
       <button class="snooze-opt" data-snooze="14">2 weeks<span class="snooze-opt-sub" id="snooze-14">--</span></button>
     </div>
     <div class="form-row"><div class="form-label">Or pick a date</div><input class="form-input" id="snooze-date" type="date" onchange="pickSnoozeDate(this.value)"></div>
-    <div class="form-help">Snooze is measured from the task's due date.</div>
+    <div class="form-help">Overdue tasks snooze from today; future tasks from their due date.</div>
     <div class="modal-actions"><button class="btn" onclick="closeModal('modal-snooze')">Cancel</button><button class="btn primary" id="snooze-confirm-btn" onclick="confirmSnooze()" disabled>Snooze</button></div>
   </div>
 </div>
@@ -759,6 +813,79 @@ def HTML_BODY(logo, icon):
     <div class="action-sheet-item action-sheet-cancel" onclick="closeModal('modal-mobile-menu')">Cancel</div>
   </div>
 </div>
+
+<!-- EDIT / ADD ASSET -->
+<div class="modal-bg gone" id="modal-edit-asset">
+  <div class="modal">
+    <div class="modal-title" id="ea-modal-title">Add asset</div>
+    <div class="form-row"><div class="form-label">Name</div><input class="form-input" id="ea-name" placeholder="e.g. Water heater"></div>
+    <div class="form-row-h">
+      <div class="form-row"><div class="form-label">Category</div>
+        <select class="form-input" id="ea-category">
+          <option>Home systems</option><option>Appliances</option><option>Structure &amp; exterior</option>
+        </select>
+      </div>
+      <div class="form-row"><div class="form-label">Status</div>
+        <div class="status-pick">
+          <button class="status-opt sel-green" id="ea-s-green" onclick="pickAssetStatus('green')"><span class="status-dot green"></span>Good</button>
+          <button class="status-opt" id="ea-s-amber" onclick="pickAssetStatus('amber')"><span class="status-dot amber"></span>Note</button>
+          <button class="status-opt" id="ea-s-red" onclick="pickAssetStatus('red')"><span class="status-dot red"></span>Attn</button>
+        </div>
+        <input type="hidden" id="ea-status" value="green">
+      </div>
+    </div>
+    <div class="form-row-h">
+      <div class="form-row"><div class="form-label">Install date</div><input class="form-input" id="ea-install" type="date"></div>
+      <div class="form-row"><div class="form-label">Last service</div><input class="form-input" id="ea-last-service" type="date"></div>
+    </div>
+    <div class="form-row-h">
+      <div class="form-row"><div class="form-label">Next service</div><input class="form-input" id="ea-next-service" type="date"></div>
+      <div class="form-row"><div class="form-label">Warranty expires</div><input class="form-input" id="ea-warranty" type="date"></div>
+    </div>
+    <div class="form-row"><div class="form-label">Notes</div><textarea class="form-input" id="ea-notes" placeholder="Model, contractor, warranty details..."></textarea></div>
+    <div class="modal-actions">
+      <button class="btn danger gone" id="ea-delete-btn" onclick="deleteEditingAsset()"><i class="ti ti-trash"></i></button>
+      <button class="btn" onclick="closeModal('modal-edit-asset')">Cancel</button>
+      <button class="btn primary" onclick="submitEditAsset()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD MAINTENANCE NOTE -->
+<div class="modal-bg gone" id="modal-maint-note">
+  <div class="modal">
+    <div class="modal-title">Add maintenance note</div>
+    <div class="form-row"><div class="form-label">Date</div><input class="form-input" id="mn-date" type="date"></div>
+    <div class="form-row"><div class="form-label">Note</div><textarea class="form-input" id="mn-note" placeholder="What was done?"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('modal-maint-note')">Cancel</button>
+      <button class="btn primary" onclick="submitMaintenanceNote()">Add note</button>
+    </div>
+  </div>
+</div>
+
+<!-- METRIC DRILL-DOWN -->
+<div class="modal-bg gone" id="modal-metric-drill">
+  <div class="modal">
+    <div class="modal-title" id="drill-title">Completions</div>
+    <div class="drill-list" id="drill-list"></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal('modal-metric-drill')">Close</button></div>
+  </div>
+</div>
+
+<!-- REASSIGN COMPLETION -->
+<div class="modal-bg gone" id="modal-reassign">
+  <div class="modal" style="gap:12px">
+    <div class="modal-title">Reassign completion</div>
+    <div style="font-size:13px;color:var(--text2)" id="reassign-name"></div>
+    <div style="font-size:12.5px;color:var(--text2)">Who actually completed this?</div>
+    <div class="qs-btns">
+      <button class="qs-btn f" onclick="submitReassign('Frankie')"><div class="qa">F</div><div class="qn">Frankie</div></button>
+      <button class="qs-btn m" onclick="submitReassign('Meredith')"><div class="qa">M</div><div class="qn">Meredith</div></button>
+    </div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal('modal-reassign')">Cancel</button></div>
+  </div>
+</div>
 """
 
 # ─── JAVASCRIPT ───────────────────────────────────────────────────────────────
@@ -766,11 +893,13 @@ JS = """
 <script>
 var API='__API__';
 var PINS={Frankie:'225522',Meredith:'8627'};
-var state={tasks:[],projects:[],subtasks:[],grocery:[],assets:[],task_log:[]};
+var state={tasks:[],projects:[],subtasks:[],grocery:[],assets:[],task_log:[],maintenance_logs:[]};
 var currentUser=null,currentView='tasks',taskScope='household',taskTab='today';
 var loginUserPick=null,pickedOwner='',pickedScope='household',pickedUrgency='this_week';
 var selectMode=false,selectedTaskIds=new Set(),longPressTimer=null;
 var snoozingTask=null,editingTask=null,openMenu=null,metricsTab='stats',pendingSnooze=null,editingProject=null,editingSubtask=null;
+var editingAsset=null,openAssetId=null,pickedAssetStatus='green';
+var _drillAll=[],_drillF=[],_drillM=[],_histMenuLog=null;
 
 var STATIC_ASSETS=[
   {asset_id:'a-furnace',name:'Furnace (forced air, gas)',category:'Home systems',make_model:'Carrier 24ACC636',installed_date:'Jan 9, 2024',warranty_info:'10-yr parts, lifetime heat exchanger',contractor_name:'Nick @ Tradewinds',contractor_phone:'720-363-7600',notes:'AHS Gold covered this replacement. $100/visit, contract #601933098, starts Jul 2 2026.',flag:'Check AHS Gold before major repairs.',flag_type:'amber',icon:'ti-flame',icon_bg:'#FEF3C7',icon_color:'#D97706',linked_tasks:['Change HVAC filter (every 30 days)','Annual duct check (each fall)'],log:[{t:'Furnace replaced',m:'Jan 9, 2024 - Tradewinds (Nick)'},{t:'Duct cleaning (pre-install)',m:'Jan 2024',b:true}]},
@@ -831,7 +960,9 @@ function refreshData(silent){
   return apiGet({action:'getAllData'}).then(function(data){
     if(data.error){setSyncState('err','Sync failed');return;}
     state.tasks=data.tasks||[];state.projects=data.projects||[];state.subtasks=data.subtasks||[];
-    state.grocery=data.grocery||[];state.task_log=data.task_log||[];state.assets=STATIC_ASSETS;
+    state.grocery=data.grocery||[];state.task_log=data.task_log||[];
+    state.assets=(data.assets&&data.assets.length)?data.assets:STATIC_ASSETS;
+    state.maintenance_logs=data.maintenance_logs||[];
     var now=Date.now();
     state.grocery.forEach(function(g){if(g.status==='got'&&g.checked_at&&(now-new Date(g.checked_at).getTime())>43200000)apiPost({action:'deleteGrocery',data:{item_id:g.item_id}});});
     document.getElementById('loader').style.display='none';
@@ -840,7 +971,7 @@ function refreshData(silent){
   }).catch(function(){
     document.getElementById('loader').style.display='none';
     document.getElementById('v-'+currentView).classList.remove('gone');
-    state.assets=STATIC_ASSETS;renderAll();setSyncState('err','Offline');
+    state.assets=STATIC_ASSETS;state.maintenance_logs=[];renderAll();setSyncState('err','Offline');
   });
 }
 function setSyncState(s,msg){var d=document.getElementById('sync-dot'),l=document.getElementById('sync-lbl');if(d)d.className='sync-dot'+(s==='err'?' err':s==='loading'?' loading':'');if(l)l.textContent=msg;}
@@ -1172,10 +1303,20 @@ function handleComplete(t){
   setSyncState('loading','Logging...');
   apiPost({action:'completeTask',data:{task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_month:t.sched_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,due_date:t.due_date,end_date:t.end_date,completed_by:currentUser,scope:t.scope||'household',notes:''}}).then(function(){refreshData(true);}).catch(function(){setSyncState('error','Could not complete');refreshData(true);});
 }
+function snoozeBase(t){
+  var today0=new Date();today0.setHours(0,0,0,0);
+  var dueD=t.due_date?new Date(String(t.due_date).split('T')[0]+'T12:00:00'):null;
+  if(dueD)dueD.setHours(0,0,0,0);
+  return(!dueD||dueD<=today0)?new Date(today0):new Date(dueD);
+}
 function openSnooze(t){
   snoozingTask=t;pendingSnooze=null;document.getElementById('snooze-task-name').textContent=t.name;
-  var base=t.due_date?new Date(t.due_date):new Date();
-  [1,3,7,14].forEach(function(n){var d=new Date(base);d.setDate(d.getDate()+n);document.getElementById('snooze-'+n).textContent='\u2192 '+fmtDateShort(d.toISOString().split('T')[0]);});
+  var base=snoozeBase(t);
+  var today0=new Date();today0.setHours(0,0,0,0);
+  var isOverdue=t.due_date&&new Date(String(t.due_date).split('T')[0]+'T12:00:00')<today0;
+  var fromEl=document.getElementById('snooze-from');
+  if(fromEl)fromEl.textContent='Snoozed from: '+(isOverdue?'today (task is overdue)':fmtDateShort(t.due_date));
+  [1,3,7,14].forEach(function(n){var d=new Date(base);d.setDate(d.getDate()+n);var el=document.getElementById('snooze-'+n);if(el)el.textContent='\u2192 '+fmtDateShort(d.toISOString().split('T')[0]);});
   document.getElementById('snooze-date').value='';
   document.querySelectorAll('#modal-snooze .snooze-opt').forEach(function(b){b.classList.remove('sel');});
   document.getElementById('snooze-confirm-btn').disabled=true;
@@ -1198,8 +1339,10 @@ function confirmSnooze(){
   if(!snoozingTask||!pendingSnooze)return;
   setSyncState('loading','Snoozing...');
   var p=pendingSnooze;
-  var body=p.kind==='until'?{action:'snoozeTask',data:{task_id:snoozingTask.task_id,until_date:p.value}}:{action:'snoozeTask',data:{task_id:snoozingTask.task_id,due_date:snoozingTask.due_date,days:p.value}};
-  apiPost(body).then(function(){closeModal('modal-snooze');refreshData(true);});
+  var targetDate;
+  if(p.kind==='until'){targetDate=p.value;}
+  else{var base=snoozeBase(snoozingTask);var d=new Date(base);d.setDate(d.getDate()+p.value);targetDate=d.toISOString().split('T')[0];}
+  apiPost({action:'snoozeTask',data:{task_id:snoozingTask.task_id,until_date:targetDate}}).then(function(){closeModal('modal-snooze');refreshData(true);});
 }
 
 // ── TASK MENU ─────────────────────────────────────────────
@@ -1237,9 +1380,11 @@ function openAddTask(){
   document.getElementById('task-modal-title').textContent='Add task';
   document.getElementById('task-submit-btn').textContent='Add task';
   document.getElementById('task-delete-btn').classList.add('gone');
+  populateAssetDropdown();
   clearTaskForm();openModal('modal-task');
 }
 function openEditTask(t){
+  populateAssetDropdown();
   editingTask=t;pickedScope=t.scope||'household';pickedOwner=t.owner||'';pickedUrgency=t.urgency_window||'this_week';
   document.getElementById('task-modal-title').textContent='Edit task';
   document.getElementById('task-submit-btn').textContent='Save changes';
@@ -1248,6 +1393,7 @@ function openEditTask(t){
   document.getElementById('t-name').value=t.name||'';
   document.getElementById('t-type').value=t.type||'one_off';
   document.getElementById('t-notes').value=t.notes||'';
+  var asel=document.getElementById('t-asset-link');if(asel)asel.value=t.linked_asset_id||'';
   document.getElementById('owner-either').className='who-opt'+(pickedOwner===''?' sel-either':'');
   document.getElementById('owner-f').className='who-opt'+(pickedOwner==='Frankie'?' sel-f':'');
   document.getElementById('owner-m').className='who-opt'+(pickedOwner==='Meredith'?' sel-m':'');
@@ -1335,6 +1481,8 @@ function submitTask(){
     var days=parseInt(document.getElementById('t-days').value);if(!days||days<1){alert('Enter number of days');return;}
     data.recurrence_days=days;data.sched_start=document.getElementById('t-interval-start').value||'';data.end_date=document.getElementById('t-end-interval').value||'';data.due_date='';
   }
+  var assetSel=document.getElementById('t-asset-link');
+  data.linked_asset_id=assetSel?assetSel.value||'':'';
   closeModal('modal-task');setSyncState('loading','Saving...');
   if(editingTask){apiPost({action:'updateTask',data:{task_id:editingTask.task_id,updates:data}}).then(function(){refreshData(true);});}
   else{apiPost({action:'addTask',data:data}).then(function(){refreshData(true);});}
@@ -1430,30 +1578,116 @@ function toggleGrocery(id,el){var got=el.classList.contains('got');el.classList.
 function clearGrocery(){if(!confirm('Remove all checked items?'))return;state.grocery=state.grocery.filter(function(g){return g.status!=='got';});renderGrocery();apiPost({action:'clearChecked',data:{}});}
 
 // ── ASSETS ────────────────────────────────────────────────
+var STATUS_COLOR={green:'#22C55E',amber:'#C97A10',red:'#C84040'};
 function renderAssets(){
   var sys=document.getElementById('asset-systems'),app=document.getElementById('asset-appliances'),str=document.getElementById('asset-structure');
   sys.innerHTML='';app.innerHTML='';str.innerHTML='';
-  STATIC_ASSETS.forEach(function(a){
-    var badge=a.flag_type==='red'?'<div class="arow-flag red">attention</div>':a.flag_type==='amber'?'<div class="arow-flag">note</div>':'';
+  (state.assets||[]).forEach(function(a){
+    var linkedActive=(state.tasks||[]).filter(function(t){return t.linked_asset_id===a.asset_id&&t.status==='active';}).length;
+    var sc=STATUS_COLOR[a.status]||'var(--border2)';
+    var sub=a.last_service_date?'Last: '+fmtDate(a.last_service_date):(a.install_date?'Since '+fmtDate(a.install_date):'');
+    var badge=a.status==='red'?'<div class="arow-flag red">attention</div>':a.status==='amber'?'<div class="arow-flag">note</div>':'';
+    var taskBadge=linkedActive?'<div class="arow-flag">'+linkedActive+' task'+(linkedActive>1?'s':'')+'</div>':'';
     var row=document.createElement('div');row.className='arow';row.onclick=function(){openAssetPanel(a.asset_id);};
-    row.innerHTML='<div class="arow-icon" style="background:'+a.icon_bg+'"><i class="ti '+a.icon+'" style="color:'+a.icon_color+'"></i></div><div class="arow-info"><div class="arow-name">'+esc(a.name)+'</div><div class="arow-sub">'+esc(a.make_model)+' - '+esc(a.installed_date)+'</div></div>'+badge;
+    var iconBg=a.icon_bg||'var(--bg2)';var iconColor=a.icon_color||'var(--text3)';var icon=a.icon||'ti-tool';
+    row.innerHTML='<div style="width:8px;height:8px;border-radius:50%;background:'+sc+';flex-shrink:0;margin-right:2px;align-self:center"></div><div class="arow-icon" style="background:'+iconBg+'"><i class="ti '+esc(icon)+'" style="color:'+iconColor+'"></i></div><div class="arow-info"><div class="arow-name">'+esc(a.name)+'</div><div class="arow-sub">'+esc(sub)+'</div></div>'+(taskBadge||badge);
     if(a.category==='Home systems')sys.appendChild(row);else if(a.category==='Appliances')app.appendChild(row);else str.appendChild(row);
   });
 }
 function openAssetPanel(id){
-  var a=STATIC_ASSETS.find(function(x){return x.asset_id===id;});if(!a)return;
-  document.getElementById('p-title').textContent=a.name;document.getElementById('p-sub').textContent=a.category+' - '+a.make_model;
+  var a=(state.assets||[]).find(function(x){return x.asset_id===id;});if(!a)return;
+  openAssetId=id;
+  document.getElementById('p-title').textContent=a.name;
+  document.getElementById('p-sub').textContent=a.category;
+  var dot=document.getElementById('p-status-dot');if(dot){dot.style.background=STATUS_COLOR[a.status]||'var(--border2)';}
   var fh=document.getElementById('p-flags');fh.innerHTML='';
-  if(a.flag){var fd=document.createElement('div');fd.className='flag-box'+(a.flag_type==='red'?' red':'');fd.innerHTML='<i class="ti ti-alert-triangle"></i><span>'+esc(a.flag)+'</span>';fh.appendChild(fd);}
+  var today0=new Date();today0.setHours(0,0,0,0);
+  var linkedTasks=(state.tasks||[]).filter(function(t){return t.linked_asset_id===id&&t.status==='active';});
+  var hasOverdue=linkedTasks.some(function(t){if(!t.due_date)return false;var d=new Date(String(t.due_date).split('T')[0]+'T12:00:00');d.setHours(0,0,0,0);return d<today0;});
+  if(hasOverdue){var od=document.createElement('div');od.className='flag-box red';od.innerHTML='<i class="ti ti-alert-triangle"></i><span>Linked task overdue</span>';fh.appendChild(od);}
   var gh=document.getElementById('p-grid');gh.innerHTML='';
-  [['Make / model',a.make_model],['Installed',a.installed_date],['Warranty',a.warranty_info],['Contractor',a.contractor_name+(a.contractor_phone?' - '+a.contractor_phone:'')]].concat(a.notes?[['Notes',a.notes]]:[]).forEach(function(row){var d=document.createElement('div');d.className='ic'+(row[0]==='Notes'?' full':'');d.innerHTML='<div class="icl">'+row[0]+'</div><div class="icv">'+esc(row[1])+'</div>';gh.appendChild(d);});
+  var fields=[['Install date',fmtDate(a.install_date)],['Last service',fmtDate(a.last_service_date)],['Next service',fmtDate(a.next_service_date)],['Warranty expires',fmtDate(a.warranty_expiry)]];
+  if(a.notes)fields.push(['Notes',a.notes]);
+  fields.forEach(function(row){var d=document.createElement('div');d.className='ic'+(row[0]==='Notes'?' full':'');d.innerHTML='<div class="icl">'+row[0]+'</div><div class="icv">'+(row[1]?esc(row[1]):'<span style="color:var(--text3)">--</span>')+'</div>';gh.appendChild(d);});
   var tw=document.getElementById('p-tasks-wrap'),th=document.getElementById('p-tasks');th.innerHTML='';
-  if(a.linked_tasks&&a.linked_tasks.length){tw.style.display='block';a.linked_tasks.forEach(function(lt){var d=document.createElement('div');d.style.padding='4px 0';d.style.fontSize='12.5px';d.style.color='var(--text2)';d.innerHTML='<i class="ti ti-check" style="margin-right:5px;color:var(--text3)"></i>'+esc(lt);th.appendChild(d);});}else tw.style.display='none';
+  var tc=document.getElementById('p-tasks-count');if(tc)tc.textContent=linkedTasks.length;
+  if(linkedTasks.length){tw.style.display='block';linkedTasks.forEach(function(lt){var d=document.createElement('div');d.style.cssText='padding:4px 0;font-size:12.5px;color:var(--text2);display:flex;align-items:center;gap:5px';var dueStr=lt.due_date?fmtDateShort(lt.due_date):'';d.innerHTML='<i class="ti ti-check" style="color:var(--text3)"></i><span style="flex:1">'+esc(lt.name)+'</span>'+(dueStr?'<span style="font-size:11px;color:var(--text3)">'+dueStr+'</span>':'');th.appendChild(d);});}else{tw.style.display='block';}
   var lh=document.getElementById('p-log');lh.innerHTML='';
-  (a.log||[]).forEach(function(l){var d=document.createElement('div');d.className='log-item';d.innerHTML='<div class="ldot'+(l.b?' b':'')+'"></div><div><div class="lt">'+esc(l.t)+'</div><div class="lm">'+esc(l.m)+'</div></div>';lh.appendChild(d);});
+  var manualNotes=(state.maintenance_logs||[]).filter(function(l){return l.asset_id===id;}).sort(function(a,b){return new Date(b.date)-new Date(a.date);});
+  var completedLinked=(state.task_log||[]).filter(function(l){var t=(state.tasks||[]).find(function(x){return x.task_id===l.task_id;});return t&&t.linked_asset_id===id;}).sort(function(a,b){return new Date(b.completed_at)-new Date(a.completed_at);});
+  var combined=manualNotes.map(function(n){return{date:n.date,text:n.note,sub:'Note'};}).concat(completedLinked.map(function(l){return{date:l.completed_at,text:l.task_name,sub:'Completed by '+l.completed_by,blue:true};}));
+  combined.sort(function(a,b){return new Date(b.date)-new Date(a.date);});
+  if(!combined.length){lh.innerHTML='<div style="font-size:12px;color:var(--text3);padding:8px 0">No maintenance history yet.</div>';}
+  combined.forEach(function(l){var d=document.createElement('div');d.className='log-item';d.innerHTML='<div class="ldot'+(l.blue?' b':'')+'"></div><div><div class="lt">'+esc(l.text)+'</div><div class="lm">'+esc(l.sub)+' - '+fmtDate(l.date)+'</div></div>';lh.appendChild(d);});
   document.getElementById('panel').style.display='flex';
 }
-function closePanel(){document.getElementById('panel').style.display='none';}
+function closePanel(){document.getElementById('panel').style.display='none';openAssetId=null;}
+
+// ── ASSET CRUD ────────────────────────────────────────────
+function pickAssetStatus(s){
+  pickedAssetStatus=s;
+  document.getElementById('ea-status').value=s;
+  ['green','amber','red'].forEach(function(k){document.getElementById('ea-s-'+k).className='status-opt'+(k===s?' sel-'+k:'');});
+}
+function openEditAsset(){
+  var a=(state.assets||[]).find(function(x){return x.asset_id===openAssetId;});if(!a)return;
+  editingAsset=a;
+  document.getElementById('ea-modal-title').textContent='Edit asset';
+  document.getElementById('ea-name').value=a.name||'';
+  document.getElementById('ea-category').value=a.category||'Home systems';
+  pickAssetStatus(a.status||'green');
+  document.getElementById('ea-install').value=dval(a.install_date);
+  document.getElementById('ea-last-service').value=dval(a.last_service_date);
+  document.getElementById('ea-next-service').value=dval(a.next_service_date);
+  document.getElementById('ea-warranty').value=dval(a.warranty_expiry);
+  document.getElementById('ea-notes').value=a.notes||'';
+  document.getElementById('ea-delete-btn').classList.remove('gone');
+  openModal('modal-edit-asset');
+}
+function openAddAsset(){
+  editingAsset=null;
+  document.getElementById('ea-modal-title').textContent='Add asset';
+  ['ea-name','ea-notes'].forEach(function(id){document.getElementById(id).value='';});
+  ['ea-install','ea-last-service','ea-next-service','ea-warranty'].forEach(function(id){document.getElementById(id).value='';});
+  document.getElementById('ea-category').value='Home systems';
+  pickAssetStatus('green');
+  document.getElementById('ea-delete-btn').classList.add('gone');
+  openModal('modal-edit-asset');
+}
+function submitEditAsset(){
+  var name=document.getElementById('ea-name').value.trim();if(!name){alert('Name required');return;}
+  var data={name:name,category:document.getElementById('ea-category').value,status:document.getElementById('ea-status').value,install_date:document.getElementById('ea-install').value||'',last_service_date:document.getElementById('ea-last-service').value||'',next_service_date:document.getElementById('ea-next-service').value||'',warranty_expiry:document.getElementById('ea-warranty').value||'',notes:document.getElementById('ea-notes').value.trim()};
+  closeModal('modal-edit-asset');setSyncState('loading','Saving...');
+  if(editingAsset){var aid=editingAsset.asset_id;apiPost({action:'updateAsset',data:{asset_id:aid,updates:data}}).then(function(){refreshData(true).then(function(){if(aid){openAssetId=aid;openAssetPanel(aid);}});});}
+  else{apiPost({action:'addAsset',data:data}).then(function(){refreshData(true);});}
+}
+function deleteEditingAsset(){
+  if(!editingAsset)return;
+  if(!confirm('Delete this asset?'))return;
+  closeModal('modal-edit-asset');closePanel();setSyncState('loading','Deleting...');
+  apiPost({action:'deleteAsset',data:{asset_id:editingAsset.asset_id}}).then(function(){refreshData(true);});
+}
+function openAddMaintenanceNote(){
+  document.getElementById('mn-note').value='';
+  document.getElementById('mn-date').value=new Date().toISOString().split('T')[0];
+  openModal('modal-maint-note');
+}
+function submitMaintenanceNote(){
+  var note=document.getElementById('mn-note').value.trim();if(!note){alert('Note required');return;}
+  var date=document.getElementById('mn-date').value||new Date().toISOString().split('T')[0];
+  closeModal('modal-maint-note');setSyncState('loading','Saving...');
+  var aid=openAssetId;
+  apiPost({action:'addMaintenanceNote',data:{asset_id:aid,date:date,note:note}}).then(function(){refreshData(true).then(function(){if(aid){openAssetId=aid;openAssetPanel(aid);}});});
+}
+function openAddTaskForAsset(){
+  openAddTask();
+  var sel=document.getElementById('t-asset-link');if(sel&&openAssetId)sel.value=openAssetId;
+}
+function populateAssetDropdown(){
+  var sel=document.getElementById('t-asset-link');if(!sel)return;
+  sel.innerHTML='<option value="">No asset link</option>';
+  (state.assets||[]).forEach(function(a){var o=document.createElement('option');o.value=a.asset_id;o.textContent=a.name;sel.appendChild(o);});
+}
 
 // ── ACTIVITY TABS ─────────────────────────────────────────
 function setMetricsTab(tab){
@@ -1468,13 +1702,44 @@ function renderStats(){
   var log=(state.task_log||[]).filter(function(l){return !l.scope||l.scope==='household';});
   var cutoff=new Date();cutoff.setDate(cutoff.getDate()-days);
   var filtered=log.filter(function(l){return new Date(l.completed_at)>=cutoff;});
-  var byF=filtered.filter(function(l){return l.completed_by==='Frankie';}).length;
-  var byM=filtered.filter(function(l){return l.completed_by==='Meredith';}).length;
+  _drillAll=filtered;
+  _drillF=filtered.filter(function(l){return l.completed_by==='Frankie';});
+  _drillM=filtered.filter(function(l){return l.completed_by==='Meredith';});
   var nums=document.getElementById('metrics-nums');
-  if(nums)nums.innerHTML=metCard(filtered.length,'Total completed')+metCard(byF,'By Frankie')+metCard(byM,'By Meredith');
-  var maxBar=Math.max(byF,byM,1);
+  if(nums)nums.innerHTML=metCard(_drillAll.length,'Total completed',0)+metCard(_drillF.length,'By Frankie',1)+metCard(_drillM.length,'By Meredith',2);
+  var maxBar=Math.max(_drillF.length,_drillM.length,1);
   var bars=document.getElementById('metrics-bars');
-  if(bars)bars.innerHTML='<div class="bar-title">Completions by person</div><div class="bar-row"><div class="bar-lbl">Frankie</div><div class="bar-track"><div class="bar-fill pur" style="width:'+Math.round(byF/maxBar*100)+'%"></div></div><div class="bar-val">'+byF+'</div></div><div class="bar-row"><div class="bar-lbl">Meredith</div><div class="bar-track"><div class="bar-fill yel" style="width:'+Math.round(byM/maxBar*100)+'%"></div></div><div class="bar-val">'+byM+'</div></div>';
+  if(bars)bars.innerHTML='<div class="bar-title">Completions by person</div><div class="bar-row"><div class="bar-lbl">Frankie</div><div class="bar-track"><div class="bar-fill pur" style="width:'+Math.round(_drillF.length/maxBar*100)+'%"></div></div><div class="bar-val">'+_drillF.length+'</div></div><div class="bar-row"><div class="bar-lbl">Meredith</div><div class="bar-track"><div class="bar-fill yel" style="width:'+Math.round(_drillM.length/maxBar*100)+'%"></div></div><div class="bar-val">'+_drillM.length+'</div></div>';
+  renderTrendChart();
+}
+function metCard(n,l,idx){return '<div class="metrics-card" style="cursor:pointer" onclick="openMetricDrillDown('+idx+')"><div class="metrics-num">'+(n||0)+'</div><div class="metrics-lbl">'+l+'</div></div>';}
+function openMetricDrillDown(idx){
+  var titles=['Total completed','By Frankie','By Meredith'];
+  var title=titles[idx]||'Completions';
+  var items=idx===1?_drillF:idx===2?_drillM:_drillAll;
+  document.getElementById('drill-title').textContent=title;
+  var listEl=document.getElementById('drill-list');listEl.innerHTML='';
+  var sorted=items.slice().sort(function(a,b){return new Date(b.completed_at)-new Date(a.completed_at);});
+  if(!sorted.length){listEl.innerHTML='<div style="font-size:12.5px;color:var(--text3);text-align:center;padding:20px">No completions in this window.</div>';openModal('modal-metric-drill');return;}
+  sorted.forEach(function(l){var d=document.createElement('div');d.className='drill-item';d.innerHTML='<div class="drill-item-name">'+esc(l.task_name)+'</div><div class="drill-item-sub">'+esc(l.completed_by)+' &middot; '+fmtDate(l.completed_at)+'</div>';listEl.appendChild(d);});
+  openModal('modal-metric-drill');
+}
+function renderTrendChart(){
+  var wrapEl=document.getElementById('metrics-trend');if(!wrapEl)return;
+  var tdays=parseInt(((document.getElementById('trend-window')||{}).value)||'90')||90;
+  var log=(state.task_log||[]).filter(function(l){return !l.scope||l.scope==='household';});
+  var now=new Date();now.setHours(0,0,0,0);
+  var cutoff=new Date(now);cutoff.setDate(cutoff.getDate()-tdays);
+  var weeks=[];var d=new Date(cutoff);
+  while(d<=now){weeks.push({start:new Date(d),f:0,m:0});d=new Date(d);d.setDate(d.getDate()+7);}
+  if(!weeks.length){wrapEl.innerHTML='';return;}
+  log.forEach(function(l){var dt=new Date(l.completed_at);if(dt<cutoff)return;var wi=Math.floor((dt-cutoff)/604800000);if(wi>=weeks.length)wi=weeks.length-1;if(wi<0)wi=0;if(l.completed_by==='Frankie')weeks[wi].f++;else if(l.completed_by==='Meredith')weeks[wi].m++;});
+  var maxV=Math.max.apply(null,weeks.map(function(w){return Math.max(w.f,w.m);}));if(!maxV)maxV=1;
+  var W=280,H=90,px=14,py=10,n=weeks.length;
+  function pts(key){return weeks.map(function(w,i){var x=px+Math.round(i/(n-1||1)*(W-px*2));var y=H-py-Math.round(w[key]/maxV*(H-py*2));return x+','+y;}).join(' ');}
+  var fPts=pts('f'),mPts=pts('m');
+  var wopt=function(v,lbl){return '<option value="'+v+'"'+(tdays===v?' selected':'')+'>'+lbl+'</option>';};
+  wrapEl.innerHTML='<div class="trend-title">Completions over time <select id="trend-window" onchange="renderTrendChart()" style="font-size:11.5px;padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)">'+wopt(90,'90 days')+wopt(60,'60 days')+'</select></div><svg width="100%" viewBox="0 0 '+W+' '+H+'" style="overflow:visible"><polyline points="'+fPts+'" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><polyline points="'+mPts+'" fill="none" stroke="var(--yellow)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg><div class="trend-legend"><span><span class="trend-legend-dot" style="background:var(--purple)"></span>Frankie</span><span><span class="trend-legend-dot" style="background:var(--yellow)"></span>Meredith</span></div>';
 }
 function renderHistory(){
   var search=((document.getElementById('history-search')||{}).value||'').toLowerCase();
@@ -1483,21 +1748,50 @@ function renderHistory(){
     if(search&&!((l.task_name||'').toLowerCase().includes(search)||(l.completed_by||'').toLowerCase().includes(search)))return false;
     return true;
   }).slice().sort(function(a,b){return new Date(b.completed_at)-new Date(a.completed_at);});
-  var el=document.getElementById('history-list');if(!el)return;el.innerHTML='';
-  if(!log.length){el.innerHTML='<div style="font-size:12.5px;color:var(--text3);padding:20px 0;text-align:center">No completions found.</div>';return;}
+  var listEl=document.getElementById('history-list');if(!listEl)return;listEl.innerHTML='';
+  if(!log.length){listEl.innerHTML='<div style="font-size:12.5px;color:var(--text3);padding:20px 0;text-align:center">No completions found.</div>';return;}
   log.forEach(function(l){
-    var d=document.createElement('div');d.className='log-item';
+    var d=document.createElement('div');d.className='history-item';
+    var mb=document.createElement('button');mb.className='history-menu-btn';mb.innerHTML='<i class="ti ti-dots-vertical"></i>';
+    mb.addEventListener('click',function(e){e.stopPropagation();openHistoryActionMenu(e,l);});
     d.innerHTML='<div class="ldot '+(l.completed_by==='Frankie'?'':'b')+'"></div><div style="flex:1;min-width:0"><div class="lt">'+esc(l.task_name)+'</div><div class="lm">'+esc(l.completed_by)+' - '+fmtDate(l.completed_at)+'</div></div>';
-    el.appendChild(d);
+    d.appendChild(mb);
+    listEl.appendChild(d);
   });
 }
+function openHistoryActionMenu(e,l){
+  closeTaskMenu();
+  _histMenuLog=l;
+  var m=document.createElement('div');m.className='task-menu';
+  m.innerHTML='<button class="task-menu-item" onclick="markIncomplete()"><i class="ti ti-arrow-back-up"></i> Mark as incomplete</button><button class="task-menu-item" onclick="openReassignMenu()"><i class="ti ti-user-check"></i> Reassign to...</button>';
+  document.body.appendChild(m);
+  var r=e.currentTarget.getBoundingClientRect();
+  var left=r.right-170;if(left<8)left=8;
+  m.style.left=left+'px';m.style.top=(r.bottom+4)+'px';
+  openMenu=m;setTimeout(function(){document.addEventListener('click',closeTaskMenuOnce);},10);
+}
+function markIncomplete(){
+  if(!_histMenuLog)return;closeTaskMenu();
+  if(!confirm('Resurface "'+_histMenuLog.task_name+'" as an active task?'))return;
+  setSyncState('loading','Restoring...');
+  apiPost({action:'uncompleteTask',data:{log_id:_histMenuLog.log_id,task_id:_histMenuLog.task_id}}).then(function(){refreshData(true);});
+}
+function openReassignMenu(){
+  if(!_histMenuLog)return;closeTaskMenu();
+  document.getElementById('reassign-name').textContent=_histMenuLog.task_name;
+  openModal('modal-reassign');
+}
+function submitReassign(person){
+  if(!_histMenuLog)return;
+  closeModal('modal-reassign');setSyncState('loading','Updating...');
+  apiPost({action:'reassignCompletion',data:{log_id:_histMenuLog.log_id,completed_by:person}}).then(function(){refreshData(true);});
+}
 function renderMetrics(){renderStats();}
-function metCard(n,l){return '<div class="metrics-card"><div class="metrics-num">'+(n||0)+'</div><div class="metrics-lbl">'+l+'</div></div>';}
 
 // ── MODALS ────────────────────────────────────────────────
 function openModal(id){document.getElementById(id).classList.remove('gone');}
 function closeModal(id){document.getElementById(id).classList.add('gone');}
-document.addEventListener('click',function(e){['modal-task','modal-project','modal-subtask','modal-grocery','modal-qs','modal-snooze','modal-mobile-menu'].forEach(function(id){if(e.target.id===id)closeModal(id);});});
+document.addEventListener('click',function(e){['modal-task','modal-project','modal-subtask','modal-grocery','modal-qs','modal-snooze','modal-mobile-menu','modal-edit-asset','modal-maint-note','modal-metric-drill','modal-reassign'].forEach(function(id){if(e.target.id===id)closeModal(id);});});
 
 // ── PROJECT / GROCERY ─────────────────────────────────────
 function openAddProject(){
