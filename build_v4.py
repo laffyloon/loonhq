@@ -291,6 +291,12 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
 .groc-add::placeholder{color:var(--text3)}
 .groc-empty{font-size:12.5px;color:var(--text3);padding:3px 0}
 .gi.got{color:var(--text3);text-decoration:line-through}
+.gi.dragging{opacity:.4}
+.gi.drag-over{border-top:2px solid var(--green)}
+.groc-text{flex:1;min-width:0}
+.groc-drag{color:var(--text3);font-size:16px;cursor:grab;flex-shrink:0;padding:0 2px;touch-action:none}
+.groc-drag:active{cursor:grabbing}
+.groc-edit-inp{flex:1;border:1px solid var(--green);border-radius:4px;padding:3px 6px;font-size:14px;font-family:inherit;background:var(--bg);color:var(--text);outline:none}
 .gbox{width:20px;height:20px;border-radius:5px;border:1.5px solid var(--border2);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s}
 .gbox.done{background:var(--green);border-color:var(--green)}
 .gbox.done::after{content:'\\2713';font-size:11px;color:#fff;font-weight:700}
@@ -327,6 +333,20 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
 .flag-box{background:var(--amber-light);border:1px solid #F0C86A;border-radius:var(--radius-sm);padding:9px 11px;font-size:12px;color:var(--amber);display:flex;gap:7px}
 .flag-box.red{background:var(--red-light);border-color:#F0A0A0;color:var(--red)}
 .flag-box i{font-size:15px;flex-shrink:0;margin-top:1px}
+.panel-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:4px;flex-shrink:0}
+.panel-tab{flex:1;background:none;border:none;border-bottom:2.5px solid transparent;padding:8px 4px;font-size:12px;font-weight:500;color:var(--text3);cursor:pointer;font-family:inherit;transition:all .12s}
+.panel-tab.on{color:var(--green);border-bottom-color:var(--green)}
+.panel-tab-content{display:flex;flex-direction:column;gap:10px;overflow-y:auto;flex:1}
+.contr-list{display:flex;flex-direction:column;gap:7px}
+.contr-item{background:var(--bg);border-radius:var(--radius-sm);padding:9px 11px;font-size:12.5px}
+.contr-name{font-weight:500;margin-bottom:2px}
+.contr-meta{font-size:11px;color:var(--text3)}
+.contr-phone{color:var(--blue);text-decoration:none;font-size:11.5px}
+.ptask-row{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:var(--text2)}
+.ptask-name{flex:1;min-width:0;word-break:break-word;font-size:13px}
+.ptask-due{font-size:11px;color:var(--text3);white-space:nowrap;flex-shrink:0}
+.manual-link{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--blue);text-decoration:none}
+.manual-link:hover{text-decoration:underline}
 
 /* ACTIVITY */
 .metrics-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;text-align:center}
@@ -620,18 +640,33 @@ def HTML_BODY(logo, icon):
         </div>
       </div>
       <div id="p-flags"></div>
-      <div class="ig" id="p-grid"></div>
-      <div id="p-tasks-wrap" style="display:none">
-        <div class="dlbl" style="margin-bottom:6px">Linked tasks (<span id="p-tasks-count">0</span> active)</div>
-        <div id="p-tasks"></div>
-        <button class="btn" style="margin-top:8px;font-size:12px" onclick="openAddTaskForAsset()"><i class="ti ti-plus"></i> Add task</button>
+      <div class="panel-tabs">
+        <button class="panel-tab on" id="ptab-info" onclick="setPanelTab('info')">Main Info</button>
+        <button class="panel-tab" id="ptab-log" onclick="setPanelTab('log')">Log</button>
+        <button class="panel-tab" id="ptab-tasks" onclick="setPanelTab('tasks')">Tasks</button>
       </div>
-      <div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <div class="panel-tab-content" id="panel-tab-info">
+        <div class="ig" id="p-grid"></div>
+        <div id="p-manual-wrap" style="display:none">
+          <div class="dlbl" style="margin-bottom:4px">Documentation</div>
+          <a id="p-manual-link" class="manual-link" href="#" target="_blank" rel="noopener"><i class="ti ti-file-text"></i><span id="p-manual-text"></span></a>
+        </div>
+        <div id="p-contractors-wrap" style="display:none">
+          <div class="dlbl" style="margin-bottom:6px">Contractors</div>
+          <div class="contr-list" id="p-contractors"></div>
+        </div>
+      </div>
+      <div class="panel-tab-content gone" id="panel-tab-log">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
           <div class="dlbl">Maintenance log</div>
           <button class="btn" style="font-size:11.5px" onclick="openAddMaintenanceNote()"><i class="ti ti-plus"></i> Add note</button>
         </div>
         <div id="p-log"></div>
+      </div>
+      <div class="panel-tab-content gone" id="panel-tab-tasks">
+        <div class="dlbl" style="margin-bottom:4px">Linked tasks (<span id="p-tasks-count">0</span> active)</div>
+        <div id="p-tasks"></div>
+        <button class="btn" style="margin-top:8px;font-size:12px" onclick="openAddTaskForAsset()"><i class="ti ti-plus"></i> Add task</button>
       </div>
     </div>
   </div>
@@ -775,7 +810,7 @@ def HTML_BODY(logo, icon):
     <div class="form-row"><div class="form-label">Description</div><input class="form-input" id="p-desc" placeholder="What&rsquo;s this about?"></div>
     <div class="form-row-h">
       <div class="form-row"><div class="form-label">Status</div><select class="form-input" id="p-status"><option value="active">Active</option><option value="planned">Planned</option><option value="done">Done</option></select></div>
-      <div class="form-row"><div class="form-label">Target date</div><input class="form-input" id="p-target" type="date"></div>
+      <div class="form-row"><div class="form-label">Target completion date</div><input class="form-input" id="p-target" type="date"></div>
     </div>
     <div class="modal-actions">
       <button class="btn danger gone" id="project-delete-btn" onclick="deleteEditingProject()"><i class="ti ti-trash"></i></button>
@@ -879,7 +914,15 @@ def HTML_BODY(logo, icon):
       <div class="form-row"><div class="form-label">Next service</div><input class="form-input" id="ea-next-service" type="date"></div>
       <div class="form-row"><div class="form-label">Warranty expires</div><input class="form-input" id="ea-warranty" type="date"></div>
     </div>
+    <div class="form-row-h">
+      <div class="form-row"><div class="form-label">Purchase price</div><input class="form-input" id="ea-price" placeholder="e.g. $2,400"></div>
+      <div class="form-row"><div class="form-label">Manual / docs URL</div><input class="form-input" id="ea-manual-url" type="url" placeholder="https://..."></div>
+    </div>
     <div class="form-row"><div class="form-label">Notes</div><textarea class="form-input" id="ea-notes" placeholder="Model, contractor, warranty details..."></textarea></div>
+    <div class="form-row">
+      <div class="form-label" style="display:flex;align-items:center;justify-content:space-between">Contractors <button type="button" class="btn" style="padding:2px 7px;font-size:11px" onclick="addContractorField()"><i class="ti ti-plus"></i> Add</button></div>
+      <div id="ea-contractors-list" style="display:flex;flex-direction:column;gap:6px;margin-top:4px"></div>
+    </div>
     <div class="modal-actions">
       <button class="btn danger gone" id="ea-delete-btn" onclick="deleteEditingAsset()"><i class="ti ti-trash"></i></button>
       <button class="btn" onclick="closeModal('modal-edit-asset')">Cancel</button>
@@ -969,23 +1012,23 @@ var currentUser=null,currentView='tasks',taskScope='household',taskTab='today';
 var loginUserPick=null,pickedOwner='',pickedScope='household',pickedUrgency='this_week';
 var selectMode=false,selectedTaskIds=new Set(),longPressTimer=null;
 var snoozingTask=null,editingTask=null,openMenu=null,metricsTab='stats',pendingSnooze=null,editingProject=null,editingSubtask=null;
-var editingAsset=null,openAssetId=null,pickedAssetStatus='green';
+var editingAsset=null,openAssetId=null,pickedAssetStatus='green',panelTab='info';
 var _drillAll=[],_drillF=[],_drillM=[],_histMenuLog=null;
 var taskSearch='',searchVisible=false,pendingBatchSnooze=null;
 
 var STATIC_ASSETS=[
-  {asset_id:'a-furnace',name:'Furnace (forced air, gas)',category:'Home systems',make_model:'Carrier 24ACC636',installed_date:'Jan 9, 2024',warranty_info:'10-yr parts, lifetime heat exchanger',contractor_name:'Nick @ Tradewinds',contractor_phone:'720-363-7600',notes:'AHS Gold covered this replacement. $100/visit, contract #601933098, starts Jul 2 2026.',flag:'Check AHS Gold before major repairs.',flag_type:'amber',icon:'ti-flame',icon_bg:'#FEF3C7',icon_color:'#D97706',linked_tasks:['Change HVAC filter (every 30 days)','Annual duct check (each fall)'],log:[{t:'Furnace replaced',m:'Jan 9, 2024 - Tradewinds (Nick)'},{t:'Duct cleaning (pre-install)',m:'Jan 2024',b:true}]},
-  {asset_id:'a-ac',name:'Air conditioner',category:'Home systems',make_model:'Goodman GSX13 1.5-ton',installed_date:'Jul 19, 2022',warranty_info:'10-yr parts / annual visit required',contractor_name:'Jose @ Fix-It Now',contractor_phone:'303-657-2421',notes:'Last service May 5, 2025.',flag:'Annual service required - last May 5 2025.',flag_type:'amber',icon:'ti-wind',icon_bg:'#DBEAFE',icon_color:'#2563EB',linked_tasks:['Schedule spring AC tune-up'],log:[{t:'AC tune-up',m:'May 5, 2025 - Fix-It Now (Jose)'},{t:'Coolant topped off',m:'May 2023',b:true}]},
-  {asset_id:'a-radon',name:'Radon mitigation system',category:'Home systems',make_model:'RadonAway fan',installed_date:'Apr 5, 2022',warranty_info:'7-yr transferable, exp. ~Apr 2029',contractor_name:'Chris Fisher @ 5280 Radon',contractor_phone:'720-695-6677',notes:'Re-test every 3-4 years.',flag:'',flag_type:'',icon:'ti-ripple',icon_bg:'#F0FDF4',icon_color:'#16A34A',linked_tasks:['Check fan running (every 2 months)'],log:[{t:'System installed',m:'Apr 5, 2022',b:true}]},
-  {asset_id:'a-wh',name:'Water heater',category:'Home systems',make_model:'Gas, 40-gallon',installed_date:'Mar 2015',warranty_info:'Unknown',contractor_name:'--',contractor_phone:'',notes:'~10 years old. Approaching end of lifespan.',flag:'Past expected lifespan - budget for replacement.',flag_type:'red',icon:'ti-droplet',icon_bg:'#FEF2F2',icon_color:'#DC2626',linked_tasks:[],log:[{t:'Purchased home',m:'2022'}]},
-  {asset_id:'a-solar',name:'Solar + Powerwall 3',category:'Home systems',make_model:'Namaste Solar + Tesla Powerwall 3',installed_date:'Apr 2024',warranty_info:'See Tesla & Namaste docs',contractor_name:'Namaste Solar',contractor_phone:'',notes:'Backup reserve at 15%. EVSE included.',flag:'',flag_type:'',icon:'ti-solar-panel',icon_bg:'#EFF6FF',icon_color:'#3B82F6',linked_tasks:['Check Powerwall reserve (every 90 days)'],log:[{t:'Reserve adjusted to 15%',m:'Frankie - 2025'},{t:'System activated',m:'Apr 2024',b:true}]},
-  {asset_id:'a-dishwasher',name:'Dishwasher',category:'Appliances',make_model:'Bosch SHE3AR76UC/28',installed_date:'Jul 2023',warranty_info:'Bosch standard',contractor_name:'Ben Myers',contractor_phone:'',notes:'FD030501376.',flag:'',flag_type:'',icon:'ti-wash-machine',icon_bg:'#F5F3FF',icon_color:'#7C3AED',linked_tasks:['Run cleaning cycle (every 90 days)'],log:[{t:'Installed',m:'Jul 2023'}]},
-  {asset_id:'a-washer',name:'Washer',category:'Appliances',make_model:'LG top-loader impeller, ~2018',installed_date:'~2018',warranty_info:'Unknown',contractor_name:'--',contractor_phone:'',notes:'No door gasket. Affresh monthly. Linked to main line buildup/sewer backup.',flag:'No gasket - clean drum regularly. Soft buildup in main line - scope pending.',flag_type:'amber',icon:'ti-wash',icon_bg:'#F0FDF4',icon_color:'#16A34A',linked_tasks:['Run Affresh cycle (every 30 days)'],log:[{t:'Purchased with home',m:'2022'},{t:'Sewer backup event',m:'2025',b:true}]},
-  {asset_id:'a-dryer',name:'Dryer',category:'Appliances',make_model:'Whirlpool, ~2017',installed_date:'~2017',warranty_info:'Unknown',contractor_name:'--',contractor_phone:'',notes:'Vent last cleaned Mar 2022. Schedule after basement remodel.',flag:'Vent overdue - schedule after basement remodel.',flag_type:'red',icon:'ti-wind',icon_bg:'#FFF7ED',icon_color:'#EA580C',linked_tasks:['Clean dryer vent (post-remodel)'],log:[{t:'Dryer vent cleaned',m:'Mar 2022'}]},
-  {asset_id:'a-roof',name:'Roof',category:'Structure & exterior',make_model:'Comp shingle',installed_date:'May 23, 2017',warranty_info:'Transferable - unverified',contractor_name:'--',contractor_phone:'',notes:'~8 years old.',flag:'Warranty status unverified.',flag_type:'amber',icon:'ti-home',icon_bg:'#F8FAFC',icon_color:'#475569',linked_tasks:['Annual roof check (each fall)'],log:[{t:'Roof replaced',m:'May 2017'}]},
-  {asset_id:'a-fence',name:'Fence, gate + operator',category:'Structure & exterior',make_model:'Denco / Liftmaster LA400',installed_date:'May 16, 2024',warranty_info:'4-yr workmanship through May 2028',contractor_name:'Preston Garcia @ Denco',contractor_phone:'303-223-6902',notes:'MyQ enabled.',flag:'',flag_type:'',icon:'ti-fence',icon_bg:'#FEF9C3',icon_color:'#CA8A04',linked_tasks:['Test gate safety eyes (every 6 months)'],log:[{t:'Installed',m:'May 16, 2024'}]},
-  {asset_id:'a-insulation',name:'Attic insulation',category:'Structure & exterior',make_model:'R-60 blown fiberglass',installed_date:'~Apr 2025',warranty_info:'25-year warranty',contractor_name:'REenergizeCO',contractor_phone:'303-227-1000',notes:'Sealed + insulated to R-60.',flag:'',flag_type:'',icon:'ti-layers',icon_bg:'#F0FDF4',icon_color:'#16A34A',linked_tasks:[],log:[{t:'Completed',m:'~Apr 2025'}]},
-  {asset_id:'a-garage',name:'Garage door openers',category:'Structure & exterior',make_model:'2x Skylink belt-drive',installed_date:'Jan 8, 2024',warranty_info:'1-yr (expired)',contractor_name:'Colorado Overhead Door',contractor_phone:'303-308-8100',notes:'MyQ compatible.',flag:'',flag_type:'',icon:'ti-building-warehouse',icon_bg:'#F1F5F9',icon_color:'#64748B',linked_tasks:[],log:[{t:'Installed',m:'Jan 8, 2024'}]}
+  {asset_id:'a-furnace',name:'Furnace (forced air, gas)',category:'Home systems',status:'green',notes:'AHS Gold covered this replacement. $100/visit, contract #601933098, starts Jul 2 2026.',icon:'ti-flame',icon_bg:'#FEF3C7',icon_color:'#D97706',install_date:'2024-01-09',warranty_expiry:'',purchase_price:'',manual_url:'',contractors:'[{"name":"Nick","role":"Tradewinds","phone":"720-363-7600"}]'},
+  {asset_id:'a-ac',name:'Air conditioner',category:'Home systems',status:'amber',notes:'Last service May 5, 2025. Annual visit required to maintain warranty.',icon:'ti-wind',icon_bg:'#DBEAFE',icon_color:'#2563EB',install_date:'2022-07-19',warranty_expiry:'',purchase_price:'',manual_url:'',contractors:'[{"name":"Jose","role":"Fix-It Now","phone":"303-657-2421"}]'},
+  {asset_id:'a-radon',name:'Radon mitigation system',category:'Home systems',status:'green',notes:'Re-test every 3-4 years.',icon:'ti-ripple',icon_bg:'#F0FDF4',icon_color:'#16A34A',install_date:'2022-04-05',warranty_expiry:'2029-04-05',purchase_price:'',manual_url:'',contractors:'[{"name":"Chris Fisher","role":"5280 Radon","phone":"720-695-6677"}]'},
+  {asset_id:'a-wh',name:'Water heater',category:'Home systems',status:'red',notes:'~10 years old. Approaching end of lifespan.',icon:'ti-droplet',icon_bg:'#FEF2F2',icon_color:'#DC2626',install_date:'2015-03-01',warranty_expiry:'',purchase_price:'',manual_url:'',contractors:'[]'},
+  {asset_id:'a-solar',name:'Solar + Powerwall 3',category:'Home systems',status:'green',notes:'Backup reserve at 15%. EVSE included.',icon:'ti-solar-panel',icon_bg:'#EFF6FF',icon_color:'#3B82F6',install_date:'2024-04-01',warranty_expiry:'',purchase_price:'',manual_url:'',contractors:'[{"name":"Namaste Solar"}]'},
+  {asset_id:'a-dishwasher',name:'Dishwasher',category:'Appliances',status:'green',notes:'FD030501376.',icon:'ti-wash-machine',icon_bg:'#F5F3FF',icon_color:'#7C3AED',install_date:'2023-07-01',warranty_expiry:'',purchase_price:'',manual_url:'',contractors:'[{"name":"Ben Myers"}]'},
+  {asset_id:'a-washer',name:'Washer',category:'Appliances',status:'amber',notes:'No door gasket. Affresh monthly. Linked to main line buildup/sewer backup.',icon:'ti-wash',icon_bg:'#F0FDF4',icon_color:'#16A34A',install_date:'2018-01-01',warranty_expiry:'',purchase_price:'',manual_url:'',contractors:'[]'},
+  {asset_id:'a-dryer',name:'Dryer',category:'Appliances',status:'red',notes:'Vent last cleaned Mar 2022. Schedule after basement remodel.',icon:'ti-wind',icon_bg:'#FFF7ED',icon_color:'#EA580C',install_date:'2017-01-01',warranty_expiry:'',purchase_price:'',manual_url:'',contractors:'[]'},
+  {asset_id:'a-roof',name:'Roof',category:'Structure & exterior',status:'amber',notes:'~8 years old. Warranty status unverified.',icon:'ti-home',icon_bg:'#F8FAFC',icon_color:'#475569',install_date:'2017-05-23',warranty_expiry:'',purchase_price:'',manual_url:'',contractors:'[]'},
+  {asset_id:'a-fence',name:'Fence, gate + operator',category:'Structure & exterior',status:'green',notes:'MyQ enabled.',icon:'ti-fence',icon_bg:'#FEF9C3',icon_color:'#CA8A04',install_date:'2024-05-16',warranty_expiry:'2028-05-16',purchase_price:'',manual_url:'',contractors:'[{"name":"Preston Garcia","role":"Denco","phone":"303-223-6902"}]'},
+  {asset_id:'a-insulation',name:'Attic insulation',category:'Structure & exterior',status:'green',notes:'Sealed + insulated to R-60.',icon:'ti-layers',icon_bg:'#F0FDF4',icon_color:'#16A34A',install_date:'2025-04-01',warranty_expiry:'',purchase_price:'',manual_url:'',contractors:'[{"name":"REenergizeCO","phone":"303-227-1000"}]'},
+  {asset_id:'a-garage',name:'Garage door openers',category:'Structure & exterior',status:'green',notes:'MyQ compatible.',icon:'ti-building-warehouse',icon_bg:'#F1F5F9',icon_color:'#64748B',install_date:'2024-01-08',warranty_expiry:'',purchase_price:'',manual_url:'',contractors:'[{"name":"Colorado Overhead Door","phone":"303-308-8100"}]'}
 ];
 
 // ── BOOT ──────────────────────────────────────────────────
@@ -1467,6 +1510,7 @@ function confirmBatchSnooze(){
 }
 
 // ── COMPLETE / SNOOZE ─────────────────────────────────────
+function completeTask(id){var t=(state.tasks||[]).find(function(x){return x.task_id===id;});if(t)handleComplete(t);}
 function handleComplete(t){
   var wrap=document.querySelector('.tc-wrap[data-task-id="'+t.task_id+'"]');
   if(wrap){wrap.style.height=wrap.offsetHeight+'px';wrap.style.transition='all .2s';setTimeout(function(){wrap.style.height='0';wrap.style.opacity='0';wrap.style.overflow='hidden';},10);}
@@ -1671,31 +1715,51 @@ function deleteEditingTask(){
 }
 
 // ── PROJECTS ──────────────────────────────────────────────
+function makeProjTaskItems(pid){
+  var linked=state.tasks.filter(function(t){return String(t.linked_project_id)===String(pid);});
+  var subs=state.subtasks.filter(function(s){return String(s.project_id)===String(pid);});
+  var allItems=[];
+  linked.forEach(function(t){allItems.push({id:t.task_id,name:t.name,due:t.due_date,type:t.type||'one_off',isDone:t.status==='done'||t.status==='ended',isTask:true,obj:t});});
+  subs.forEach(function(s){allItems.push({id:s.subtask_id,name:s.name,due:s.due_date,type:'subtask',isDone:s.status==='done',isTask:false,obj:s});});
+  return allItems;
+}
+function renderProjTaskRow(item,pid){
+  var d=document.createElement('div');d.className='ptask-row';
+  var dueStr=item.due?fmtDateShort(item.due):'';
+  var typeTag=item.type&&item.type!=='subtask'?'<span class="type-tag">'+item.type+'</span>':'';
+  if(item.isTask){
+    d.innerHTML='<div class="circ-check'+(item.isDone?' done':'')+'" onclick="completeTask(\\''+item.id+'\\')"></div><div class="ptask-name">'+esc(item.name)+typeTag+'</div>'+(dueStr?'<div class="ptask-due">'+dueStr+'</div>':'');
+  }else{
+    var isDone=item.isDone;
+    d.innerHTML='<div class="box'+(isDone?' done':'')+'" data-sub="'+item.id+'"></div><div class="ptask-name">'+esc(item.name)+(item.due?' <span style="font-size:11px;color:var(--text3)">'+fmtDate(item.due)+'</span>':'')+'</div>';
+  }
+  return d;
+}
 function renderProjects(){
   var act=document.getElementById('proj-active'),pln=document.getElementById('proj-planned'),dn=document.getElementById('proj-done');
   act.innerHTML='';pln.innerHTML='';if(dn)dn.innerHTML='';
   var doneProjs=[];
   state.projects.filter(function(p){return p.status!=='done';}).forEach(function(p){
-    var subs=state.subtasks.filter(function(s){return String(s.project_id)===String(p.project_id);});
-    var done=subs.filter(function(s){return s.status==='done';}).length;
-    var pct=subs.length?Math.round(done/subs.length*100):0;
+    var items=makeProjTaskItems(p.project_id);
+    var done=items.filter(function(i){return i.isDone;}).length;
+    var pct=items.length?Math.round(done/items.length*100):0;
     var card=document.createElement('div');card.className='pc';
-    var tStr=p.target_date?'<span class="pc-mi"><i class="ti ti-calendar"></i> '+fmtDate(p.target_date)+'</span>':'';
-    var sHtml='';
-    subs.forEach(function(s){
-      var isDone=s.status==='done';
-      sHtml+='<div class="sub'+(isDone?' done-sub':'')+'"><div class="box'+(isDone?' done':'')+'" data-sub="'+s.subtask_id+'"></div><div class="sub-text" data-editsub="'+s.subtask_id+'">'+esc(s.name)+(s.due_date?' - '+fmtDate(s.due_date):'')+'</div></div>';
-    });
-    sHtml+='<div style="margin-top:6px"><button class="btn" style="font-size:11.5px" data-addsub="'+p.project_id+'"><i class="ti ti-plus"></i> Add subtask</button></div>';
-    card.innerHTML='<div class="pc-hdr"><div class="pc-top"><div class="pc-name">'+esc(p.name)+'</div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0"><span class="bdg '+(p.status==='active'?'bdg-a':'bdg-p')+'">'+p.status+'</span><button class="pc-edit" data-editproj="'+p.project_id+'"><i class="ti ti-pencil"></i></button></div></div>'+(p.description?'<div class="pc-desc">'+esc(p.description)+'</div>':'')+'<div class="pc-meta">'+tStr+'<span class="pc-mi"><i class="ti ti-check"></i> '+done+' of '+subs.length+' done</span></div><div class="prog"><div class="pf" style="width:'+pct+'%"></div></div></div><div class="pc-tasks">'+sHtml+'</div>';
+    var tStr=p.target_date?'<span class="pc-mi"><i class="ti ti-calendar"></i> '+fmtDate(p.target_date)+' target</span>':'';
+    card.innerHTML='<div class="pc-hdr"><div class="pc-top"><div class="pc-name">'+esc(p.name)+'</div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0"><span class="bdg '+(p.status==='active'?'bdg-a':'bdg-p')+'">'+p.status+'</span><button class="pc-edit" data-editproj="'+p.project_id+'"><i class="ti ti-pencil"></i></button></div></div>'+(p.description?'<div class="pc-desc">'+esc(p.description)+'</div>':'')+'<div class="pc-meta">'+tStr+'<span class="pc-mi"><i class="ti ti-check"></i> '+done+' of '+items.length+' done</span></div><div class="prog"><div class="pf" style="width:'+pct+'%"></div></div></div>';
+    var tasksDiv=document.createElement('div');tasksDiv.className='pc-tasks';
+    items.forEach(function(item){tasksDiv.appendChild(renderProjTaskRow(item,p.project_id));});
+    var addRow=document.createElement('div');addRow.style.marginTop='6px';
+    addRow.innerHTML='<button class="btn" style="font-size:11.5px" onclick="openAddTaskForProject(\\''+p.project_id+'\\')"><i class="ti ti-plus"></i> Add task</button>'+(state.subtasks.filter(function(s){return String(s.project_id)===String(p.project_id);}).length?'<button class="btn" style="font-size:11.5px;margin-left:4px" data-addsub="'+p.project_id+'"><i class="ti ti-plus"></i> Add subtask</button>':'');
+    tasksDiv.appendChild(addRow);
+    card.appendChild(tasksDiv);
     if(p.status==='active')act.appendChild(card);else pln.appendChild(card);
   });
   state.projects.filter(function(p){return p.status==='done';}).forEach(function(p){doneProjs.push(p);});
   if(dn){
     doneProjs.forEach(function(p){
-      var subs=state.subtasks.filter(function(s){return String(s.project_id)===String(p.project_id);});
+      var items=makeProjTaskItems(p.project_id);
       var card=document.createElement('div');card.className='pc';card.style.opacity='.75';
-      card.innerHTML='<div class="pc-hdr"><div class="pc-top"><div class="pc-name">'+esc(p.name)+'</div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0"><span class="bdg bdg-p">done</span><button class="pc-edit" data-editproj="'+p.project_id+'"><i class="ti ti-pencil"></i></button></div></div>'+(p.description?'<div class="pc-desc">'+esc(p.description)+'</div>':'')+'<div class="pc-meta">'+(p.target_date?'<span class="pc-mi"><i class="ti ti-calendar"></i> '+fmtDate(p.target_date)+'</span>':'')+'<span class="pc-mi"><i class="ti ti-check"></i> '+subs.length+' subtasks</span></div></div>';
+      card.innerHTML='<div class="pc-hdr"><div class="pc-top"><div class="pc-name">'+esc(p.name)+'</div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0"><span class="bdg bdg-p">done</span><button class="pc-edit" data-editproj="'+p.project_id+'"><i class="ti ti-pencil"></i></button></div></div>'+(p.description?'<div class="pc-desc">'+esc(p.description)+'</div>':'')+'<div class="pc-meta">'+(p.target_date?'<span class="pc-mi"><i class="ti ti-calendar"></i> '+fmtDate(p.target_date)+'</span>':'')+'<span class="pc-mi"><i class="ti ti-check"></i> '+items.length+' tasks</span></div></div>';
       dn.appendChild(card);
     });
     if(!doneProjs.length&&dn)dn.innerHTML='<div style="font-size:12.5px;color:var(--text3)">No past projects.</div>';
@@ -1703,6 +1767,10 @@ function renderProjects(){
   var pw=document.getElementById('past-proj-wrap');if(pw)pw.style.display=doneProjs.length?'block':'none';
   if(!act.children.length)act.innerHTML='<div style="font-size:12.5px;color:var(--text3)">No active projects yet.</div>';
   if(!pln.children.length)pln.innerHTML='<div style="font-size:12.5px;color:var(--text3)">No planned projects.</div>';
+}
+function openAddTaskForProject(pid){
+  openAddTask();
+  var sel=document.getElementById('t-proj-link');if(sel)sel.value=pid;
 }
 function togglePastProjects(){
   var d=document.getElementById('proj-done');var c=document.getElementById('past-proj-chev');
@@ -1730,9 +1798,51 @@ document.addEventListener('click',function(e){
 function makeGrocEl(item){
   var got=item.status==='got';
   var d=document.createElement('div');d.className='gi'+(got?' got':'');
-  d.innerHTML='<div class="gbox'+(got?' done':'')+'"></div> '+esc(item.name);
-  d.onclick=function(){toggleGrocery(item.item_id,d);};
+  d.setAttribute('data-item-id',item.item_id);d.setAttribute('data-category',item.category||'Food');
+  var chk=document.createElement('div');chk.className='gbox'+(got?' done':'');
+  chk.addEventListener('click',function(e){e.stopPropagation();toggleGrocery(item.item_id,d);});
+  var txt=document.createElement('span');txt.className='groc-text';txt.textContent=item.name;
+  txt.addEventListener('click',function(e){e.stopPropagation();editGrocItem(item.item_id,txt,item);});
+  var drag=document.createElement('span');drag.className='groc-drag';drag.innerHTML='<i class="ti ti-grip-vertical"></i>';
+  drag.setAttribute('draggable','false');
+  d.appendChild(chk);d.appendChild(txt);d.appendChild(drag);
+  d.setAttribute('draggable','true');
+  d.addEventListener('dragstart',function(e){e.dataTransfer.setData('text/plain',item.item_id);d.classList.add('dragging');});
+  d.addEventListener('dragend',function(){d.classList.remove('dragging');});
+  d.addEventListener('dragover',function(e){e.preventDefault();d.classList.add('drag-over');});
+  d.addEventListener('dragleave',function(){d.classList.remove('drag-over');});
+  d.addEventListener('drop',function(e){
+    e.preventDefault();d.classList.remove('drag-over');
+    var fromId=e.dataTransfer.getData('text/plain');
+    var fromEl=document.querySelector('.gi[data-item-id="'+fromId+'"]');
+    if(!fromEl||fromEl===d)return;
+    var cat=d.dataset.category;
+    if(fromEl.dataset.category!==cat)return;
+    var parent=d.parentNode;parent.insertBefore(fromEl,d);
+    var order=[];parent.querySelectorAll('.gi[data-category="'+cat+'"]').forEach(function(el){if(el.dataset.itemId)order.push(el.dataset.itemId);});
+    apiPost({action:'reorderGrocery',data:{category:cat,order:order}}).then(function(){
+      order.forEach(function(id,i){var it=state.grocery.find(function(g){return g.item_id===id;});if(it)it.sort_order=i+1;});
+    });
+  });
   return d;
+}
+function editGrocItem(id,textEl,item){
+  var current=textEl.textContent;
+  var inp=document.createElement('input');
+  inp.className='groc-edit-inp';inp.value=current;
+  textEl.style.display='none';textEl.parentNode.insertBefore(inp,textEl.nextSibling);
+  inp.focus();inp.select();
+  function save(){
+    var val=inp.value.trim();
+    if(inp.parentNode)inp.parentNode.removeChild(inp);
+    textEl.style.display='';
+    if(!val||val===current)return;
+    textEl.textContent=val;
+    var it=state.grocery.find(function(g){return g.item_id===id;});if(it)it.name=val;
+    apiPost({action:'updateGrocery',data:{item_id:id,updates:{name:val}}});
+  }
+  inp.addEventListener('blur',save);
+  inp.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();save();}if(e.key==='Escape'){inp.value=current;save();}});
 }
 function makeGrocAdd(cat){
   var inp=document.createElement('input');
@@ -1754,6 +1864,7 @@ function makeGrocAdd(cat){
   return inp;
 }
 function renderGrocery(){
+  state.grocery=state.grocery.slice().sort(function(a,b){var sa=parseInt(a.sort_order)||9999,sb=parseInt(b.sort_order)||9999;return sa-sb||(a.name||'').localeCompare(b.name||'');});
   var cols={Food:document.getElementById('groc-food'),Household:document.getElementById('groc-household'),Costco:document.getElementById('groc-costco')};
   cols.Food.innerHTML='';cols.Household.innerHTML='';cols.Costco.innerHTML='';
   var cnt={Food:0,Costco:0,Household:0};
@@ -1778,16 +1889,27 @@ var STATUS_COLOR={green:'#22C55E',amber:'#C97A10',red:'#C84040'};
 function renderAssets(){
   var sys=document.getElementById('asset-systems'),app=document.getElementById('asset-appliances'),str=document.getElementById('asset-structure');
   sys.innerHTML='';app.innerHTML='';str.innerHTML='';
+  var today0=new Date();today0.setHours(0,0,0,0);
   (state.assets||[]).forEach(function(a){
-    var linkedActive=(state.tasks||[]).filter(function(t){return t.linked_asset_id===a.asset_id&&t.status==='active';}).length;
+    var linkedTasks=(state.tasks||[]).filter(function(t){return t.linked_asset_id===a.asset_id&&t.status==='active';});
+    var linkedActive=linkedTasks.length;
+    var hasOverdue=linkedTasks.some(function(t){if(!t.due_date)return false;var d=new Date(String(t.due_date).split('T')[0]+'T12:00:00');d.setHours(0,0,0,0);return d<today0;});
     var sc=STATUS_COLOR[a.status]||'var(--border2)';
     var sub=a.last_service_date?'Last: '+fmtDate(a.last_service_date):(a.install_date?'Since '+fmtDate(a.install_date):'');
     var badge=a.status==='red'?'<div class="arow-flag red">attention</div>':a.status==='amber'?'<div class="arow-flag">note</div>':'';
-    var taskBadge=linkedActive?'<div class="arow-flag">'+linkedActive+' task'+(linkedActive>1?'s':'')+'</div>':'';
+    var overdueBadge=hasOverdue?'<div class="arow-flag red"><i class="ti ti-alert-triangle"></i> overdue task</div>':'';
+    var taskBadge=linkedActive&&!hasOverdue?'<div class="arow-flag">'+linkedActive+' task'+(linkedActive>1?'s':'')+'</div>':'';
     var row=document.createElement('div');row.className='arow';row.onclick=function(){openAssetPanel(a.asset_id);};
     var iconBg=a.icon_bg||'var(--bg2)';var iconColor=a.icon_color||'var(--text3)';var icon=a.icon||'ti-tool';
-    row.innerHTML='<div style="width:8px;height:8px;border-radius:50%;background:'+sc+';flex-shrink:0;margin-right:2px;align-self:center"></div><div class="arow-icon" style="background:'+iconBg+'"><i class="ti '+esc(icon)+'" style="color:'+iconColor+'"></i></div><div class="arow-info"><div class="arow-name">'+esc(a.name)+'</div><div class="arow-sub">'+esc(sub)+'</div></div>'+(taskBadge||badge);
+    row.innerHTML='<div style="width:8px;height:8px;border-radius:50%;background:'+sc+';flex-shrink:0;margin-right:2px;align-self:center"></div><div class="arow-icon" style="background:'+iconBg+'"><i class="ti '+esc(icon)+'" style="color:'+iconColor+'"></i></div><div class="arow-info"><div class="arow-name">'+esc(a.name)+'</div><div class="arow-sub">'+esc(sub)+'</div></div>'+(overdueBadge||taskBadge||badge);
     if(a.category==='Home systems')sys.appendChild(row);else if(a.category==='Appliances')app.appendChild(row);else str.appendChild(row);
+  });
+}
+function setPanelTab(tab){
+  panelTab=tab;
+  ['info','log','tasks'].forEach(function(t){
+    var btn=document.getElementById('ptab-'+t);if(btn)btn.classList.toggle('on',t===tab);
+    var el=document.getElementById('panel-tab-'+t);if(el)el.classList.toggle('gone',t!==tab);
   });
 }
 function openAssetPanel(id){
@@ -1803,18 +1925,28 @@ function openAssetPanel(id){
   if(hasOverdue){var od=document.createElement('div');od.className='flag-box red';od.innerHTML='<i class="ti ti-alert-triangle"></i><span>Linked task overdue</span>';fh.appendChild(od);}
   var gh=document.getElementById('p-grid');gh.innerHTML='';
   var fields=[['Install date',fmtDate(a.install_date)],['Last service',fmtDate(a.last_service_date)],['Next service',fmtDate(a.next_service_date)],['Warranty expires',fmtDate(a.warranty_expiry)]];
+  if(a.purchase_price)fields.push(['Purchase price',a.purchase_price]);
   if(a.notes)fields.push(['Notes',a.notes]);
   fields.forEach(function(row){var d=document.createElement('div');d.className='ic'+(row[0]==='Notes'?' full':'');d.innerHTML='<div class="icl">'+row[0]+'</div><div class="icv">'+(row[1]?esc(row[1]):'<span style="color:var(--text3)">--</span>')+'</div>';gh.appendChild(d);});
-  var tw=document.getElementById('p-tasks-wrap'),th=document.getElementById('p-tasks');th.innerHTML='';
-  var tc=document.getElementById('p-tasks-count');if(tc)tc.textContent=linkedTasks.length;
-  if(linkedTasks.length){tw.style.display='block';linkedTasks.forEach(function(lt){var d=document.createElement('div');d.style.cssText='padding:4px 0;font-size:12.5px;color:var(--text2);display:flex;align-items:center;gap:5px';var dueStr=lt.due_date?fmtDateShort(lt.due_date):'';d.innerHTML='<i class="ti ti-check" style="color:var(--text3)"></i><span style="flex:1">'+esc(lt.name)+'</span>'+(dueStr?'<span style="font-size:11px;color:var(--text3)">'+dueStr+'</span>':'');th.appendChild(d);});}else{tw.style.display='block';}
+  var mw=document.getElementById('p-manual-wrap');
+  if(a.manual_url){mw.style.display='block';document.getElementById('p-manual-link').href=a.manual_url;document.getElementById('p-manual-text').textContent=a.manual_url.replace(/^https?:\/\//,'').split('/')[0];}
+  else{mw.style.display='none';}
+  var cw=document.getElementById('p-contractors-wrap'),cl=document.getElementById('p-contractors');cl.innerHTML='';
+  var contractors=[];try{contractors=JSON.parse(a.contractors||'[]');}catch(e){}
+  if(contractors.length){cw.style.display='block';contractors.forEach(function(c){var d=document.createElement('div');d.className='contr-item';d.innerHTML='<div class="contr-name">'+esc(c.name||'')+'</div>'+(c.role?'<div class="contr-meta">'+esc(c.role)+'</div>':'')+(c.phone?'<a class="contr-phone" href="tel:'+esc(c.phone)+'">'+esc(c.phone)+'</a>':'')+(c.email?'<div class="contr-meta">'+esc(c.email)+'</div>':'');cl.appendChild(d);});}
+  else{cw.style.display='none';}
   var lh=document.getElementById('p-log');lh.innerHTML='';
   var manualNotes=(state.maintenance_logs||[]).filter(function(l){return l.asset_id===id;}).sort(function(a,b){return new Date(b.date)-new Date(a.date);});
   var completedLinked=(state.task_log||[]).filter(function(l){var t=(state.tasks||[]).find(function(x){return x.task_id===l.task_id;});return t&&t.linked_asset_id===id;}).sort(function(a,b){return new Date(b.completed_at)-new Date(a.completed_at);});
-  var combined=manualNotes.map(function(n){return{date:n.date,text:n.note,sub:'Note'};}).concat(completedLinked.map(function(l){return{date:l.completed_at,text:l.task_name,sub:'Completed by '+l.completed_by,blue:true};}));
+  var combined=manualNotes.map(function(n){return{date:n.date,text:n.note,sub:(n.log_type==='service'?'Service':'Note')};}).concat(completedLinked.map(function(l){return{date:l.completed_at,text:l.task_name,sub:'Completed by '+l.completed_by,blue:true};}));
   combined.sort(function(a,b){return new Date(b.date)-new Date(a.date);});
   if(!combined.length){lh.innerHTML='<div style="font-size:12px;color:var(--text3);padding:8px 0">No maintenance history yet.</div>';}
   combined.forEach(function(l){var d=document.createElement('div');d.className='log-item';d.innerHTML='<div class="ldot'+(l.blue?' b':'')+'"></div><div><div class="lt">'+esc(l.text)+'</div><div class="lm">'+esc(l.sub)+' - '+fmtDate(l.date)+'</div></div>';lh.appendChild(d);});
+  var tc=document.getElementById('p-tasks-count');if(tc)tc.textContent=linkedTasks.length;
+  var th=document.getElementById('p-tasks');th.innerHTML='';
+  if(linkedTasks.length){linkedTasks.forEach(function(lt){var d=document.createElement('div');d.className='ptask-row';var dueStr=lt.due_date?fmtDateShort(lt.due_date):'';var typeTag=lt.type?'<span class="type-tag">'+lt.type+'</span>':'';d.innerHTML='<div class="circ-check" onclick="completeTask(\\''+lt.task_id+'\\')"></div><div class="ptask-name">'+esc(lt.name)+typeTag+'</div>'+(dueStr?'<div class="ptask-due">'+dueStr+'</div>':'');th.appendChild(d);});}
+  else{th.innerHTML='<div style="font-size:12px;color:var(--text3);padding:4px 0">No active linked tasks.</div>';}
+  setPanelTab('info');
   document.getElementById('panel').style.display='flex';
 }
 function closePanel(){document.getElementById('panel').style.display='none';openAssetId=null;}
@@ -1837,22 +1969,35 @@ function openEditAsset(){
   document.getElementById('ea-next-service').value=dval(a.next_service_date);
   document.getElementById('ea-warranty').value=dval(a.warranty_expiry);
   document.getElementById('ea-notes').value=a.notes||'';
+  document.getElementById('ea-price').value=a.purchase_price||'';
+  document.getElementById('ea-manual-url').value=a.manual_url||'';
+  var cl=document.getElementById('ea-contractors-list');cl.innerHTML='';
+  var contractors=[];try{contractors=JSON.parse(a.contractors||'[]');}catch(e){}
+  contractors.forEach(function(c){addContractorField(c);});
   document.getElementById('ea-delete-btn').classList.remove('gone');
   openModal('modal-edit-asset');
 }
 function openAddAsset(){
   editingAsset=null;
   document.getElementById('ea-modal-title').textContent='Add asset';
-  ['ea-name','ea-notes'].forEach(function(id){document.getElementById(id).value='';});
+  ['ea-name','ea-notes','ea-price','ea-manual-url'].forEach(function(id){document.getElementById(id).value='';});
   ['ea-install','ea-last-service','ea-next-service','ea-warranty'].forEach(function(id){document.getElementById(id).value='';});
   document.getElementById('ea-category').value='Home systems';
+  document.getElementById('ea-contractors-list').innerHTML='';
   pickAssetStatus('green');
   document.getElementById('ea-delete-btn').classList.add('gone');
   openModal('modal-edit-asset');
 }
+function addContractorField(c){
+  var cl=document.getElementById('ea-contractors-list');
+  var wrap=document.createElement('div');wrap.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:7px;background:var(--bg);border-radius:var(--radius-sm);border:1px solid var(--border);';
+  wrap.innerHTML='<input class="form-input contr-f-name" placeholder="Name" style="font-size:12.5px" value="'+(c&&c.name?esc(c.name):'')+'"><input class="form-input contr-f-role" placeholder="Role / company" style="font-size:12.5px" value="'+(c&&c.role?esc(c.role):'')+'"><input class="form-input contr-f-phone" placeholder="Phone" style="font-size:12.5px" value="'+(c&&c.phone?esc(c.phone):'')+'"><input class="form-input contr-f-email" placeholder="Email" style="font-size:12.5px" value="'+(c&&c.email?esc(c.email):'')+'"><button type="button" class="btn btn-danger" style="grid-column:1/-1;font-size:11px;padding:3px 8px" onclick="this.parentNode.remove()"><i class="ti ti-trash"></i> Remove</button>';
+  cl.appendChild(wrap);
+}
 function submitEditAsset(){
   var name=document.getElementById('ea-name').value.trim();if(!name){alert('Name required');return;}
-  var data={name:name,category:document.getElementById('ea-category').value,status:document.getElementById('ea-status').value,install_date:document.getElementById('ea-install').value||'',last_service_date:document.getElementById('ea-last-service').value||'',next_service_date:document.getElementById('ea-next-service').value||'',warranty_expiry:document.getElementById('ea-warranty').value||'',notes:document.getElementById('ea-notes').value.trim()};
+  var contractors=[];document.querySelectorAll('#ea-contractors-list > div').forEach(function(wrap){var n=wrap.querySelector('.contr-f-name').value.trim();if(!n)return;var c={name:n};var r=wrap.querySelector('.contr-f-role').value.trim();if(r)c.role=r;var p=wrap.querySelector('.contr-f-phone').value.trim();if(p)c.phone=p;var e=wrap.querySelector('.contr-f-email').value.trim();if(e)c.email=e;contractors.push(c);});
+  var data={name:name,category:document.getElementById('ea-category').value,status:document.getElementById('ea-status').value,install_date:document.getElementById('ea-install').value||'',last_service_date:document.getElementById('ea-last-service').value||'',next_service_date:document.getElementById('ea-next-service').value||'',warranty_expiry:document.getElementById('ea-warranty').value||'',notes:document.getElementById('ea-notes').value.trim(),purchase_price:document.getElementById('ea-price').value.trim(),manual_url:document.getElementById('ea-manual-url').value.trim(),contractors:JSON.stringify(contractors)};
   closeModal('modal-edit-asset');setSyncState('loading','Saving...');
   if(editingAsset){var aid=editingAsset.asset_id;apiPost({action:'updateAsset',data:{asset_id:aid,updates:data}}).then(function(){refreshData(true).then(function(){if(aid){openAssetId=aid;openAssetPanel(aid);}});});}
   else{apiPost({action:'addAsset',data:data}).then(function(){refreshData(true);});}

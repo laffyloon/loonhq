@@ -32,6 +32,8 @@ Object.defineProperty(FakeEl.prototype, 'innerHTML', {
   set(v){ this._innerHTML = String(v); this.children = []; } // setting innerHTML clears element children (good enough)
 });
 FakeEl.prototype.appendChild = function(c){ this.children.push(c); return c; };
+FakeEl.prototype.insertBefore = function(c){ this.children.push(c); return c; };
+FakeEl.prototype.removeChild = function(c){ this.children=this.children.filter(function(x){return x!==c;}); return c; };
 FakeEl.prototype.addEventListener = function(){};
 FakeEl.prototype.removeEventListener = function(){};
 FakeEl.prototype.querySelector = function(){ return new FakeEl('div'); };
@@ -41,6 +43,7 @@ FakeEl.prototype.closest = function(){ return new FakeEl('div'); };
 FakeEl.prototype.getAttribute = function(k){ return this._attrs[k] !== undefined ? this._attrs[k] : (this.dataset[camel(k)] || null); };
 FakeEl.prototype.setAttribute = function(k,v){ this._attrs[k]=v; };
 FakeEl.prototype.focus = function(){};
+FakeEl.prototype.select = function(){};
 FakeEl.prototype.remove = function(){};
 function camel(s){ return s.replace(/^data-/,'').replace(/-([a-z])/g,(m,c)=>c.toUpperCase()); }
 
@@ -434,6 +437,104 @@ run('submitTask scheduled includes sched_pattern', ()=>{
   if(d.sched_pattern!=='first-1') throw new Error('sched_pattern not first-1: '+d.sched_pattern);
 });
 run('renderAll with history tab active', ()=>{ currentView='metrics'; metricsTab='history'; renderAll(); metricsTab='stats'; });
+
+// ── v8.2 new tests ───────────────────────────────────────
+run('openAssetPanel with new fields', ()=>{
+  const sv=state.assets;
+  state.assets=[{asset_id:'a-test',name:'Test Asset',category:'Appliances',status:'green',notes:'Test notes',install_date:'2024-01-01',purchase_price:'$1,500',manual_url:'https://example.com/manual',contractors:'[{"name":"Joe","role":"Plumber","phone":"303-555-1234"}]',icon:'ti-droplet',icon_bg:'#EFF6FF',icon_color:'#3B82F6'}];
+  openAssetPanel('a-test');
+  state.assets=sv;
+});
+run('openAssetPanel handles empty contractors', ()=>{
+  const sv=state.assets;
+  state.assets=[{asset_id:'a-test2',name:'No Contractors',category:'Appliances',status:'amber',notes:'',install_date:'',purchase_price:'',manual_url:'',contractors:'[]',icon:'ti-wind',icon_bg:'#EFF6FF',icon_color:'#2563EB'}];
+  openAssetPanel('a-test2');
+  state.assets=sv;
+});
+run('openAssetPanel handles malformed contractors JSON', ()=>{
+  const sv=state.assets;
+  state.assets=[{asset_id:'a-test3',name:'Bad JSON',category:'Appliances',status:'green',notes:'',install_date:'',purchase_price:'',manual_url:'',contractors:'not-json',icon:'ti-flame',icon_bg:'#FEF3C7',icon_color:'#D97706'}];
+  openAssetPanel('a-test3');
+  state.assets=sv;
+});
+run('setPanelTab switches active tab', ()=>{
+  setPanelTab('log');
+  if(!el('ptab-log')._classes.has('on')) throw new Error('log tab not on');
+  if(!el('panel-tab-info')._classes.has('gone')) throw new Error('info content not hidden');
+  setPanelTab('info');
+});
+run('openAddAsset clears new fields', ()=>{
+  el('ea-price').value='$500'; el('ea-manual-url').value='https://example.com';
+  openAddAsset();
+  if(el('ea-price').value!=='') throw new Error('ea-price not cleared');
+  if(el('ea-manual-url').value!=='') throw new Error('ea-manual-url not cleared');
+});
+run('addContractorField adds row', ()=>{
+  el('ea-contractors-list').children=[];
+  addContractorField({name:'Test Contractor',role:'HVAC',phone:'303-555-0000'});
+});
+run('submitEditAsset includes purchase_price and manual_url', ()=>{
+  __posts.length=0;
+  editingAsset={asset_id:'a-furnace'};
+  el('ea-name').value='Furnace'; el('ea-category').value='Home systems';
+  el('ea-status').value='green'; el('ea-install').value='';
+  el('ea-last-service').value=''; el('ea-next-service').value='';
+  el('ea-warranty').value=''; el('ea-notes').value='';
+  el('ea-price').value='$3,200'; el('ea-manual-url').value='https://example.com/doc';
+  el('ea-contractors-list').children=[];
+  el('ea-contractors-list').querySelectorAll=function(){return [];};
+  submitEditAsset();
+  const d=__posts[__posts.length-1].data.updates;
+  if(d.purchase_price!=='$3,200') throw new Error('purchase_price not in payload: '+d.purchase_price);
+  if(d.manual_url!=='https://example.com/doc') throw new Error('manual_url not in payload');
+});
+run('renderAssets shows overdue badge', ()=>{
+  const sv=state.assets,st=state.tasks;
+  state.assets=[{asset_id:'a-ov',name:'Overdue Asset',category:'Appliances',status:'green',icon:'ti-droplet',icon_bg:'#EFF6FF',icon_color:'#2563EB',purchase_price:'',manual_url:'',contractors:'[]'}];
+  state.tasks=[{task_id:'ov1',name:'Overdue task',type:'one_off',due_date:'2024-01-01',scope:'household',status:'active',linked_asset_id:'a-ov'}];
+  renderAssets();
+  state.assets=sv;state.tasks=st;
+});
+run('makeProjTaskItems merges tasks and subtasks', ()=>{
+  const sv=state.tasks,ss=state.subtasks;
+  state.tasks=[{task_id:'pt1',name:'Proj task',type:'one_off',due_date:'',status:'active',linked_project_id:'p1',scope:'household',notes:''}];
+  state.subtasks=[{subtask_id:'s1',project_id:'p1',name:'Legacy subtask',status:'active',due_date:''}];
+  const items=makeProjTaskItems('p1');
+  state.tasks=sv;state.subtasks=ss;
+  if(items.length!==2) throw new Error('expected 2 items, got '+items.length);
+});
+run('renderProjTaskRow returns element', ()=>{
+  const item={id:'pt1',name:'Task',due:'2026-07-01',type:'one_off',isDone:false,isTask:true};
+  const el2=renderProjTaskRow(item,'p1');
+  if(!el2) throw new Error('renderProjTaskRow returned null');
+});
+run('renderGrocery sorts by sort_order', ()=>{
+  const sv=state.grocery;
+  state.grocery=[
+    {item_id:'g1',name:'Bananas',category:'Produce',status:'need',sort_order:'2'},
+    {item_id:'g2',name:'Apples',category:'Produce',status:'need',sort_order:'1'},
+  ];
+  renderGrocery();
+  state.grocery=sv;
+});
+run('completeTask wrapper calls handleComplete', ()=>{
+  const sv=state.tasks;
+  state.tasks=[{task_id:'ct1',name:'Test',type:'one_off',due_date:'',status:'active',scope:'household',notes:'',recurrence_days:'',weekday:'',day_of_month:'',sched_month:'',sched_freq:'',sched_interval:''}];
+  __posts.length=0;
+  completeTask('ct1');
+  state.tasks=sv;
+  if(!__posts.length) throw new Error('no API call made');
+  if(__posts[0].action!=='completeTask') throw new Error('wrong action: '+__posts[0].action);
+});
+run('editGrocItem replaces text with input', ()=>{
+  const item={item_id:'g1',name:'Milk',category:'Dairy',status:'need'};
+  const parent=new FakeEl('div');
+  const textEl=new FakeEl('span');
+  textEl.textContent='Milk';
+  textEl.parentNode=parent;
+  textEl.nextSibling=null;
+  editGrocItem('g1',textEl,item);
+});
 
 // ---- report ----
 let fails = 0;

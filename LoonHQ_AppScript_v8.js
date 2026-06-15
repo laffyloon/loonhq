@@ -1,4 +1,4 @@
-// LoonHQ Apps Script v8
+// LoonHQ Apps Script v8.2
 // Deploy: paste into script.google.com -> Save -> Deploy -> New version
 // After schema changes: run setupHeaders() once in the editor (safe, appends columns only)
 
@@ -11,11 +11,12 @@ var HEADERS = {
             'linked_project_id','sched_pattern'],
   projects:['project_id','name','description','status','target_date','created_at'],
   subtasks:['subtask_id','project_id','name','status','due_date','sort_order'],
-  grocery: ['item_id','name','category','status','added_by','checked_at'],
+  grocery: ['item_id','name','category','status','added_by','checked_at','sort_order'],
   task_log:['log_id','task_id','task_name','completed_by','completed_at','scope','notes'],
   assets:  ['asset_id','name','category','status','notes','install_date','last_service_date',
-            'next_service_date','warranty_expiry','icon','icon_bg','icon_color'],
-  maintenance_log:['log_id','asset_id','date','note','task_id'],
+            'next_service_date','warranty_expiry','icon','icon_bg','icon_color',
+            'purchase_price','manual_url','contractors'],
+  maintenance_log:['log_id','asset_id','date','note','task_id','log_type'],
 };
 
 // Seed data: 12 existing hardcoded assets
@@ -167,6 +168,7 @@ function doPost(e) {
     else if (action === 'updateGrocery') result = updateGrocery(data);
     else if (action === 'deleteGrocery') result = deleteGrocery(data);
     else if (action === 'clearChecked') result = clearChecked();
+    else if (action === 'reorderGrocery') result = reorderGrocery(data);
     else if (action === 'addAsset') result = addAsset(data);
     else if (action === 'updateAsset') result = updateAsset(data);
     else if (action === 'deleteAsset') result = deleteAsset(data);
@@ -394,11 +396,25 @@ function clearChecked() {
   return { ok: true };
 }
 
+function reorderGrocery(data) {
+  var sheet = getSheet('grocery');
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+  var sortIdx = headers.indexOf('sort_order');
+  if (sortIdx < 0) return { error: 'sort_order column not found' };
+  var order = data.order || [];
+  order.forEach(function(itemId, i) {
+    var rowNum = findRow(sheet, 'item_id', itemId);
+    if (rowNum >= 0) sheet.getRange(rowNum, sortIdx + 1).setValue(i + 1);
+  });
+  return { ok: true };
+}
+
 // ── ASSETS ────────────────────────────────────────────────────────────────────
 function addAsset(data) {
   var sheet = getSheet('assets');
   var id = newId('asset');
-  appendRow(sheet, HEADERS.assets, Object.assign({ asset_id: id }, data));
+  var defaults = { purchase_price: '', manual_url: '', contractors: '[]' };
+  appendRow(sheet, HEADERS.assets, Object.assign({ asset_id: id }, defaults, data));
   return { ok: true, asset_id: id };
 }
 
@@ -423,7 +439,8 @@ function addMaintenanceNote(data) {
   appendRow(sheet, HEADERS.maintenance_log, {
     log_id: id, asset_id: data.asset_id,
     date: data.date || new Date().toISOString().split('T')[0],
-    note: data.note, task_id: data.task_id || ''
+    note: data.note, task_id: data.task_id || '',
+    log_type: data.log_type || 'manual_note'
   });
   return { ok: true, log_id: id };
 }
@@ -459,4 +476,35 @@ function reassignCompletion(data) {
   if (rowNum < 0) return { error: 'Log entry not found' };
   updateRow(sheet, rowNum, { completed_by: data.completed_by });
   return { ok: true };
+}
+
+// ── MIGRATION UTILITIES ───────────────────────────────────────────────────────
+// Run manually from the Apps Script editor ONCE after deploying v8.2.
+// Safe to run: only creates rows in tasks, never deletes data.
+function migrateSubtasks() {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var subSheet = ss.getSheetByName('subtasks');
+  if (!subSheet) { Logger.log('No subtasks tab found'); return; }
+  var subs = sheetToObjects(subSheet);
+  var taskSheet = getSheet('tasks');
+  var migrated = 0;
+  subs.forEach(function(s) {
+    if (!s.subtask_id || !s.project_id || !s.name) return;
+    var id = newId('task');
+    appendRow(taskSheet, HEADERS.tasks, {
+      task_id: id,
+      name: s.name,
+      type: 'one_off',
+      due_date: s.due_date || '',
+      status: s.status === 'done' ? 'done' : 'active',
+      scope: 'household',
+      owner: '',
+      linked_project_id: s.project_id,
+      created_at: new Date().toISOString().split('T')[0]
+    });
+    migrated++;
+  });
+  // Rename subtasks tab to subtasks_archived to preserve data
+  subSheet.setName('subtasks_archived');
+  Logger.log('Migrated ' + migrated + ' subtasks to tasks. Subtasks tab renamed to subtasks_archived.');
 }
