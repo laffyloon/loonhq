@@ -1221,8 +1221,10 @@ function renderTasks(){
       else month.push(t);
       return;
     }
-    if(!t.due_date){later.push(t);return;}
-    var due=new Date(String(t.due_date).split('T')[0]+'T12:00:00');due.setHours(0,0,0,0);
+    var dueStr=t.due_date;
+    if(!dueStr&&(t.type==='interval'||t.type==='scheduled')){var fd=computeFirstDue(t,now);if(fd)dueStr=fd;}
+    if(!dueStr){later.push(t);return;}
+    var due=new Date(String(dueStr).split('T')[0]+'T12:00:00');due.setHours(0,0,0,0);
     var surf=due;
     if(t.reminder_offset){var ob={same_day:0,'1_day':1,'2_days':2,'3_days':3,'1_week':7};var bk=ob[t.reminder_offset]||0;surf=new Date(due);surf.setDate(surf.getDate()-bk);}
     if(due<=now)today.push(t);

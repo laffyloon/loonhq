@@ -528,6 +528,16 @@ run('completeTask wrapper calls handleComplete', ()=>{
   if(!__posts.length) throw new Error('no API call made');
   if(__posts[0].action!=='completeTask') throw new Error('wrong action: '+__posts[0].action);
 });
+run('computeFirstDue interval with no due_date returns within-week date', ()=>{
+  // A 3-day interval task with no due_date: computeFirstDue should return today+3
+  const task={type:'interval',recurrence_days:'3',sched_start:'',due_date:'',end_date:''};
+  const todayD=new Date(); todayD.setHours(0,0,0,0);
+  const r=computeFirstDue(task,todayD);
+  if(!r) throw new Error('computeFirstDue returned null for interval with no due_date');
+  const due=new Date(r+'T12:00:00'); due.setHours(0,0,0,0);
+  const diff=(due-todayD)/(1000*60*60*24);
+  if(diff!==3) throw new Error('expected 3 days out, got: '+diff);
+});
 run('editGrocItem replaces text with input', ()=>{
   const item={item_id:'g1',name:'Milk',category:'Dairy',status:'need'};
   const parent=new FakeEl('div');

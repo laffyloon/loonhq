@@ -1,4 +1,4 @@
-// LoonHQ Apps Script v8.2
+// LoonHQ Apps Script v8.4
 // Deploy: paste into script.google.com -> Save -> Deploy -> New version
 // After schema changes: run setupHeaders() once in the editor (safe, appends columns only)
 
@@ -249,11 +249,47 @@ function computeNextDue(task, fromDate) {
   return next.toISOString().split('T')[0];
 }
 
+function computeFirstDue(task) {
+  var today = new Date(); today.setHours(0, 0, 0, 0);
+  var start = task.sched_start ? new Date(stripDate(task.sched_start) + 'T12:00:00') : null;
+  if (start) start.setHours(0, 0, 0, 0);
+  var t = (start && start > today) ? new Date(start) : new Date(today);
+  if (task.type === 'interval') {
+    var days = parseInt(task.recurrence_days) || 0; if (!days) return null;
+    var d = new Date(t); d.setDate(d.getDate() + days);
+    return d.toISOString().split('T')[0];
+  }
+  if (task.type !== 'scheduled') return task.due_date || null;
+  var freq = schedFreqOf(task);
+  var next;
+  if (freq === 'week') {
+    var wd = parseInt(task.weekday) || 0;
+    next = new Date(t); next.setDate(next.getDate() + ((wd - t.getDay() + 7) % 7 || 7));
+  } else if (freq === 'month') {
+    next = monthStep(t.getFullYear(), t.getMonth(), 0, task.day_of_month);
+    if (next < t) next = monthStep(t.getFullYear(), t.getMonth(), 1, task.day_of_month);
+  } else if (freq === 'year') {
+    var ym = (parseInt(task.sched_month) || 1) - 1;
+    var ld = new Date(t.getFullYear(), ym + 1, 0).getDate();
+    next = new Date(t.getFullYear(), ym, Math.min(parseInt(task.day_of_month) || 1, ld));
+    if (next < t) next = new Date(t.getFullYear() + 1, ym, parseInt(task.day_of_month) || 1);
+  } else {
+    next = new Date(t);
+  }
+  if (!next) return null;
+  if (task.end_date) { var e = new Date(stripDate(task.end_date) + 'T12:00:00'); if (next > e) return null; }
+  return next.toISOString().split('T')[0];
+}
+
 // ── TASKS ─────────────────────────────────────────────────────────────────────
 function addTask(data) {
   var sheet = getSheet('tasks');
   var id = newId('t');
   var row = Object.assign({ task_id: id, status: 'active', created_at: new Date().toISOString() }, data);
+  if (!row.due_date && (row.type === 'interval' || row.type === 'scheduled')) {
+    var fd = computeFirstDue(row);
+    if (fd) row.due_date = fd;
+  }
   appendRow(sheet, HEADERS.tasks, row);
   return { ok: true, task_id: id };
 }
