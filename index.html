@@ -170,7 +170,7 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .tag-oneoff{background:var(--bg2);color:var(--text2)}
 .tag-floating{background:var(--green-light);color:var(--green-dark)}
 .tag-sched-w{background:var(--purple-light);color:var(--purple)}
-.tag-sched-m{background:var(--blue-light);color:var(--blue)}
+.tag-sched-m{background:var(--purple-light);color:var(--purple)}
 .tag-interval{background:var(--slate-light);color:var(--slate)}
 .tag-proj{background:var(--green-light);color:var(--green-dark)}
 .due-tag{font-size:10.5px;padding:2px 8px;border-radius:20px;font-weight:600;white-space:nowrap;flex-shrink:0;display:inline-flex;align-items:center;gap:3px;background:#fff;border:1.5px solid}
@@ -699,8 +699,8 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
       <select class="form-input" id="t-type" onchange="updateTaskTypeFields()">
         <option value="one_off">One-off &mdash; single task</option>
         <option value="floating">Floating &mdash; no deadline</option>
-        <option value="scheduled">Scheduled &mdash; same day/date repeating</option>
-        <option value="interval">Interval &mdash; every X days from last done</option>
+        <option value="scheduled">Recurring &mdash; fixed schedule</option>
+        <option value="interval">Recurring &mdash; from completion</option>
       </select>
     </div>
     <div class="type-fields" data-type="one_off">
@@ -730,7 +730,6 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
         <div class="form-row-h">
           <input class="form-input" id="t-sched-interval" type="number" min="1" value="1" style="max-width:90px">
           <select class="form-input" id="t-sched-freq" onchange="updateSchedFields()">
-            <option value="day">day(s)</option>
             <option value="week" selected>week(s)</option>
             <option value="month">month(s)</option>
             <option value="year">year(s)</option>
@@ -742,25 +741,6 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
         <select class="form-input" id="t-sched-weekday">
           <option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option>
           <option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option>
-        </select>
-      </div>
-      <div class="form-row gone" id="sched-pattern-row">
-        <div class="form-label">Pattern</div>
-        <select class="form-input" id="t-sched-pattern">
-          <option value="">Every week</option>
-          <option value="first-1">First Monday of month</option>
-          <option value="first-2">First Tuesday of month</option>
-          <option value="first-3">First Wednesday of month</option>
-          <option value="first-4">First Thursday of month</option>
-          <option value="first-5">First Friday of month</option>
-          <option value="first-6">First Saturday of month</option>
-          <option value="first-0">First Sunday of month</option>
-          <option value="second-1">Second Monday of month</option>
-          <option value="second-5">Second Friday of month</option>
-          <option value="third-1">Third Monday of month</option>
-          <option value="fourth-5">Fourth Friday of month</option>
-          <option value="last-1">Last Monday of month</option>
-          <option value="last-5">Last Friday of month</option>
         </select>
       </div>
       <div class="form-row gone" id="sched-month">
@@ -972,10 +952,10 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
   <div class="modal">
     <div class="modal-title">Task types</div>
     <div style="display:flex;flex-direction:column;gap:12px;font-size:13.5px">
-      <div><strong>One-off</strong> - Single task with optional due date. Won't repeat.</div>
-      <div><strong>Floating</strong> - No deadline. Pick an urgency window instead.</div>
-      <div><strong>Scheduled</strong> - Calendar-anchored. Same day each week or same date each month.</div>
-      <div><strong>Interval</strong> - Every X days from last completion. Resets on check-off.</div>
+      <div><strong>One-off</strong> - A single task with one due date. Done once, then complete.</div>
+      <div><strong>Floating</strong> - No fixed date. Set an urgency level (this week, this month, no rush).</div>
+      <div><strong>Recurring - fixed schedule</strong> - Repeats on the same day or date regardless of when you complete it. Good for things like trash day (every Tuesday) or rent (1st of every month).</div>
+      <div><strong>Recurring - from completion</strong> - Resets X days from whenever you actually finish it. Good for things like changing the AC filter (every 30 days from last service).</div>
     </div>
     <div style="font-size:11.5px;color:var(--text3);margin-top:4px">Tip: swipe right to complete, swipe left to snooze. Long-press to multi-select.</div>
     <div class="modal-actions"><button class="btn" onclick="closeModal('modal-type-info')">Got it</button></div>
@@ -1616,7 +1596,7 @@ function openEditTask(t){
     var freq=schedFreqOf(t);
     document.getElementById('t-sched-freq').value=freq;
     document.getElementById('t-sched-interval').value=String(parseInt(t.sched_interval)||1);
-    if(freq==='week'){document.getElementById('t-sched-weekday').value=String(t.weekday||'1');var patEl=document.getElementById('t-sched-pattern');if(patEl)patEl.value=t.sched_pattern||'';}
+    if(freq==='week'){document.getElementById('t-sched-weekday').value=String(t.weekday||'1');}
     else if(freq==='month'){document.getElementById('t-sched-monthday').value=String(t.day_of_month||'1');}
     else if(freq==='year'){document.getElementById('t-sched-yearmonth').value=String(t.sched_month||'1');document.getElementById('t-sched-yearday').value=String(t.day_of_month||'1');}
     document.getElementById('t-sched-start').value=dval(t.sched_start);
@@ -1636,7 +1616,6 @@ function clearTaskForm(){
   document.getElementById('t-sched-interval').value='1';
   document.getElementById('t-sched-monthday').value='1';document.getElementById('t-sched-yearmonth').value='1';document.getElementById('t-sched-yearday').value='1';
   var psel=document.getElementById('t-proj-link');if(psel)psel.value='';
-  var patEl=document.getElementById('t-sched-pattern');if(patEl)patEl.value='';
   document.getElementById('owner-either').className='who-opt sel-either';
   document.getElementById('owner-f').className='who-opt';document.getElementById('owner-m').className='who-opt';
   document.getElementById('scope-opt-house').className='scope-opt sel-house';
@@ -1674,13 +1653,12 @@ function updateSchedFields(){
   document.getElementById('sched-week').classList.toggle('gone',f!=='week');
   document.getElementById('sched-month').classList.toggle('gone',f!=='month');
   document.getElementById('sched-year').classList.toggle('gone',f!=='year');
-  var pr=document.getElementById('sched-pattern-row');if(pr)pr.classList.toggle('gone',f!=='week');
 }
 function submitTask(){
   var name=document.getElementById('t-name').value.trim();if(!name){alert('Task name required');return;}
   var type=document.getElementById('t-type').value;
   var data={name:name,type:type,scope:pickedScope,owner:pickedScope==='personal'?currentUser:pickedOwner,notes:document.getElementById('t-notes').value.trim(),status:'active'};
-  if(type==='one_off'){data.due_date=document.getElementById('t-due').value||'';data.reminder_offset=document.getElementById('t-remind').value||'';}
+  if(type==='one_off'){var due=document.getElementById('t-due').value||'';if(!due&&!editingTask){due=new Date().toISOString().split('T')[0];}data.due_date=due;data.reminder_offset=document.getElementById('t-remind').value||'';}
   else if(type==='floating'){data.urgency_window=pickedUrgency;}
   else if(type==='scheduled'){
     var f=document.getElementById('t-sched-freq').value;
@@ -1701,7 +1679,7 @@ function submitTask(){
   data.linked_asset_id=assetSel?assetSel.value||'':'';
   var projSel=document.getElementById('t-proj-link');
   data.linked_project_id=projSel?projSel.value||'':'';
-  if(type==='scheduled'){var patEl=document.getElementById('t-sched-pattern');data.sched_pattern=patEl?patEl.value||'':'';}
+  if(type==='scheduled'){data.sched_pattern='';}
   closeModal('modal-task');setSyncState('loading','Saving...');
   if(editingTask){apiPost({action:'updateTask',data:{task_id:editingTask.task_id,updates:data}}).then(function(){refreshData(true);});}
   else{apiPost({action:'addTask',data:data}).then(function(){refreshData(true);});}

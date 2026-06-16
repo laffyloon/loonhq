@@ -428,13 +428,13 @@ run('submitTask includes linked_project_id', ()=>{
   const d=__posts[__posts.length-1].data;
   if(d.linked_project_id!=='p1') throw new Error('linked_project_id not p1: '+d.linked_project_id);
 });
-run('submitTask scheduled includes sched_pattern', ()=>{
-  __posts.length=0; editingTask=null; el('t-name').value='Pattern task';
+run('submitTask scheduled clears sched_pattern', ()=>{
+  __posts.length=0; editingTask=null; el('t-name').value='Recur task';
   el('t-type').value='scheduled'; el('t-sched-freq').value='week'; el('t-sched-interval').value='1';
-  el('t-sched-weekday').value='1'; el('t-sched-pattern').value='first-1'; el('t-end-sched').value='';
+  el('t-sched-weekday').value='1'; el('t-end-sched').value='';
   submitTask();
   const d=__posts[__posts.length-1].data;
-  if(d.sched_pattern!=='first-1') throw new Error('sched_pattern not first-1: '+d.sched_pattern);
+  if(d.sched_pattern!=='') throw new Error('sched_pattern should be empty: '+d.sched_pattern);
 });
 run('renderAll with history tab active', ()=>{ currentView='metrics'; metricsTab='history'; renderAll(); metricsTab='stats'; });
 
