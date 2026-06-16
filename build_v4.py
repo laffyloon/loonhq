@@ -1186,12 +1186,12 @@ function computeFirstDue(task,today){
     else{next=monthStepDate(t.getFullYear(),t.getMonth(),0,task.day_of_month);if(next<t)next=monthStepDate(t.getFullYear(),t.getMonth(),1,task.day_of_month);}
   }
   else{var ym=(parseInt(task.sched_month)||1)-1;var ld=new Date(t.getFullYear(),ym+1,0).getDate();next=new Date(t.getFullYear(),ym,Math.min(parseInt(task.day_of_month)||1,ld));if(next<t)next=new Date(t.getFullYear()+1,ym,parseInt(task.day_of_month)||1);}
-  if(task.end_date){var e=new Date(task.end_date);e.setHours(0,0,0,0);if(next>e)return null;}
+  if(task.end_date){var e=new Date(String(task.end_date).split('T')[0]+'T12:00:00');if(next>e)return null;}
   return next.toISOString().split('T')[0];
 }
 function computeNextDue(task,fromDate){
   var from=new Date(fromDate);from.setHours(0,0,0,0);
-  if(task.end_date){var e=new Date(task.end_date);e.setHours(0,0,0,0);if(from>e)return null;}
+  if(task.end_date){var e=new Date(String(task.end_date).split('T')[0]+'T12:00:00');if(from>e)return null;}
   var next=null;
   if(task.type==='interval'){var days=parseInt(task.recurrence_days)||0;if(!days)return null;next=new Date(from);next.setDate(next.getDate()+days);}
   else if(task.type==='scheduled'){
@@ -1213,7 +1213,7 @@ function computeNextDue(task,fromDate){
     else if(freq==='year'){var ky=X;var bd=base.getDate();var ystep=function(kk){var ty=base.getFullYear()+kk;var ld=new Date(ty,base.getMonth()+1,0).getDate();return new Date(ty,base.getMonth(),Math.min(bd,ld));};next=ystep(ky);while(next<=from){ky+=X;next=ystep(ky);}}
   }
   if(!next)return null;
-  if(task.end_date){var e2=new Date(task.end_date);e2.setHours(0,0,0,0);if(next>e2)return null;}
+  if(task.end_date){var e2=new Date(String(task.end_date).split('T')[0]+'T12:00:00');if(next>e2)return null;}
   return next.toISOString().split('T')[0];
 }
 
@@ -1463,7 +1463,7 @@ function toggleSelect(id){if(selectedTaskIds.has(id))selectedTaskIds.delete(id);
 function updateBatchCount(){document.getElementById('batch-count').textContent=selectedTaskIds.size+' selected';}
 function batchCompleteSelected(){
   var picks=[];
-  selectedTaskIds.forEach(function(id){var t=state.tasks.find(function(x){return x.task_id===id;});if(t)picks.push({task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,end_date:t.end_date,scope:t.scope});});
+  selectedTaskIds.forEach(function(id){var t=state.tasks.find(function(x){return x.task_id===id;});if(t)picks.push({task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,sched_month:t.sched_month,due_date:t.due_date,end_date:t.end_date,scope:t.scope});});
   if(!picks.length)return;
   exitBatch();setSyncState('loading','Completing...');
   apiPost({action:'batchComplete',data:{tasks:picks,completed_by:currentUser}}).then(function(){refreshData(true);});
@@ -1503,11 +1503,11 @@ function confirmBatchSnooze(){
     return apiPost({action:'snoozeTask',data:{task_id:t.task_id,until_date:targetDate}});
   });
   closeModal('modal-batch-snooze');exitBatch();setSyncState('loading','Snoozing...');
-  Promise.all(calls).then(function(){refreshData(true);});
+  Promise.all(calls).then(function(){refreshData(true);}).catch(function(){setSyncState('error','Could not snooze');refreshData(true);});
 }
 
 // ── COMPLETE / SNOOZE ─────────────────────────────────────
-function completeTask(id){var t=(state.tasks||[]).find(function(x){return x.task_id===id;});if(t)handleComplete(t);}
+function completeTask(id){var t=(state.tasks||[]).find(function(x){return x.task_id===id;});if(t&&t.status!=='done'&&t.status!=='ended')handleComplete(t);}
 function handleComplete(t){
   var wrap=document.querySelector('.tc-wrap[data-task-id="'+t.task_id+'"]');
   if(wrap){wrap.style.height=wrap.offsetHeight+'px';wrap.style.transition='all .2s';setTimeout(function(){wrap.style.height='0';wrap.style.opacity='0';wrap.style.overflow='hidden';},10);}
@@ -1553,7 +1553,7 @@ function confirmSnooze(){
   var targetDate;
   if(p.kind==='until'){targetDate=p.value;}
   else{var base=snoozeBase(snoozingTask);var d=new Date(base);d.setDate(d.getDate()+p.value);targetDate=d.toISOString().split('T')[0];}
-  apiPost({action:'snoozeTask',data:{task_id:snoozingTask.task_id,until_date:targetDate}}).then(function(){closeModal('modal-snooze');refreshData(true);});
+  apiPost({action:'snoozeTask',data:{task_id:snoozingTask.task_id,until_date:targetDate}}).then(function(){closeModal('modal-snooze');refreshData(true);}).catch(function(){setSyncState('error','Could not snooze');refreshData(true);});
 }
 
 // ── TASK MENU ─────────────────────────────────────────────
@@ -1723,7 +1723,7 @@ function makeProjTaskItems(pid){
 function renderProjTaskRow(item,pid){
   var d=document.createElement('div');d.className='ptask-row';
   var dueStr=item.due?fmtDateShort(item.due):'';
-  var typeTag=item.type&&item.type!=='subtask'?'<span class="type-tag">'+item.type+'</span>':'';
+  var typeTag=item.type&&item.type!=='subtask'?'<span class="type-tag">'+esc(item.type)+'</span>':'';
   if(item.isTask){
     d.innerHTML='<div class="circ-check'+(item.isDone?' done':'')+'" onclick="completeTask(\\''+item.id+'\\')"></div><div class="ptask-name">'+esc(item.name)+typeTag+'</div>'+(dueStr?'<div class="ptask-due">'+dueStr+'</div>':'');
   }else{
@@ -1839,7 +1839,7 @@ function editGrocItem(id,textEl,item){
     apiPost({action:'updateGrocery',data:{item_id:id,updates:{name:val}}});
   }
   inp.addEventListener('blur',save);
-  inp.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();save();}if(e.key==='Escape'){inp.value=current;save();}});
+  inp.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();inp.blur();}if(e.key==='Escape'){inp.value=current;inp.blur();}});
 }
 function makeGrocAdd(cat){
   var inp=document.createElement('input');
@@ -1898,7 +1898,7 @@ function renderAssets(){
     var taskBadge=linkedActive&&!hasOverdue?'<div class="arow-flag">'+linkedActive+' task'+(linkedActive>1?'s':'')+'</div>':'';
     var row=document.createElement('div');row.className='arow';row.onclick=function(){openAssetPanel(a.asset_id);};
     var iconBg=a.icon_bg||'var(--bg2)';var iconColor=a.icon_color||'var(--text3)';var icon=a.icon||'ti-tool';
-    row.innerHTML='<div style="width:8px;height:8px;border-radius:50%;background:'+sc+';flex-shrink:0;margin-right:2px;align-self:center"></div><div class="arow-icon" style="background:'+iconBg+'"><i class="ti '+esc(icon)+'" style="color:'+iconColor+'"></i></div><div class="arow-info"><div class="arow-name">'+esc(a.name)+'</div><div class="arow-sub">'+esc(sub)+'</div></div>'+(overdueBadge||taskBadge||badge);
+    row.innerHTML='<div style="width:8px;height:8px;border-radius:50%;background:'+sc+';flex-shrink:0;margin-right:2px;align-self:center"></div><div class="arow-icon" style="background:'+esc(iconBg)+'"><i class="ti '+esc(icon)+'" style="color:'+esc(iconColor)+'"></i></div><div class="arow-info"><div class="arow-name">'+esc(a.name)+'</div><div class="arow-sub">'+esc(sub)+'</div></div>'+(overdueBadge||taskBadge||badge);
     if(a.category==='Home systems')sys.appendChild(row);else if(a.category==='Appliances')app.appendChild(row);else str.appendChild(row);
   });
 }
@@ -1926,7 +1926,7 @@ function openAssetPanel(id){
   if(a.notes)fields.push(['Notes',a.notes]);
   fields.forEach(function(row){var d=document.createElement('div');d.className='ic'+(row[0]==='Notes'?' full':'');d.innerHTML='<div class="icl">'+row[0]+'</div><div class="icv">'+(row[1]?esc(row[1]):'<span style="color:var(--text3)">--</span>')+'</div>';gh.appendChild(d);});
   var mw=document.getElementById('p-manual-wrap');
-  if(a.manual_url){mw.style.display='block';document.getElementById('p-manual-link').href=a.manual_url;document.getElementById('p-manual-text').textContent=a.manual_url.replace(/^https?:\/\//,'').split('/')[0];}
+  if(a.manual_url&&/^https?:\/\//i.test(a.manual_url)){mw.style.display='block';document.getElementById('p-manual-link').href=a.manual_url;document.getElementById('p-manual-text').textContent=a.manual_url.replace(/^https?:\/\//,'').split('/')[0];}
   else{mw.style.display='none';}
   var cw=document.getElementById('p-contractors-wrap'),cl=document.getElementById('p-contractors');cl.innerHTML='';
   var contractors=[];try{contractors=JSON.parse(a.contractors||'[]');}catch(e){}
@@ -1941,7 +1941,7 @@ function openAssetPanel(id){
   combined.forEach(function(l){var d=document.createElement('div');d.className='log-item';d.innerHTML='<div class="ldot'+(l.blue?' b':'')+'"></div><div><div class="lt">'+esc(l.text)+'</div><div class="lm">'+esc(l.sub)+' - '+fmtDate(l.date)+'</div></div>';lh.appendChild(d);});
   var tc=document.getElementById('p-tasks-count');if(tc)tc.textContent=linkedTasks.length;
   var th=document.getElementById('p-tasks');th.innerHTML='';
-  if(linkedTasks.length){linkedTasks.forEach(function(lt){var d=document.createElement('div');d.className='ptask-row';var dueStr=lt.due_date?fmtDateShort(lt.due_date):'';var typeTag=lt.type?'<span class="type-tag">'+lt.type+'</span>':'';d.innerHTML='<div class="circ-check" onclick="completeTask(\\''+lt.task_id+'\\')"></div><div class="ptask-name">'+esc(lt.name)+typeTag+'</div>'+(dueStr?'<div class="ptask-due">'+dueStr+'</div>':'');th.appendChild(d);});}
+  if(linkedTasks.length){linkedTasks.forEach(function(lt){var d=document.createElement('div');d.className='ptask-row';var dueStr=lt.due_date?fmtDateShort(lt.due_date):'';var typeTag=lt.type?'<span class="type-tag">'+esc(lt.type)+'</span>':'';d.innerHTML='<div class="circ-check" onclick="completeTask(\\''+lt.task_id+'\\')"></div><div class="ptask-name">'+esc(lt.name)+typeTag+'</div>'+(dueStr?'<div class="ptask-due">'+dueStr+'</div>':'');th.appendChild(d);});}
   else{th.innerHTML='<div style="font-size:12px;color:var(--text3);padding:4px 0">No active linked tasks.</div>';}
   setPanelTab('log');
   document.getElementById('panel').style.display='flex';
@@ -2005,7 +2005,9 @@ function deleteEditingAsset(){
   closeModal('modal-edit-asset');closePanel();setSyncState('loading','Deleting...');
   apiPost({action:'deleteAsset',data:{asset_id:editingAsset.asset_id}}).then(function(){refreshData(true);});
 }
+var _maintNoteAssetId=null;
 function openAddMaintenanceNote(){
+  _maintNoteAssetId=openAssetId;
   document.getElementById('mn-note').value='';
   document.getElementById('mn-date').value=new Date().toISOString().split('T')[0];
   openModal('modal-maint-note');
@@ -2014,7 +2016,7 @@ function submitMaintenanceNote(){
   var note=document.getElementById('mn-note').value.trim();if(!note){alert('Note required');return;}
   var date=document.getElementById('mn-date').value||new Date().toISOString().split('T')[0];
   closeModal('modal-maint-note');setSyncState('loading','Saving...');
-  var aid=openAssetId;
+  var aid=_maintNoteAssetId;
   apiPost({action:'addMaintenanceNote',data:{asset_id:aid,date:date,note:note}}).then(function(){refreshData(true).then(function(){if(aid){openAssetId=aid;openAssetPanel(aid);}});});
 }
 function openAddTaskForAsset(){
