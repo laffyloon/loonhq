@@ -458,10 +458,12 @@ run('openAssetPanel handles malformed contractors JSON', ()=>{
   state.assets=sv;
 });
 run('setPanelTab switches active tab', ()=>{
+  setPanelTab('tasks');
+  if(!el('ptab-tasks')._classes.has('on')) throw new Error('tasks tab not on');
+  if(el('ptab-log')._classes.has('on')) throw new Error('log tab still on');
+  if(el('panel-tab-tasks')._classes.has('gone')) throw new Error('tasks content still hidden');
+  if(!el('panel-tab-log')._classes.has('gone')) throw new Error('log content not hidden');
   setPanelTab('log');
-  if(!el('ptab-log')._classes.has('on')) throw new Error('log tab not on');
-  if(!el('panel-tab-info')._classes.has('gone')) throw new Error('info content not hidden');
-  setPanelTab('info');
 });
 run('openAddAsset clears new fields', ()=>{
   el('ea-price').value='$500'; el('ea-manual-url').value='https://example.com';

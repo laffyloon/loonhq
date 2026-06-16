@@ -189,7 +189,7 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .who-f{background:var(--purple-light);color:var(--purple)}
 .who-m{background:var(--yellow-light);color:var(--yellow)}
 .who-either{background:var(--terra-light);color:var(--terra)}
-.who-either::before{content:'F B7M';font-size:8px;font-weight:700;letter-spacing:-0.5px}
+.who-either::before{content:'F\00B7M';font-size:8px;font-weight:700;letter-spacing:-0.5px}
 .task-menu-btn{background:none;border:none;color:var(--text3);font-size:18px;padding:0 2px;cursor:pointer;line-height:1;align-self:center;flex-shrink:0}
 .task-menu-btn:hover{color:var(--text)}
 
@@ -643,23 +643,20 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
         </div>
       </div>
       <div id="p-flags"></div>
-      <div class="panel-tabs">
-        <button class="panel-tab on" id="ptab-info" onclick="setPanelTab('info')">Main Info</button>
-        <button class="panel-tab" id="ptab-log" onclick="setPanelTab('log')">Log</button>
+      <div class="ig" id="p-grid"></div>
+      <div id="p-manual-wrap" style="display:none">
+        <div class="dlbl" style="margin-bottom:4px">Documentation</div>
+        <a id="p-manual-link" class="manual-link" href="#" target="_blank" rel="noopener"><i class="ti ti-file-text"></i><span id="p-manual-text"></span></a>
+      </div>
+      <div id="p-contractors-wrap" style="display:none">
+        <div class="dlbl" style="margin-bottom:6px">Contractors</div>
+        <div class="contr-list" id="p-contractors"></div>
+      </div>
+      <div class="panel-tabs" style="margin-top:4px">
+        <button class="panel-tab on" id="ptab-log" onclick="setPanelTab('log')">Log</button>
         <button class="panel-tab" id="ptab-tasks" onclick="setPanelTab('tasks')">Tasks</button>
       </div>
-      <div class="panel-tab-content" id="panel-tab-info">
-        <div class="ig" id="p-grid"></div>
-        <div id="p-manual-wrap" style="display:none">
-          <div class="dlbl" style="margin-bottom:4px">Documentation</div>
-          <a id="p-manual-link" class="manual-link" href="#" target="_blank" rel="noopener"><i class="ti ti-file-text"></i><span id="p-manual-text"></span></a>
-        </div>
-        <div id="p-contractors-wrap" style="display:none">
-          <div class="dlbl" style="margin-bottom:6px">Contractors</div>
-          <div class="contr-list" id="p-contractors"></div>
-        </div>
-      </div>
-      <div class="panel-tab-content gone" id="panel-tab-log">
+      <div class="panel-tab-content" id="panel-tab-log">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
           <div class="dlbl">Maintenance log</div>
           <button class="btn" style="font-size:11.5px" onclick="openAddMaintenanceNote()"><i class="ti ti-plus"></i> Add note</button>
@@ -1908,7 +1905,7 @@ function renderAssets(){
 }
 function setPanelTab(tab){
   panelTab=tab;
-  ['info','log','tasks'].forEach(function(t){
+  ['log','tasks'].forEach(function(t){
     var btn=document.getElementById('ptab-'+t);if(btn)btn.classList.toggle('on',t===tab);
     var el=document.getElementById('panel-tab-'+t);if(el)el.classList.toggle('gone',t!==tab);
   });
@@ -1947,7 +1944,7 @@ function openAssetPanel(id){
   var th=document.getElementById('p-tasks');th.innerHTML='';
   if(linkedTasks.length){linkedTasks.forEach(function(lt){var d=document.createElement('div');d.className='ptask-row';var dueStr=lt.due_date?fmtDateShort(lt.due_date):'';var typeTag=lt.type?'<span class="type-tag">'+lt.type+'</span>':'';d.innerHTML='<div class="circ-check" onclick="completeTask(\''+lt.task_id+'\')"></div><div class="ptask-name">'+esc(lt.name)+typeTag+'</div>'+(dueStr?'<div class="ptask-due">'+dueStr+'</div>':'');th.appendChild(d);});}
   else{th.innerHTML='<div style="font-size:12px;color:var(--text3);padding:4px 0">No active linked tasks.</div>';}
-  setPanelTab('info');
+  setPanelTab('log');
   document.getElementById('panel').style.display='flex';
 }
 function closePanel(){document.getElementById('panel').style.display='none';openAssetId=null;}
