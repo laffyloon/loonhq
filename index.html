@@ -171,6 +171,9 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .tag-floating{background:var(--green-light);color:var(--green-dark)}
 .tag-sched-w{background:var(--purple-light);color:var(--purple)}
 .tag-sched-m{background:var(--purple-light);color:var(--purple)}
+.th-row{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)}
+.th-row:last-child{border-bottom:none}
+.th-icon{font-size:15px;flex-shrink:0;margin-top:1px}
 .tag-interval{background:var(--slate-light);color:var(--slate)}
 .tag-proj{background:var(--green-light);color:var(--green-dark)}
 .due-tag{font-size:10.5px;padding:2px 8px;border-radius:20px;font-weight:600;white-space:nowrap;flex-shrink:0;display:inline-flex;align-items:center;gap:3px;background:#fff;border:1.5px solid}
@@ -776,9 +779,20 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
     <div class="form-row" id="t-proj-row"><div class="form-label">Link to project (optional)</div><select class="form-input" id="t-proj-link"><option value="">No project link</option></select></div>
     <div class="modal-actions">
       <button class="btn danger gone" id="task-delete-btn" onclick="deleteEditingTask()"><i class="ti ti-trash"></i></button>
+      <button class="btn gone" id="task-history-btn" onclick="openTaskHistory()" title="View history" style="padding:0 10px;color:var(--text3)"><i class="ti ti-history"></i></button>
       <button class="btn" onclick="closeModal('modal-task')">Cancel</button>
       <button class="btn primary" id="task-submit-btn" onclick="submitTask()">Add task</button>
     </div>
+  </div>
+</div>
+
+<!-- TASK HISTORY MODAL -->
+<div class="modal-bg gone" id="modal-task-history">
+  <div class="modal">
+    <div class="modal-title">Task history</div>
+    <div id="th-task-name" style="font-size:13px;color:var(--text3);margin:-4px 0 12px"></div>
+    <div id="th-list" style="max-height:55vh;overflow-y:auto"></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal('modal-task-history')">Close</button></div>
   </div>
 </div>
 
@@ -1536,7 +1550,7 @@ function confirmSnooze(){
   var targetDate;
   if(p.kind==='until'){targetDate=p.value;}
   else{var base=snoozeBase(snoozingTask);var d=new Date(base);d.setDate(d.getDate()+p.value);targetDate=d.toISOString().split('T')[0];}
-  apiPost({action:'snoozeTask',data:{task_id:snoozingTask.task_id,until_date:targetDate}}).then(function(){closeModal('modal-snooze');refreshData(true);}).catch(function(){setSyncState('error','Could not snooze');refreshData(true);});
+  apiPost({action:'snoozeTask',data:{task_id:snoozingTask.task_id,until_date:targetDate,snoozed_by:currentUser}}).then(function(){closeModal('modal-snooze');refreshData(true);}).catch(function(){setSyncState('error','Could not snooze');refreshData(true);});
 }
 
 // ── TASK MENU ─────────────────────────────────────────────
@@ -1574,6 +1588,7 @@ function openAddTask(){
   document.getElementById('task-modal-title').textContent='Add task';
   document.getElementById('task-submit-btn').textContent='Add task';
   document.getElementById('task-delete-btn').classList.add('gone');
+  document.getElementById('task-history-btn').classList.add('gone');
   populateAssetDropdown();populateProjectDropdown();
   clearTaskForm();openModal('modal-task');
 }
@@ -1583,6 +1598,7 @@ function openEditTask(t){
   document.getElementById('task-modal-title').textContent='Edit task';
   document.getElementById('task-submit-btn').textContent='Save changes';
   document.getElementById('task-delete-btn').classList.remove('gone');
+  document.getElementById('task-history-btn').classList.remove('gone');
   pickScope(pickedScope);
   document.getElementById('t-name').value=t.name||'';
   document.getElementById('t-type').value=t.type||'one_off';
@@ -1683,7 +1699,7 @@ function submitTask(){
   data.linked_project_id=projSel?projSel.value||'':'';
   if(type==='scheduled'){data.sched_pattern='';}
   closeModal('modal-task');setSyncState('loading','Saving...');
-  if(editingTask){apiPost({action:'updateTask',data:{task_id:editingTask.task_id,updates:data}}).then(function(){refreshData(true);});}
+  if(editingTask){apiPost({action:'updateTask',data:{task_id:editingTask.task_id,updates:data,updated_by:currentUser}}).then(function(){refreshData(true);});}
   else{apiPost({action:'addTask',data:data}).then(function(){refreshData(true);});}
 }
 function deleteEditingTask(){
@@ -2076,6 +2092,7 @@ function renderTrendChart(){
 function renderHistory(){
   var search=((document.getElementById('history-search')||{}).value||'').toLowerCase();
   var log=(state.task_log||[]).filter(function(l){
+    var lt=l.log_type||'completion';if(lt!=='completion')return false;
     if(l.scope==='personal'&&l.completed_by!==currentUser)return false;
     if(search&&!((l.task_name||'').toLowerCase().includes(search)||(l.completed_by||'').toLowerCase().includes(search)))return false;
     return true;
@@ -2095,7 +2112,7 @@ function openHistoryActionMenu(e,l){
   closeTaskMenu();
   _histMenuLog=l;
   var m=document.createElement('div');m.className='task-menu';
-  m.innerHTML='<button class="task-menu-item" onclick="markIncomplete()"><i class="ti ti-arrow-back-up"></i> Mark as incomplete</button><button class="task-menu-item" onclick="openReassignMenu()"><i class="ti ti-user-check"></i> Reassign to...</button>';
+  m.innerHTML='<button class="task-menu-item" onclick="markIncomplete()"><i class="ti ti-arrow-back-up"></i> Mark as incomplete</button><button class="task-menu-item" onclick="openReassignMenu()"><i class="ti ti-user-check"></i> Reassign to...</button><button class="task-menu-item danger" onclick="deleteTaskLogEntry()"><i class="ti ti-trash"></i> Delete entry</button>';
   document.body.appendChild(m);
   var r=e.currentTarget.getBoundingClientRect();
   var left=r.right-170;if(left<8)left=8;
@@ -2107,6 +2124,34 @@ function markIncomplete(){
   if(!confirm('Resurface "'+_histMenuLog.task_name+'" as an active task?'))return;
   setSyncState('loading','Restoring...');
   apiPost({action:'uncompleteTask',data:{log_id:_histMenuLog.log_id,task_id:_histMenuLog.task_id}}).then(function(){refreshData(true);});
+}
+function deleteTaskLogEntry(){
+  if(!_histMenuLog)return;closeTaskMenu();
+  if(!confirm('Delete this history entry? This cannot be undone.'))return;
+  setSyncState('loading','Deleting...');
+  apiPost({action:'deleteTaskLog',data:{log_id:_histMenuLog.log_id}}).then(function(){refreshData(true);}).catch(function(){setSyncState('error','Could not delete');refreshData(true);});
+}
+function openTaskHistory(){
+  if(!editingTask)return;
+  var tid=editingTask.task_id;
+  var name=editingTask.name;
+  document.getElementById('th-task-name').textContent=name;
+  var logs=(state.task_log||[]).filter(function(l){return l.task_id===tid;}).slice().sort(function(a,b){return new Date(b.completed_at)-new Date(a.completed_at);});
+  var el=document.getElementById('th-list');el.innerHTML='';
+  if(!logs.length){el.innerHTML='<div style="font-size:13px;color:var(--text3);padding:12px 0">No history yet.</div>';openModal('modal-task-history');return;}
+  logs.forEach(function(l){
+    var lt=l.log_type||'completion';
+    var icon=lt==='snooze'?'ti-clock':lt==='edit'?'ti-pencil':'ti-check';
+    var clr=lt==='snooze'?'var(--amber)':lt==='edit'?'var(--text3)':'var(--green)';
+    var label=lt==='snooze'?'Snoozed':lt==='edit'?'Edited':'Completed';
+    var by=l.completed_by?(' – '+esc(l.completed_by)):'';
+    var detail='';
+    if(lt==='snooze'&&l.details){try{var dp=JSON.parse(l.details);if(dp.until_date)detail=' → until '+fmtDate(dp.until_date);}catch(e){}}
+    var row=document.createElement('div');row.className='th-row';
+    row.innerHTML='<i class="ti '+icon+' th-icon" style="color:'+clr+'"></i><div style="flex:1;min-width:0"><div class="lt">'+label+by+'</div><div class="lm">'+fmtDate(l.completed_at)+detail+'</div></div>';
+    el.appendChild(row);
+  });
+  openModal('modal-task-history');
 }
 function openReassignMenu(){
   if(!_histMenuLog)return;closeTaskMenu();
@@ -2123,7 +2168,7 @@ function renderMetrics(){renderStats();}
 // ── MODALS ────────────────────────────────────────────────
 function openModal(id){document.getElementById(id).classList.remove('gone');}
 function closeModal(id){document.getElementById(id).classList.add('gone');}
-document.addEventListener('click',function(e){['modal-task','modal-project','modal-subtask','modal-grocery','modal-qs','modal-snooze','modal-mobile-menu','modal-edit-asset','modal-maint-note','modal-metric-drill','modal-reassign','modal-batch-snooze','modal-type-info'].forEach(function(id){if(e.target.id===id)closeModal(id);});});
+document.addEventListener('click',function(e){['modal-task','modal-project','modal-subtask','modal-grocery','modal-qs','modal-snooze','modal-mobile-menu','modal-edit-asset','modal-maint-note','modal-metric-drill','modal-reassign','modal-batch-snooze','modal-type-info','modal-task-history'].forEach(function(id){if(e.target.id===id)closeModal(id);});});
 
 // ── PROJECT / GROCERY ─────────────────────────────────────
 function openAddProject(){

@@ -1,4 +1,4 @@
-// LoonHQ Apps Script v8.4
+// LoonHQ Apps Script v8.5
 // Deploy: paste into script.google.com -> Save -> Deploy -> New version
 // After schema changes: run setupHeaders() once in the editor (safe, appends columns only)
 
@@ -12,7 +12,7 @@ var HEADERS = {
   projects:['project_id','name','description','status','target_date','created_at'],
   subtasks:['subtask_id','project_id','name','status','due_date','sort_order'],
   grocery: ['item_id','name','category','status','added_by','checked_at','sort_order'],
-  task_log:['log_id','task_id','task_name','completed_by','completed_at','scope','notes'],
+  task_log:['log_id','task_id','task_name','completed_by','completed_at','scope','notes','log_type','details'],
   assets:  ['asset_id','name','category','status','notes','install_date','last_service_date',
             'next_service_date','warranty_expiry','icon','icon_bg','icon_color',
             'purchase_price','manual_url','contractors'],
@@ -175,6 +175,7 @@ function doPost(e) {
     else if (action === 'addMaintenanceNote') result = addMaintenanceNote(data);
     else if (action === 'uncompleteTask') result = uncompleteTask(data);
     else if (action === 'reassignCompletion') result = reassignCompletion(data);
+    else if (action === 'deleteTaskLog') result = deleteTaskLog(data);
     else result = { error: 'Unknown action: ' + action };
   } catch(err) {
     result = { error: err.message };
@@ -299,6 +300,15 @@ function updateTask(data) {
   var rowNum = findRow(sheet, 'task_id', data.task_id);
   if (rowNum < 0) return { error: 'Task not found' };
   updateRow(sheet, rowNum, data.updates);
+  // Log the edit event
+  appendRow(getSheet('task_log'), HEADERS.task_log, {
+    log_id: newId('l'), task_id: data.task_id,
+    task_name: data.updates.name || data.task_id,
+    completed_by: data.updated_by || '',
+    completed_at: new Date().toISOString(),
+    scope: data.updates.scope || 'household',
+    notes: '', log_type: 'edit', details: ''
+  });
   return { ok: true };
 }
 
@@ -307,6 +317,15 @@ function deleteTask(data) {
   var rowNum = findRow(sheet, 'task_id', data.task_id);
   if (rowNum < 0) return { error: 'Task not found' };
   sheet.deleteRow(rowNum);
+  // Cascade: delete all task_log entries for this task
+  var logSheet = getSheet('task_log');
+  var logData = logSheet.getDataRange().getValues();
+  var taskIdIdx = logData[0].map(String).indexOf('task_id');
+  if (taskIdIdx >= 0) {
+    for (var i = logData.length - 1; i >= 1; i--) {
+      if (String(logData[i][taskIdIdx]) === String(data.task_id)) logSheet.deleteRow(i + 1);
+    }
+  }
   return { ok: true };
 }
 
@@ -316,7 +335,8 @@ function completeTask(data) {
   var logEntry = {
     log_id: newId('l'), task_id: data.task_id, task_name: data.task_name,
     completed_by: data.completed_by, completed_at: new Date().toISOString(),
-    scope: data.scope || 'household', notes: data.notes || ''
+    scope: data.scope || 'household', notes: data.notes || '',
+    log_type: 'completion', details: ''
   };
   appendRow(logSheet, HEADERS.task_log, logEntry);
 
@@ -348,6 +368,18 @@ function snoozeTask(data) {
   if (rowNum < 0) return { error: 'Task not found' };
   var newDue = data.until_date;
   updateRow(sheet, rowNum, { due_date: newDue, status: 'active' });
+  // Log the snooze event
+  var taskObjs = sheetToObjects(sheet);
+  var taskObj = taskObjs.find(function(t) { return t.task_id === data.task_id; }) || {};
+  appendRow(getSheet('task_log'), HEADERS.task_log, {
+    log_id: newId('l'), task_id: data.task_id,
+    task_name: taskObj.name || data.task_id,
+    completed_by: data.snoozed_by || '',
+    completed_at: new Date().toISOString(),
+    scope: taskObj.scope || 'household',
+    notes: '', log_type: 'snooze',
+    details: JSON.stringify({ until_date: newDue })
+  });
   return { ok: true };
 }
 
@@ -503,6 +535,14 @@ function uncompleteTask(data) {
     var newDue = (taskObj.type === 'scheduled' || taskObj.type === 'interval') ? (computeNextDue(taskObj, new Date()) || today) : (stripDate(taskObj.due_date) || today);
     updateRow(taskSheet, taskRow, { status: 'active', due_date: newDue });
   }
+  return { ok: true };
+}
+
+function deleteTaskLog(data) {
+  var sheet = getSheet('task_log');
+  var rowNum = findRow(sheet, 'log_id', data.log_id);
+  if (rowNum < 0) return { error: 'Log entry not found' };
+  sheet.deleteRow(rowNum);
   return { ok: true };
 }
 

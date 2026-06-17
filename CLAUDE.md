@@ -19,7 +19,7 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 - index.html — the entire app (built output, source of truth for deployment)
 - build_v4.py — Python build script that generates index.html (~1600 lines)
 - qa_harness.js — Node.js DOM mock + 110 runtime checks
-- LoonHQ_AppScript_v8.4.js — current Apps Script source (deploy separately to script.google.com)
+- LoonHQ_AppScript_v8.5.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
 
 ## Build workflow
@@ -39,7 +39,7 @@ DO NOT recommend clearing, resetting, or deleting sheet data under any circumsta
 without explicit approval AND a second confirmation from Frankie. This is a hard rule.
 Real user data is live in the sheet.
 
-## Current version: v8.4
+## Current version: v8.5
 index.html in the repo is the live deployed build. build_v4.py is the source of truth.
 
 ## Apps Script schema (tasks tab columns in order)
