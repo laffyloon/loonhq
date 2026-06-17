@@ -1267,8 +1267,8 @@ function renderTasks(){
     stripe('Today',today,[],'r');
     stripe('Reminders',reminders,[],'n');
     stripe('Tomorrow',tomorrow,[],'o');
-    stripe('This week',week,projRows,'g');
-    stripe('This month',month,[],'b');
+    stripe('This next week',week,projRows,'g');
+    stripe('This next month',month,[],'b');
     stripe('Later',later,[],'n');
   }
   else if(taskTab==='today'){stripe('Today',today,[],'r');stripe('Reminders',reminders,[],'n');}
@@ -1277,14 +1277,14 @@ function renderTasks(){
     stripe('Today',today,[],'r');
     stripe('Reminders',reminders,[],'n');
     stripe('Tomorrow',tomorrow,[],'o');
-    stripe('This week',week,projRows,'g');
+    stripe('This next week',week,projRows,'g');
   }
   else if(taskTab==='month'){
     stripe('Today',today,[],'r');
     stripe('Reminders',reminders,[],'n');
     stripe('Tomorrow',tomorrow,[],'o');
-    stripe('This week',week,[],'g');
-    stripe('This month',month,projRows,'b');
+    stripe('This next week',week,[],'g');
+    stripe('This next month',month,projRows,'b');
   }
   else if(taskTab==='recurring'){var rec=all.filter(function(t){return t.type==='scheduled'||t.type==='interval';});stripe('All recurring',rec,[],'g');}
   if(!el.children.length)el.innerHTML='<div style="font-size:13.5px;color:var(--text3);padding:30px 0;text-align:center">No tasks here. Nice work!</div>';
@@ -1544,12 +1544,12 @@ function pickSnoozeDate(date){
 }
 function confirmSnooze(){
   if(!snoozingTask||!pendingSnooze)return;
-  setSyncState('loading','Snoozing...');
   var p=pendingSnooze;
   var targetDate;
   if(p.kind==='until'){targetDate=p.value;}
   else{var base=snoozeBase(snoozingTask);var d=new Date(base);d.setDate(d.getDate()+p.value);targetDate=d.toISOString().split('T')[0];}
-  apiPost({action:'snoozeTask',data:{task_id:snoozingTask.task_id,until_date:targetDate,snoozed_by:currentUser}}).then(function(){closeModal('modal-snooze');refreshData(true);}).catch(function(){setSyncState('error','Could not snooze');refreshData(true);});
+  closeModal('modal-snooze');setSyncState('loading','Snoozing...');
+  apiPost({action:'snoozeTask',data:{task_id:snoozingTask.task_id,until_date:targetDate,snoozed_by:currentUser}}).then(function(){refreshData(true);}).catch(function(){setSyncState('error','Could not snooze');refreshData(true);});
 }
 
 // ── TASK MENU ─────────────────────────────────────────────
