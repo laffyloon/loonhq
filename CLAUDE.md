@@ -24,9 +24,10 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 
 ## Build workflow
 Run: python3 build_v4.py
-Then extract and syntax check:
-  python3 -c "import re; html=open('index.html').read(); scripts=re.findall(r'<script>(.*?)</script>',html,re.DOTALL); open('extracted.js','w').write(max(scripts,key=len))"
-  node --check extracted.js
+Then copy output and extract (QA harness reads from /home/claude/extracted.js):
+  cp /mnt/user-data/outputs/LoonHQ.html index.html
+  python3 -c "import re; html=open('index.html').read(); scripts=re.findall(r'<script>(.*?)</script>',html,re.DOTALL); open('/home/claude/extracted.js','w').write(max(scripts,key=len))"
+  node --check /home/claude/extracted.js
   node qa_harness.js
 
 ## Deploy
