@@ -138,10 +138,12 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .stripe.r{border-left:3px solid var(--red)}.stripe.a{border-left:3px solid var(--amber)}
 .stripe.b{border-left:3px solid var(--blue)}.stripe.t{border-left:3px solid var(--green)}
 .stripe.o{border-left:3px solid var(--amber)}.stripe.g{border-left:3px solid var(--green)}.stripe.n{border-left:3px solid var(--border2)}
+.stripe.p{border-left:3px solid var(--purple)}
 .s-lbl{font-size:10.5px;font-weight:600;margin-bottom:3px;letter-spacing:.04em;text-transform:uppercase}
 .stripe.r .s-lbl{color:var(--red)}.stripe.a .s-lbl{color:var(--amber)}
 .stripe.b .s-lbl{color:var(--blue)}.stripe.t .s-lbl{color:var(--green-dark)}
 .stripe.o .s-lbl{color:var(--amber)}.stripe.g .s-lbl{color:var(--green-dark)}.stripe.n .s-lbl{color:var(--text3)}
+.stripe.p .s-lbl{color:var(--purple)}
 
 /* ═══════════════════════════════════════════════
    TASK CARDS — THE CRITICAL FIX
@@ -175,10 +177,10 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .due-tag{font-size:10.5px;padding:2px 8px;border-radius:20px;font-weight:600;white-space:nowrap;flex-shrink:0;display:inline-flex;align-items:center;gap:3px;background:#fff;border:1.5px solid}
 .due-tag i{font-size:12px}
 .due-overdue{border-color:var(--red);color:var(--red);background:var(--red-light);font-weight:600}
-.due-today{border-color:var(--red);color:var(--red)}
-.due-soon{border-color:var(--amber);color:var(--amber)}
-.due-week{border-color:var(--green);color:var(--green-dark)}
-.due-month{border-color:var(--blue);color:var(--blue)}
+.due-today{border-color:var(--amber);color:var(--amber)}
+.due-soon{border-color:var(--green);color:var(--green-dark)}
+.due-week{border-color:var(--blue);color:var(--blue)}
+.due-month{border-color:var(--purple);color:var(--purple)}
 .due-future{border-color:var(--border2);color:var(--text3)}
 /* mp: NO overflow:hidden, NO white-space:nowrap — wraps inside .tm naturally */
 .mp{font-size:11px;color:var(--text3);display:inline-flex;align-items:center;gap:3px}
@@ -1229,7 +1231,7 @@ function renderTasks(){
   var tm0=new Date(now);tm0.setDate(now.getDate()+1);
   var we=new Date(now);we.setDate(now.getDate()+7);
   var me=new Date(now);me.setDate(now.getDate()+30);
-  var today=[],reminders=[],tomorrow=[],week=[],month=[],later=[];
+  var overdue=[],today=[],reminders=[],tomorrow=[],week=[],month=[],later=[];
   all.forEach(function(t){
     if(t.type==='floating'){
       if(t.urgency_window==='this_week')week.push(t);
@@ -1246,7 +1248,8 @@ function renderTasks(){
     var due=new Date(String(dueStr).split('T')[0]+'T12:00:00');due.setHours(0,0,0,0);
     var surf=due;
     if(t.reminder_offset){var ob={same_day:0,'1_day':1,'2_days':2,'3_days':3,'1_week':7};var bk=ob[t.reminder_offset]||0;surf=new Date(due);surf.setDate(surf.getDate()-bk);}
-    if(due<=now)today.push(t);
+    if(due<now)overdue.push(t);
+    else if(due.getTime()===now.getTime())today.push(t);
     else if(surf<=now)reminders.push(t);
     else if(due.getTime()===tm0.getTime())tomorrow.push(t);
     else if(due<=we)week.push(t);
@@ -1269,27 +1272,30 @@ function renderTasks(){
     el.appendChild(w);
   }
   if(taskTab==='all'){
-    stripe('Today',today,[],'r');
+    stripe('Overdue',overdue,[],'r');
+    stripe('Today',today,[],'o');
     stripe('Reminders',reminders,[],'n');
-    stripe('Tomorrow',tomorrow,[],'o');
-    stripe('This next week',week,projRows,'g');
-    stripe('This next month',month,[],'b');
+    stripe('Tomorrow',tomorrow,[],'g');
+    stripe('This next week',week,projRows,'b');
+    stripe('This next month',month,[],'p');
     stripe('Later',later,[],'n');
   }
-  else if(taskTab==='today'){stripe('Today',today,[],'r');stripe('Reminders',reminders,[],'n');}
-  else if(taskTab==='tomorrow'){stripe('Tomorrow',tomorrow,[],'o');}
+  else if(taskTab==='today'){stripe('Overdue',overdue,[],'r');stripe('Today',today,[],'o');stripe('Reminders',reminders,[],'n');}
+  else if(taskTab==='tomorrow'){stripe('Tomorrow',tomorrow,[],'g');}
   else if(taskTab==='week'){
-    stripe('Today',today,[],'r');
+    stripe('Overdue',overdue,[],'r');
+    stripe('Today',today,[],'o');
     stripe('Reminders',reminders,[],'n');
-    stripe('Tomorrow',tomorrow,[],'o');
-    stripe('This next week',week,projRows,'g');
+    stripe('Tomorrow',tomorrow,[],'g');
+    stripe('This next week',week,projRows,'b');
   }
   else if(taskTab==='month'){
-    stripe('Today',today,[],'r');
+    stripe('Overdue',overdue,[],'r');
+    stripe('Today',today,[],'o');
     stripe('Reminders',reminders,[],'n');
-    stripe('Tomorrow',tomorrow,[],'o');
-    stripe('This next week',week,[],'g');
-    stripe('This next month',month,projRows,'b');
+    stripe('Tomorrow',tomorrow,[],'g');
+    stripe('This next week',week,[],'b');
+    stripe('This next month',month,projRows,'p');
   }
   else if(taskTab==='recurring'){var rec=all.filter(function(t){return t.type==='scheduled'||t.type==='interval';});stripe('All recurring',rec,[],'g');}
   if(!el.children.length)el.innerHTML='<div style="font-size:13.5px;color:var(--text3);padding:30px 0;text-align:center">No tasks here. Nice work!</div>';
