@@ -281,9 +281,12 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
 .pc-tasks{padding:8px 14px 11px}
 .sub{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:var(--text2)}
 .sub.done-sub{color:var(--text3);text-decoration:line-through}
-.box{width:18px;height:18px;border-radius:50%;border:1.5px solid var(--border2);flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s}
+.box{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--border2);flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;touch-action:manipulation}
 .box:hover{border-color:var(--green)}.box.done{background:var(--green);border-color:var(--green)}
-.box.done::after{content:'\\2713';font-size:10px;color:#fff;font-weight:700}
+.box.done::after{content:'\\2713';font-size:11px;color:#fff;font-weight:700}
+.circ-check{width:22px;height:22px;border-radius:50%;border:2px solid var(--border2);flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;touch-action:manipulation}
+.circ-check:hover{border-color:var(--green)}.circ-check.done{background:var(--green);border-color:var(--green)}
+.circ-check.done::after{content:'\\2713';font-size:11px;color:#fff;font-weight:700}
 .sub-text{flex:1;min-width:0;word-break:break-word}
 
 /* GROCERY */
@@ -347,7 +350,7 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
 .contr-name{font-weight:500;margin-bottom:2px}
 .contr-meta{font-size:11px;color:var(--text3)}
 .contr-phone{color:var(--blue);text-decoration:none;font-size:11.5px}
-.ptask-row{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:var(--text2)}
+.ptask-row{display:flex;align-items:center;gap:8px;padding:10px 0;font-size:13px;color:var(--text2);min-height:44px}
 .ptask-name{flex:1;min-width:0;word-break:break-word;font-size:13px}
 .ptask-due{font-size:11px;color:var(--text3);white-space:nowrap;flex-shrink:0}
 .manual-link{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--blue);text-decoration:none}
@@ -1740,7 +1743,7 @@ function renderProjTaskRow(item,pid){
   var dueStr=item.due?fmtDateShort(item.due):'';
   var typeTag=item.type&&item.type!=='subtask'?'<span class="type-tag">'+esc(item.type)+'</span>':'';
   if(item.isTask){
-    d.innerHTML='<div class="circ-check'+(item.isDone?' done':'')+'" onclick="completeTask(\\''+item.id+'\\')"></div><div class="ptask-name">'+esc(item.name)+typeTag+'</div>'+(dueStr?'<div class="ptask-due">'+dueStr+'</div>':'');
+    d.innerHTML='<div class="circ-check'+(item.isDone?' done':'')+'" onclick="event.stopPropagation();completeTask(\\''+item.id+'\\')"></div><div class="ptask-name">'+esc(item.name)+typeTag+'</div>'+(dueStr?'<div class="ptask-due">'+dueStr+'</div>':'');
   }else{
     var isDone=item.isDone;
     d.innerHTML='<div class="box'+(isDone?' done':'')+'" data-sub="'+item.id+'"></div><div class="ptask-name">'+esc(item.name)+(item.due?' <span style="font-size:11px;color:var(--text3)">'+fmtDate(item.due)+'</span>':'')+'</div>';
@@ -1956,7 +1959,7 @@ function openAssetPanel(id){
   combined.forEach(function(l){var d=document.createElement('div');d.className='log-item';d.innerHTML='<div class="ldot'+(l.blue?' b':'')+'"></div><div><div class="lt">'+esc(l.text)+'</div><div class="lm">'+esc(l.sub)+' - '+(l.blue?fmtTimestamp(l.date):fmtDate(l.date))+'</div></div>';lh.appendChild(d);});
   var tc=document.getElementById('p-tasks-count');if(tc)tc.textContent=linkedTasks.length;
   var th=document.getElementById('p-tasks');th.innerHTML='';
-  if(linkedTasks.length){linkedTasks.forEach(function(lt){var d=document.createElement('div');d.className='ptask-row';var dueStr=lt.due_date?fmtDateShort(lt.due_date):'';var typeTag=lt.type?'<span class="type-tag">'+esc(lt.type)+'</span>':'';d.innerHTML='<div class="circ-check" onclick="completeTask(\\''+lt.task_id+'\\')"></div><div class="ptask-name">'+esc(lt.name)+typeTag+'</div>'+(dueStr?'<div class="ptask-due">'+dueStr+'</div>':'');th.appendChild(d);});}
+  if(linkedTasks.length){linkedTasks.forEach(function(lt){var d=document.createElement('div');d.className='ptask-row';var dueStr=lt.due_date?fmtDateShort(lt.due_date):'';var typeTag=lt.type?'<span class="type-tag">'+esc(lt.type)+'</span>':'';d.innerHTML='<div class="circ-check'+(lt.status==='done'||lt.status==='ended'?' done':'')+'" onclick="event.stopPropagation();completeTask(\\''+lt.task_id+'\\')"></div><div class="ptask-name">'+esc(lt.name)+typeTag+'</div>'+(dueStr?'<div class="ptask-due">'+dueStr+'</div>':'');th.appendChild(d);});}
   else{th.innerHTML='<div style="font-size:12px;color:var(--text3);padding:4px 0">No active linked tasks.</div>';}
   setPanelTab('log');
   document.getElementById('panel').style.display='flex';
