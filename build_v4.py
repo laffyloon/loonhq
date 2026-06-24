@@ -1166,7 +1166,7 @@ function computeFirstDue(task,today){
   var todayMid=new Date(today);todayMid.setHours(0,0,0,0);
   var start=task.sched_start?new Date(String(task.sched_start).split('T')[0]+'T12:00:00'):null;
   if(start)start.setHours(0,0,0,0);
-  var useStart=!!(start&&start>todayMid);
+  var useStart=!!(start&&start>=todayMid);
   var t=useStart?new Date(start):new Date(todayMid);
   if(task.type==='interval'){var days=parseInt(task.recurrence_days)||0;if(!days)return null;var d=new Date(t);if(!useStart)d.setDate(d.getDate()+days);return d.toISOString().split('T')[0];}
   if(task.type!=='scheduled')return task.due_date||'';
@@ -1947,7 +1947,7 @@ function openAssetPanel(id){
   var combined=manualNotes.map(function(n){return{date:n.date,text:n.note,sub:(n.log_type==='service'?'Service':'Note')};}).concat(completedLinked.map(function(l){return{date:l.completed_at,text:l.task_name,sub:'Completed by '+l.completed_by,blue:true};}));
   combined.sort(function(a,b){return new Date(b.date)-new Date(a.date);});
   if(!combined.length){lh.innerHTML='<div style="font-size:12px;color:var(--text3);padding:8px 0">No maintenance history yet.</div>';}
-  combined.forEach(function(l){var d=document.createElement('div');d.className='log-item';d.innerHTML='<div class="ldot'+(l.blue?' b':'')+'"></div><div><div class="lt">'+esc(l.text)+'</div><div class="lm">'+esc(l.sub)+' - '+fmtDate(l.date)+'</div></div>';lh.appendChild(d);});
+  combined.forEach(function(l){var d=document.createElement('div');d.className='log-item';d.innerHTML='<div class="ldot'+(l.blue?' b':'')+'"></div><div><div class="lt">'+esc(l.text)+'</div><div class="lm">'+esc(l.sub)+' - '+(l.blue?fmtTimestamp(l.date):fmtDate(l.date))+'</div></div>';lh.appendChild(d);});
   var tc=document.getElementById('p-tasks-count');if(tc)tc.textContent=linkedTasks.length;
   var th=document.getElementById('p-tasks');th.innerHTML='';
   if(linkedTasks.length){linkedTasks.forEach(function(lt){var d=document.createElement('div');d.className='ptask-row';var dueStr=lt.due_date?fmtDateShort(lt.due_date):'';var typeTag=lt.type?'<span class="type-tag">'+esc(lt.type)+'</span>':'';d.innerHTML='<div class="circ-check" onclick="completeTask(\\''+lt.task_id+'\\')"></div><div class="ptask-name">'+esc(lt.name)+typeTag+'</div>'+(dueStr?'<div class="ptask-due">'+dueStr+'</div>':'');th.appendChild(d);});}
@@ -2075,7 +2075,7 @@ function openMetricDrillDown(idx){
   var listEl=document.getElementById('drill-list');listEl.innerHTML='';
   var sorted=items.slice().sort(function(a,b){return new Date(b.completed_at)-new Date(a.completed_at);});
   if(!sorted.length){listEl.innerHTML='<div style="font-size:12.5px;color:var(--text3);text-align:center;padding:20px">No completions in this window.</div>';openModal('modal-metric-drill');return;}
-  sorted.forEach(function(l){var d=document.createElement('div');d.className='drill-item';d.innerHTML='<div class="drill-item-name">'+esc(l.task_name)+'</div><div class="drill-item-sub">'+esc(l.completed_by)+' &middot; '+fmtDate(l.completed_at)+'</div>';listEl.appendChild(d);});
+  sorted.forEach(function(l){var d=document.createElement('div');d.className='drill-item';d.innerHTML='<div class="drill-item-name">'+esc(l.task_name)+'</div><div class="drill-item-sub">'+esc(l.completed_by)+' &middot; '+fmtTimestamp(l.completed_at)+'</div>';listEl.appendChild(d);});
   openModal('modal-metric-drill');
 }
 function renderTrendChart(){
@@ -2115,7 +2115,7 @@ function renderHistory(){
     var d=document.createElement('div');d.className='history-item';
     var mb=document.createElement('button');mb.className='history-menu-btn';mb.innerHTML='<i class="ti ti-dots-vertical"></i>';
     mb.addEventListener('click',function(e){e.stopPropagation();openHistoryActionMenu(e,l);});
-    d.innerHTML='<div class="ldot '+(l.completed_by==='Frankie'?'':'b')+'"></div><div style="flex:1;min-width:0"><div class="lt">'+esc(l.task_name)+'</div><div class="lm">'+esc(l.completed_by)+' - '+fmtDate(l.completed_at)+'</div></div>';
+    d.innerHTML='<div class="ldot '+(l.completed_by==='Frankie'?'':'b')+'"></div><div style="flex:1;min-width:0"><div class="lt">'+esc(l.task_name)+'</div><div class="lm">'+esc(l.completed_by)+' - '+fmtTimestamp(l.completed_at)+'</div></div>';
     d.appendChild(mb);
     listEl.appendChild(d);
   });
@@ -2160,7 +2160,7 @@ function openTaskHistory(){
     var detail='';
     if(lt==='snooze'&&l.details){try{var dp=JSON.parse(l.details);if(dp.until_date)detail=' → until '+fmtDate(dp.until_date);}catch(e){}}
     var row=document.createElement('div');row.className='th-row';
-    row.innerHTML='<i class="ti '+icon+' th-icon" style="color:'+clr+'"></i><div style="flex:1;min-width:0"><div class="lt">'+label+by+'</div><div class="lm">'+fmtDate(l.completed_at)+detail+'</div></div>';
+    row.innerHTML='<i class="ti '+icon+' th-icon" style="color:'+clr+'"></i><div style="flex:1;min-width:0"><div class="lt">'+label+by+'</div><div class="lm">'+fmtTimestamp(l.completed_at)+detail+'</div></div>';
     el.appendChild(row);
   });
   openModal('modal-task-history');
@@ -2242,6 +2242,7 @@ function submitGrocery(){var n=document.getElementById('g-name').value.trim();if
 // ── UTILS ─────────────────────────────────────────────────
 function esc(s){if(s===null||s===undefined)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function fmtDate(d){if(!d)return'';try{var ds=String(d).split('T')[0];var dt=new Date(ds+'T12:00:00');if(isNaN(dt))return String(d);return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return String(d);}}
+function fmtTimestamp(d){if(!d)return'';try{var dt=new Date(d);if(isNaN(dt))return fmtDate(d);return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return fmtDate(d);}}
 function dval(d){return d?String(d).split('T')[0]:'';}
 function fmtDateShort(d){if(!d)return'';try{var ds=String(d).split('T')[0];var dt=new Date(ds+'T12:00:00');if(isNaN(dt))return String(d);var DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];return DOW[dt.getDay()]+' '+(dt.getMonth()+1)+'/'+dt.getDate();}catch(e){return String(d);}}
 </script>

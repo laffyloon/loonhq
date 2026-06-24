@@ -142,10 +142,12 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .stripe.r{border-left:3px solid var(--red)}.stripe.a{border-left:3px solid var(--amber)}
 .stripe.b{border-left:3px solid var(--blue)}.stripe.t{border-left:3px solid var(--green)}
 .stripe.o{border-left:3px solid var(--amber)}.stripe.g{border-left:3px solid var(--green)}.stripe.n{border-left:3px solid var(--border2)}
+.stripe.p{border-left:3px solid var(--purple)}
 .s-lbl{font-size:10.5px;font-weight:600;margin-bottom:3px;letter-spacing:.04em;text-transform:uppercase}
 .stripe.r .s-lbl{color:var(--red)}.stripe.a .s-lbl{color:var(--amber)}
 .stripe.b .s-lbl{color:var(--blue)}.stripe.t .s-lbl{color:var(--green-dark)}
 .stripe.o .s-lbl{color:var(--amber)}.stripe.g .s-lbl{color:var(--green-dark)}.stripe.n .s-lbl{color:var(--text3)}
+.stripe.p .s-lbl{color:var(--purple)}
 
 /* ═══════════════════════════════════════════════
    TASK CARDS — THE CRITICAL FIX
@@ -179,10 +181,10 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .due-tag{font-size:10.5px;padding:2px 8px;border-radius:20px;font-weight:600;white-space:nowrap;flex-shrink:0;display:inline-flex;align-items:center;gap:3px;background:#fff;border:1.5px solid}
 .due-tag i{font-size:12px}
 .due-overdue{border-color:var(--red);color:var(--red);background:var(--red-light);font-weight:600}
-.due-today{border-color:var(--red);color:var(--red)}
-.due-soon{border-color:var(--amber);color:var(--amber)}
-.due-week{border-color:var(--green);color:var(--green-dark)}
-.due-month{border-color:var(--blue);color:var(--blue)}
+.due-today{border-color:var(--amber);color:var(--amber)}
+.due-soon{border-color:var(--green);color:var(--green-dark)}
+.due-week{border-color:var(--blue);color:var(--blue)}
+.due-month{border-color:var(--purple);color:var(--purple)}
 .due-future{border-color:var(--border2);color:var(--text3)}
 /* mp: NO overflow:hidden, NO white-space:nowrap — wraps inside .tm naturally */
 .mp{font-size:11px;color:var(--text3);display:inline-flex;align-items:center;gap:3px}
@@ -1003,6 +1005,7 @@ var state={tasks:[],projects:[],subtasks:[],grocery:[],assets:[],task_log:[],mai
 var currentUser=null,currentView='tasks',taskScope='household',taskTab='today';
 var loginUserPick=null,pickedOwner='',pickedScope='household',pickedUrgency='this_week';
 var selectMode=false,selectedTaskIds=new Set(),longPressTimer=null;
+var _recentlyCompleted=new Set();
 var snoozingTask=null,editingTask=null,openMenu=null,metricsTab='stats',pendingSnooze=null,editingProject=null,editingSubtask=null;
 var editingAsset=null,openAssetId=null,pickedAssetStatus='green',panelTab='info';
 var _drillAll=[],_drillF=[],_drillM=[],_histMenuLog=null;
@@ -1063,7 +1066,7 @@ function apiGet(params){var url=API+'?'+Object.entries(params).map(function(p){r
 function apiPost(body){return fetch(API,{method:'POST',body:JSON.stringify(body)}).then(function(r){return r.json();});}
 
 function refreshData(silent){
-  if(!silent)setSyncState('loading','Syncing...');
+  if(!silent){setSyncState('loading','Syncing...');_recentlyCompleted.clear();}
   return apiGet({action:'getAllData'}).then(function(data){
     if(data.error){setSyncState('err','Sync failed');return;}
     state.tasks=data.tasks||[];state.projects=data.projects||[];state.subtasks=data.subtasks||[];
@@ -1164,7 +1167,7 @@ function computeFirstDue(task,today){
   var todayMid=new Date(today);todayMid.setHours(0,0,0,0);
   var start=task.sched_start?new Date(String(task.sched_start).split('T')[0]+'T12:00:00'):null;
   if(start)start.setHours(0,0,0,0);
-  var useStart=!!(start&&start>todayMid);
+  var useStart=!!(start&&start>=todayMid);
   var t=useStart?new Date(start):new Date(todayMid);
   if(task.type==='interval'){var days=parseInt(task.recurrence_days)||0;if(!days)return null;var d=new Date(t);if(!useStart)d.setDate(d.getDate()+days);return d.toISOString().split('T')[0];}
   if(task.type!=='scheduled')return task.due_date||'';
@@ -1216,6 +1219,7 @@ function computeNextDue(task,fromDate){
 function renderTasks(){
   var el=document.getElementById('task-list');el.innerHTML='';
   var all=state.tasks.filter(function(t){
+    if(_recentlyCompleted.has(t.task_id))return false;
     if((t.status==='done'||t.status==='ended')&&t.type!=='scheduled'&&t.type!=='interval')return false;
     if(t.status==='ended')return false;
     var sc=t.scope||'household';
@@ -1228,7 +1232,7 @@ function renderTasks(){
   var tm0=new Date(now);tm0.setDate(now.getDate()+1);
   var we=new Date(now);we.setDate(now.getDate()+7);
   var me=new Date(now);me.setDate(now.getDate()+30);
-  var today=[],reminders=[],tomorrow=[],week=[],month=[],later=[];
+  var overdue=[],today=[],reminders=[],tomorrow=[],week=[],month=[],later=[];
   all.forEach(function(t){
     if(t.type==='floating'){
       if(t.urgency_window==='this_week')week.push(t);
@@ -1237,12 +1241,16 @@ function renderTasks(){
       return;
     }
     var dueStr=t.due_date;
-    if(!dueStr&&(t.type==='interval'||t.type==='scheduled')){var fd=computeFirstDue(t,now);if(fd)dueStr=fd;}
+    if(t.type==='interval'||t.type==='scheduled'){
+      if(t.status==='done'){var nd=computeNextDue(t,now);dueStr=nd||null;}
+      else if(!dueStr){var fd=computeFirstDue(t,now);if(fd)dueStr=fd;}
+    }
     if(!dueStr){later.push(t);return;}
     var due=new Date(String(dueStr).split('T')[0]+'T12:00:00');due.setHours(0,0,0,0);
     var surf=due;
     if(t.reminder_offset){var ob={same_day:0,'1_day':1,'2_days':2,'3_days':3,'1_week':7};var bk=ob[t.reminder_offset]||0;surf=new Date(due);surf.setDate(surf.getDate()-bk);}
-    if(due<=now)today.push(t);
+    if(due<now)overdue.push(t);
+    else if(due.getTime()===now.getTime())today.push(t);
     else if(surf<=now)reminders.push(t);
     else if(due.getTime()===tm0.getTime())tomorrow.push(t);
     else if(due<=we)week.push(t);
@@ -1265,27 +1273,30 @@ function renderTasks(){
     el.appendChild(w);
   }
   if(taskTab==='all'){
-    stripe('Today',today,[],'r');
+    stripe('Overdue',overdue,[],'r');
+    stripe('Today',today,[],'o');
     stripe('Reminders',reminders,[],'n');
-    stripe('Tomorrow',tomorrow,[],'o');
-    stripe('This next week',week,projRows,'g');
-    stripe('This next month',month,[],'b');
+    stripe('Tomorrow',tomorrow,[],'g');
+    stripe('This next week',week,projRows,'b');
+    stripe('This next month',month,[],'p');
     stripe('Later',later,[],'n');
   }
-  else if(taskTab==='today'){stripe('Today',today,[],'r');stripe('Reminders',reminders,[],'n');}
-  else if(taskTab==='tomorrow'){stripe('Tomorrow',tomorrow,[],'o');}
+  else if(taskTab==='today'){stripe('Overdue',overdue,[],'r');stripe('Today',today,[],'o');stripe('Reminders',reminders,[],'n');}
+  else if(taskTab==='tomorrow'){stripe('Overdue',overdue,[],'r');stripe('Tomorrow',tomorrow,[],'g');}
   else if(taskTab==='week'){
-    stripe('Today',today,[],'r');
+    stripe('Overdue',overdue,[],'r');
+    stripe('Today',today,[],'o');
     stripe('Reminders',reminders,[],'n');
-    stripe('Tomorrow',tomorrow,[],'o');
-    stripe('This next week',week,projRows,'g');
+    stripe('Tomorrow',tomorrow,[],'g');
+    stripe('This next week',week,projRows,'b');
   }
   else if(taskTab==='month'){
-    stripe('Today',today,[],'r');
+    stripe('Overdue',overdue,[],'r');
+    stripe('Today',today,[],'o');
     stripe('Reminders',reminders,[],'n');
-    stripe('Tomorrow',tomorrow,[],'o');
-    stripe('This next week',week,[],'g');
-    stripe('This next month',month,projRows,'b');
+    stripe('Tomorrow',tomorrow,[],'g');
+    stripe('This next week',week,[],'b');
+    stripe('This next month',month,projRows,'p');
   }
   else if(taskTab==='recurring'){var rec=all.filter(function(t){return t.type==='scheduled'||t.type==='interval';});stripe('All recurring',rec,[],'g');}
   if(!el.children.length)el.innerHTML='<div style="font-size:13.5px;color:var(--text3);padding:30px 0;text-align:center">No tasks here. Nice work!</div>';
@@ -1462,6 +1473,7 @@ function batchCompleteSelected(){
   var picks=[];
   selectedTaskIds.forEach(function(id){var t=state.tasks.find(function(x){return x.task_id===id;});if(t)picks.push({task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,sched_month:t.sched_month,due_date:t.due_date,end_date:t.end_date,scope:t.scope});});
   if(!picks.length)return;
+  picks.forEach(function(p){_recentlyCompleted.add(p.task_id);});
   exitBatch();setSyncState('loading','Completing...');
   apiPost({action:'batchComplete',data:{tasks:picks,completed_by:currentUser}}).then(function(){refreshData(true);});
 }
@@ -1506,6 +1518,7 @@ function confirmBatchSnooze(){
 // ── COMPLETE / SNOOZE ─────────────────────────────────────
 function completeTask(id){var t=(state.tasks||[]).find(function(x){return x.task_id===id;});if(t&&t.status!=='done'&&t.status!=='ended')handleComplete(t);}
 function handleComplete(t){
+  _recentlyCompleted.add(t.task_id);
   var wrap=document.querySelector('.tc-wrap[data-task-id="'+t.task_id+'"]');
   if(wrap){wrap.style.height=wrap.offsetHeight+'px';wrap.style.transition='all .2s';setTimeout(function(){wrap.style.height='0';wrap.style.opacity='0';wrap.style.overflow='hidden';},10);}
   setSyncState('loading','Logging...');
@@ -1935,7 +1948,7 @@ function openAssetPanel(id){
   var combined=manualNotes.map(function(n){return{date:n.date,text:n.note,sub:(n.log_type==='service'?'Service':'Note')};}).concat(completedLinked.map(function(l){return{date:l.completed_at,text:l.task_name,sub:'Completed by '+l.completed_by,blue:true};}));
   combined.sort(function(a,b){return new Date(b.date)-new Date(a.date);});
   if(!combined.length){lh.innerHTML='<div style="font-size:12px;color:var(--text3);padding:8px 0">No maintenance history yet.</div>';}
-  combined.forEach(function(l){var d=document.createElement('div');d.className='log-item';d.innerHTML='<div class="ldot'+(l.blue?' b':'')+'"></div><div><div class="lt">'+esc(l.text)+'</div><div class="lm">'+esc(l.sub)+' - '+fmtDate(l.date)+'</div></div>';lh.appendChild(d);});
+  combined.forEach(function(l){var d=document.createElement('div');d.className='log-item';d.innerHTML='<div class="ldot'+(l.blue?' b':'')+'"></div><div><div class="lt">'+esc(l.text)+'</div><div class="lm">'+esc(l.sub)+' - '+(l.blue?fmtTimestamp(l.date):fmtDate(l.date))+'</div></div>';lh.appendChild(d);});
   var tc=document.getElementById('p-tasks-count');if(tc)tc.textContent=linkedTasks.length;
   var th=document.getElementById('p-tasks');th.innerHTML='';
   if(linkedTasks.length){linkedTasks.forEach(function(lt){var d=document.createElement('div');d.className='ptask-row';var dueStr=lt.due_date?fmtDateShort(lt.due_date):'';var typeTag=lt.type?'<span class="type-tag">'+esc(lt.type)+'</span>':'';d.innerHTML='<div class="circ-check" onclick="completeTask(\''+lt.task_id+'\')"></div><div class="ptask-name">'+esc(lt.name)+typeTag+'</div>'+(dueStr?'<div class="ptask-due">'+dueStr+'</div>':'');th.appendChild(d);});}
@@ -2063,7 +2076,7 @@ function openMetricDrillDown(idx){
   var listEl=document.getElementById('drill-list');listEl.innerHTML='';
   var sorted=items.slice().sort(function(a,b){return new Date(b.completed_at)-new Date(a.completed_at);});
   if(!sorted.length){listEl.innerHTML='<div style="font-size:12.5px;color:var(--text3);text-align:center;padding:20px">No completions in this window.</div>';openModal('modal-metric-drill');return;}
-  sorted.forEach(function(l){var d=document.createElement('div');d.className='drill-item';d.innerHTML='<div class="drill-item-name">'+esc(l.task_name)+'</div><div class="drill-item-sub">'+esc(l.completed_by)+' &middot; '+fmtDate(l.completed_at)+'</div>';listEl.appendChild(d);});
+  sorted.forEach(function(l){var d=document.createElement('div');d.className='drill-item';d.innerHTML='<div class="drill-item-name">'+esc(l.task_name)+'</div><div class="drill-item-sub">'+esc(l.completed_by)+' &middot; '+fmtTimestamp(l.completed_at)+'</div>';listEl.appendChild(d);});
   openModal('modal-metric-drill');
 }
 function renderTrendChart(){
@@ -2103,7 +2116,7 @@ function renderHistory(){
     var d=document.createElement('div');d.className='history-item';
     var mb=document.createElement('button');mb.className='history-menu-btn';mb.innerHTML='<i class="ti ti-dots-vertical"></i>';
     mb.addEventListener('click',function(e){e.stopPropagation();openHistoryActionMenu(e,l);});
-    d.innerHTML='<div class="ldot '+(l.completed_by==='Frankie'?'':'b')+'"></div><div style="flex:1;min-width:0"><div class="lt">'+esc(l.task_name)+'</div><div class="lm">'+esc(l.completed_by)+' - '+fmtDate(l.completed_at)+'</div></div>';
+    d.innerHTML='<div class="ldot '+(l.completed_by==='Frankie'?'':'b')+'"></div><div style="flex:1;min-width:0"><div class="lt">'+esc(l.task_name)+'</div><div class="lm">'+esc(l.completed_by)+' - '+fmtTimestamp(l.completed_at)+'</div></div>';
     d.appendChild(mb);
     listEl.appendChild(d);
   });
@@ -2148,7 +2161,7 @@ function openTaskHistory(){
     var detail='';
     if(lt==='snooze'&&l.details){try{var dp=JSON.parse(l.details);if(dp.until_date)detail=' → until '+fmtDate(dp.until_date);}catch(e){}}
     var row=document.createElement('div');row.className='th-row';
-    row.innerHTML='<i class="ti '+icon+' th-icon" style="color:'+clr+'"></i><div style="flex:1;min-width:0"><div class="lt">'+label+by+'</div><div class="lm">'+fmtDate(l.completed_at)+detail+'</div></div>';
+    row.innerHTML='<i class="ti '+icon+' th-icon" style="color:'+clr+'"></i><div style="flex:1;min-width:0"><div class="lt">'+label+by+'</div><div class="lm">'+fmtTimestamp(l.completed_at)+detail+'</div></div>';
     el.appendChild(row);
   });
   openModal('modal-task-history');
@@ -2230,6 +2243,7 @@ function submitGrocery(){var n=document.getElementById('g-name').value.trim();if
 // ── UTILS ─────────────────────────────────────────────────
 function esc(s){if(s===null||s===undefined)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function fmtDate(d){if(!d)return'';try{var ds=String(d).split('T')[0];var dt=new Date(ds+'T12:00:00');if(isNaN(dt))return String(d);return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return String(d);}}
+function fmtTimestamp(d){if(!d)return'';try{var dt=new Date(d);if(isNaN(dt))return fmtDate(d);return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return fmtDate(d);}}
 function dval(d){return d?String(d).split('T')[0]:'';}
 function fmtDateShort(d){if(!d)return'';try{var ds=String(d).split('T')[0];var dt=new Date(ds+'T12:00:00');if(isNaN(dt))return String(d);var DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];return DOW[dt.getDay()]+' '+(dt.getMonth()+1)+'/'+dt.getDate();}catch(e){return String(d);}}
 </script>
