@@ -227,7 +227,10 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 @media(min-width:600px){.modal-bg{align-items:center}}
 .modal{background:var(--card);border-radius:18px 18px 0 0;padding:22px;width:100%;max-width:500px;display:flex;flex-direction:column;gap:14px;box-shadow:0 -4px 30px rgba(0,0,0,.18);padding-bottom:calc(22px + var(--safe-bottom));max-height:92vh;overflow-y:auto}
 @media(min-width:600px){.modal{border-radius:18px;max-width:480px}}
-.modal-title{font-size:16px;font-weight:600}
+.modal-hdr{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.modal-title{font-size:16px;font-weight:600;flex:1;min-width:0}
+.modal-x{background:none;border:none;color:var(--text3);cursor:pointer;padding:2px 4px;font-size:18px;display:flex;align-items:center;line-height:1;border-radius:6px;flex-shrink:0}
+.modal-x:hover{color:var(--text);background:var(--bg2)}
 .form-row{display:flex;flex-direction:column;gap:5px}
 .form-label{font-size:11.5px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.04em}
 .form-input{padding:11px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px;background:var(--bg);color:var(--text);outline:none;transition:border-color .12s;width:100%}
@@ -690,7 +693,7 @@ def HTML_BODY(logo, icon):
 <!-- ADD/EDIT TASK MODAL -->
 <div class="modal-bg gone" id="modal-task">
   <div class="modal">
-    <div class="modal-title" id="task-modal-title">Add task</div>
+    <div class="modal-hdr"><div class="modal-title" id="task-modal-title">Add task</div><button class="modal-x" onclick="closeModal('modal-task')" aria-label="Close"><i class="ti ti-x"></i></button></div>
     <div class="form-row">
       <div class="form-label">Scope</div>
       <div class="scope-pick">
@@ -1169,9 +1172,9 @@ function computeFirstDue(task,today){
   var todayMid=new Date(today);todayMid.setHours(0,0,0,0);
   var start=task.sched_start?new Date(String(task.sched_start).split('T')[0]+'T12:00:00'):null;
   if(start)start.setHours(0,0,0,0);
-  var useStart=!!(start&&start>=todayMid);
+  var useStart=!!(start&&start>todayMid);
   var t=useStart?new Date(start):new Date(todayMid);
-  if(task.type==='interval'){var days=parseInt(task.recurrence_days)||0;if(!days)return null;var d=new Date(t);if(!useStart)d.setDate(d.getDate()+days);return d.toISOString().split('T')[0];}
+  if(task.type==='interval'){var days=parseInt(task.recurrence_days)||0;if(!days)return null;return t.toISOString().split('T')[0];}
   if(task.type!=='scheduled')return task.due_date||'';
   var freq=schedFreqOf(task);var next;
   if(freq==='day'){next=new Date(t);}
@@ -1248,10 +1251,12 @@ function renderTasks(){
       else{
         var ss=t.sched_start?new Date(String(t.sched_start).split('T')[0]+'T12:00:00'):null;
         if(ss)ss.setHours(0,0,0,0);
-        // Force recompute if sched_start is today/future (overrides potentially wrong due_date from old AppScript)
-        if((ss&&ss>=now)||!dueStr){var fd=computeFirstDue(t,now);if(fd)dueStr=fd;}
+        // Recompute if sched_start is strictly future (wrong stored due_date from old AppScript)
+        // or if no due_date at all. Past/today sched_start: trust due_date (may be post-completion).
+        if((ss&&ss>now)||!dueStr){var fd=computeFirstDue(t,now);if(fd)dueStr=fd;}
       }
     }
+    t._effDue=dueStr||null;
     if(!dueStr){later.push(t);return;}
     var due=new Date(String(dueStr).split('T')[0]+'T12:00:00');due.setHours(0,0,0,0);
     var surf=due;
@@ -1376,18 +1381,19 @@ function makeTaskCard(t){
     var ul={this_week:'This week',this_month:'This month',no_rush:'No rush'};
     var mp=document.createElement('span');mp.className='mp';mp.textContent=ul[t.urgency_window]||'';tm.appendChild(mp);
   }
-  if(t.due_date&&t.type!=='floating'){
-    var dds=String(t.due_date).split('T')[0];
+  var _effD=(t.type==='interval'||t.type==='scheduled')?t._effDue||t.due_date:t.due_date;
+  if(_effD&&t.type!=='floating'){
+    var dds=String(_effD).split('T')[0];
     var dd=new Date(dds+'T12:00:00');dd.setHours(0,0,0,0);
     var today0=new Date();today0.setHours(0,0,0,0);
     var diff=Math.round((dd-today0)/86400000);
     var dcls,dtext;
-    if(diff<0){dcls='due-overdue';dtext=fmtDateShort(t.due_date);}
+    if(diff<0){dcls='due-overdue';dtext=fmtDateShort(_effD);}
     else if(diff===0){dcls='due-today';dtext='Today';}
     else if(diff===1){dcls='due-soon';dtext='Tomorrow';}
-    else if(diff<=7){dcls='due-week';dtext=fmtDateShort(t.due_date);}
-    else if(diff<=30){dcls='due-month';dtext=fmtDateShort(t.due_date);}
-    else{dcls='due-future';dtext=fmtDateShort(t.due_date);}
+    else if(diff<=7){dcls='due-week';dtext=fmtDateShort(_effD);}
+    else if(diff<=30){dcls='due-month';dtext=fmtDateShort(_effD);}
+    else{dcls='due-future';dtext=fmtDateShort(_effD);}
     var dp=document.createElement('span');dp.className='due-tag '+dcls;
     var dic=document.createElement('i');dic.className='ti '+(diff<0?'ti-alert-triangle':'ti-calendar-event');dp.appendChild(dic);
     dp.appendChild(document.createTextNode(dtext));

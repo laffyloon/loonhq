@@ -254,11 +254,10 @@ function computeFirstDue(task) {
   var today = new Date(); today.setHours(0, 0, 0, 0);
   var start = task.sched_start ? new Date(stripDate(task.sched_start) + 'T12:00:00') : null;
   if (start) start.setHours(0, 0, 0, 0);
-  var t = (start && start > today) ? new Date(start) : new Date(today);
+  var t = (start && start >= today) ? new Date(start) : new Date(today);
   if (task.type === 'interval') {
     var days = parseInt(task.recurrence_days) || 0; if (!days) return null;
-    var d = new Date(t); d.setDate(d.getDate() + days);
-    return d.toISOString().split('T')[0];
+    return t.toISOString().split('T')[0];
   }
   if (task.type !== 'scheduled') return task.due_date || null;
   var freq = schedFreqOf(task);

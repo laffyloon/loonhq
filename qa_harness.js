@@ -154,7 +154,9 @@ run('dval strips time component', ()=>{ if(dval('2026-06-09T06:00:00.000Z')!=='2
 run('computeFirstDue future start honored', ()=>{ const r=computeFirstDue({type:'scheduled',sched_freq:'day',sched_start:plus(10)}, today); if(r!==plus(10)) throw new Error('future start not honored, got '+r); });
 run('computeFirstDue past start clamps to today (week)', ()=>{ const r=computeFirstDue({type:'scheduled',sched_freq:'week',weekday:2,sched_start:plus(-30)}, today); if(new Date(r+'T12:00:00')<today) throw new Error('returned past date '+r); if(new Date(r+'T12:00:00').getDay()!==2) throw new Error('not Tuesday'); });
 run('computeFirstDue interval future start = start', ()=>{ const r=computeFirstDue({type:'interval',recurrence_days:20,sched_start:plus(5)}, today); if(r!==plus(5)) throw new Error('interval future start should be start date, got '+r); });
-run('computeFirstDue interval no start = today+days', ()=>{ const r=computeFirstDue({type:'interval',recurrence_days:20}, today); if(r!==plus(20)) throw new Error('interval no-start should be +20, got '+r); });
+run('computeFirstDue interval no start = today', ()=>{ const r=computeFirstDue({type:'interval',recurrence_days:20}, today); if(r!==iso(today)) throw new Error('interval no-start should be today, got '+r); });
+run('renderTasks interval start=today buckets to Today stripe', ()=>{ const sv=state.tasks; const svTab=taskTab; const svScope=taskScope; state.tasks=[{task_id:'it1',name:'Bowl',type:'interval',recurrence_days:5,sched_start:iso(today),due_date:'',status:'active',scope:'household'}]; taskScope='household';taskTab='today';renderTasks(); const n=el('task-list').children.length; state.tasks=sv;taskTab=svTab;taskScope=svScope; if(n<1) throw new Error('interval start=today task not in Today stripe ('+n+' stripes rendered)'); });
+run('renderTasks interval no sched_start, no due_date buckets to Today', ()=>{ const sv=state.tasks; const svTab=taskTab; const svScope=taskScope; state.tasks=[{task_id:'it2',name:'NoDue',type:'interval',recurrence_days:7,sched_start:'',due_date:'',status:'active',scope:'household'}]; taskScope='household';taskTab='today';renderTasks(); const n=el('task-list').children.length; state.tasks=sv;taskTab=svTab;taskScope=svScope; if(n<1) throw new Error('interval no-start task not in Today stripe ('+n+' stripes rendered)'); });
 run('openEditTask date inputs are yyyy-mm-dd', ()=>{ openEditTask({task_id:'x',type:'one_off',due_date:'2026-06-09T06:00:00.000Z',name:'X',scope:'household'}); const v=el('t-due').value; if(/T|Z/.test(v)) throw new Error('input got timestamp: '+v); if(v!=='2026-06-09') throw new Error('input not yyyy-mm-dd: '+v); });
 run('computeNextDue handles ISO-timestamp due_date anchor', ()=>{ const r=computeNextDue({type:'scheduled',sched_freq:'day',sched_interval:1,due_date:iso(today)+'T06:00:00.000Z'}, today); if(!r||!/^\d{4}-\d{2}-\d{2}$/.test(r)) throw new Error('invalid result: '+r); if(r!==plus(1)) throw new Error('expected tomorrow, got '+r); });
 run('tomorrow tab matches ISO-timestamp due date', ()=>{ const saved=state.tasks; state.tasks=[{task_id:'tt',name:'Tmrw',type:'one_off',due_date:plus(1)+'T06:00:00.000Z',scope:'household',status:'active'}]; taskScope='household'; taskTab='tomorrow'; renderTasks(); const n=el('task-list').children.length; state.tasks=saved; if(n<1) throw new Error('tomorrow task not rendered'); });
@@ -530,15 +532,15 @@ run('completeTask wrapper calls handleComplete', ()=>{
   if(!__posts.length) throw new Error('no API call made');
   if(__posts[0].action!=='completeTask') throw new Error('wrong action: '+__posts[0].action);
 });
-run('computeFirstDue interval with no due_date returns within-week date', ()=>{
-  // A 3-day interval task with no due_date: computeFirstDue should return today+3
+run('computeFirstDue interval with no due_date returns today', ()=>{
+  // Interval task with no due_date and no sched_start: first due is today
   const task={type:'interval',recurrence_days:'3',sched_start:'',due_date:'',end_date:''};
   const todayD=new Date(); todayD.setHours(0,0,0,0);
   const r=computeFirstDue(task,todayD);
   if(!r) throw new Error('computeFirstDue returned null for interval with no due_date');
   const due=new Date(r+'T12:00:00'); due.setHours(0,0,0,0);
   const diff=(due-todayD)/(1000*60*60*24);
-  if(diff!==3) throw new Error('expected 3 days out, got: '+diff);
+  if(diff!==0) throw new Error('expected today (0 days out), got: '+diff);
 });
 run('editGrocItem replaces text with input', ()=>{
   const item={item_id:'g1',name:'Milk',category:'Dairy',status:'need'};
