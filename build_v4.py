@@ -1281,7 +1281,7 @@ function renderTasks(){
     stripe('Later',later,[],'n');
   }
   else if(taskTab==='today'){stripe('Overdue',overdue,[],'r');stripe('Today',today,[],'o');stripe('Reminders',reminders,[],'n');}
-  else if(taskTab==='tomorrow'){stripe('Tomorrow',tomorrow,[],'g');}
+  else if(taskTab==='tomorrow'){stripe('Overdue',overdue,[],'r');stripe('Tomorrow',tomorrow,[],'g');}
   else if(taskTab==='week'){
     stripe('Overdue',overdue,[],'r');
     stripe('Today',today,[],'o');
