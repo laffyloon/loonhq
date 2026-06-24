@@ -1002,6 +1002,7 @@ var state={tasks:[],projects:[],subtasks:[],grocery:[],assets:[],task_log:[],mai
 var currentUser=null,currentView='tasks',taskScope='household',taskTab='today';
 var loginUserPick=null,pickedOwner='',pickedScope='household',pickedUrgency='this_week';
 var selectMode=false,selectedTaskIds=new Set(),longPressTimer=null;
+var _recentlyCompleted=new Set();
 var snoozingTask=null,editingTask=null,openMenu=null,metricsTab='stats',pendingSnooze=null,editingProject=null,editingSubtask=null;
 var editingAsset=null,openAssetId=null,pickedAssetStatus='green',panelTab='info';
 var _drillAll=[],_drillF=[],_drillM=[],_histMenuLog=null;
@@ -1062,7 +1063,7 @@ function apiGet(params){var url=API+'?'+Object.entries(params).map(function(p){r
 function apiPost(body){return fetch(API,{method:'POST',body:JSON.stringify(body)}).then(function(r){return r.json();});}
 
 function refreshData(silent){
-  if(!silent)setSyncState('loading','Syncing...');
+  if(!silent){setSyncState('loading','Syncing...');_recentlyCompleted.clear();}
   return apiGet({action:'getAllData'}).then(function(data){
     if(data.error){setSyncState('err','Sync failed');return;}
     state.tasks=data.tasks||[];state.projects=data.projects||[];state.subtasks=data.subtasks||[];
@@ -1215,6 +1216,7 @@ function computeNextDue(task,fromDate){
 function renderTasks(){
   var el=document.getElementById('task-list');el.innerHTML='';
   var all=state.tasks.filter(function(t){
+    if(_recentlyCompleted.has(t.task_id))return false;
     if((t.status==='done'||t.status==='ended')&&t.type!=='scheduled'&&t.type!=='interval')return false;
     if(t.status==='ended')return false;
     var sc=t.scope||'household';
@@ -1236,7 +1238,10 @@ function renderTasks(){
       return;
     }
     var dueStr=t.due_date;
-    if(!dueStr&&(t.type==='interval'||t.type==='scheduled')){var fd=computeFirstDue(t,now);if(fd)dueStr=fd;}
+    if(t.type==='interval'||t.type==='scheduled'){
+      if(t.status==='done'){var nd=computeNextDue(t,now);dueStr=nd||null;}
+      else if(!dueStr){var fd=computeFirstDue(t,now);if(fd)dueStr=fd;}
+    }
     if(!dueStr){later.push(t);return;}
     var due=new Date(String(dueStr).split('T')[0]+'T12:00:00');due.setHours(0,0,0,0);
     var surf=due;
@@ -1461,6 +1466,7 @@ function batchCompleteSelected(){
   var picks=[];
   selectedTaskIds.forEach(function(id){var t=state.tasks.find(function(x){return x.task_id===id;});if(t)picks.push({task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,sched_month:t.sched_month,due_date:t.due_date,end_date:t.end_date,scope:t.scope});});
   if(!picks.length)return;
+  picks.forEach(function(p){_recentlyCompleted.add(p.task_id);});
   exitBatch();setSyncState('loading','Completing...');
   apiPost({action:'batchComplete',data:{tasks:picks,completed_by:currentUser}}).then(function(){refreshData(true);});
 }
@@ -1505,6 +1511,7 @@ function confirmBatchSnooze(){
 // ── COMPLETE / SNOOZE ─────────────────────────────────────
 function completeTask(id){var t=(state.tasks||[]).find(function(x){return x.task_id===id;});if(t&&t.status!=='done'&&t.status!=='ended')handleComplete(t);}
 function handleComplete(t){
+  _recentlyCompleted.add(t.task_id);
   var wrap=document.querySelector('.tc-wrap[data-task-id="'+t.task_id+'"]');
   if(wrap){wrap.style.height=wrap.offsetHeight+'px';wrap.style.transition='all .2s';setTimeout(function(){wrap.style.height='0';wrap.style.opacity='0';wrap.style.overflow='hidden';},10);}
   setSyncState('loading','Logging...');
