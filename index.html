@@ -550,9 +550,7 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
       </div>
       <div class="tab-bar">
         <button class="tab-btn on" data-tab="today" onclick="setTaskTab('today')">Today</button>
-        <button class="tab-btn" data-tab="tomorrow" onclick="setTaskTab('tomorrow')">Tomorrow</button>
-        <button class="tab-btn" data-tab="week" onclick="setTaskTab('week')">This week</button>
-        <button class="tab-btn" data-tab="month" onclick="setTaskTab('month')">This month</button>
+        <button class="tab-btn" data-tab="upcoming" onclick="setTaskTab('upcoming')">Upcoming</button>
         <button class="tab-btn" data-tab="recurring" onclick="setTaskTab('recurring')">Recurring</button>
         <button class="tab-btn" data-tab="all" onclick="setTaskTab('all')">All</button>
       </div>
@@ -1295,21 +1293,13 @@ function renderTasks(){
     stripe('Later',later,[],'n');
   }
   else if(taskTab==='today'){stripe('Overdue',overdue,[],'r');stripe('Today',today,[],'o');stripe('Reminders',reminders,[],'n');}
-  else if(taskTab==='tomorrow'){stripe('Overdue',overdue,[],'r');stripe('Tomorrow',tomorrow,[],'g');}
-  else if(taskTab==='week'){
+  else if(taskTab==='upcoming'){
     stripe('Overdue',overdue,[],'r');
     stripe('Today',today,[],'o');
     stripe('Reminders',reminders,[],'n');
     stripe('Tomorrow',tomorrow,[],'g');
     stripe('This next week',week,projRows,'b');
-  }
-  else if(taskTab==='month'){
-    stripe('Overdue',overdue,[],'r');
-    stripe('Today',today,[],'o');
-    stripe('Reminders',reminders,[],'n');
-    stripe('Tomorrow',tomorrow,[],'g');
-    stripe('This next week',week,[],'b');
-    stripe('This next month',month,projRows,'p');
+    stripe('This next month',month,[],'p');
   }
   else if(taskTab==='recurring'){var rec=all.filter(function(t){return t.type==='scheduled'||t.type==='interval';});stripe('All recurring',rec,[],'g');}
   if(!el.children.length)el.innerHTML='<div style="font-size:13.5px;color:var(--text3);padding:30px 0;text-align:center">No tasks here. Nice work!</div>';
@@ -1748,9 +1738,8 @@ function makeProjTaskItems(pid){
 function renderProjTaskRow(item,pid){
   var d=document.createElement('div');d.className='ptask-row';
   var dueStr=item.due?fmtDateShort(item.due):'';
-  var typeTag=item.type&&item.type!=='subtask'?'<span class="type-tag">'+esc(item.type)+'</span>':'';
   if(item.isTask){
-    d.innerHTML='<div class="circ-check'+(item.isDone?' done':'')+'" onclick="event.stopPropagation();completeTask(\''+item.id+'\')"></div><div class="ptask-name">'+esc(item.name)+typeTag+'</div>'+(dueStr?'<div class="ptask-due">'+dueStr+'</div>':'');
+    d.innerHTML='<div class="circ-check'+(item.isDone?' done':'')+'" onclick="event.stopPropagation();completeTask(\''+item.id+'\')"></div><div class="ptask-name">'+esc(item.name)+'</div>'+(dueStr?'<div class="ptask-due">'+dueStr+'</div>':'');
   }else{
     var isDone=item.isDone;
     d.innerHTML='<div class="box'+(isDone?' done':'')+'" data-sub="'+item.id+'"></div><div class="ptask-name">'+esc(item.name)+(item.due?' <span style="font-size:11px;color:var(--text3)">'+fmtDate(item.due)+'</span>':'')+'</div>';
@@ -1966,7 +1955,7 @@ function openAssetPanel(id){
   combined.forEach(function(l){var d=document.createElement('div');d.className='log-item';d.innerHTML='<div class="ldot'+(l.blue?' b':'')+'"></div><div><div class="lt">'+esc(l.text)+'</div><div class="lm">'+esc(l.sub)+' - '+(l.blue?fmtTimestamp(l.date):fmtDate(l.date))+'</div></div>';lh.appendChild(d);});
   var tc=document.getElementById('p-tasks-count');if(tc)tc.textContent=linkedTasks.length;
   var th=document.getElementById('p-tasks');th.innerHTML='';
-  if(linkedTasks.length){linkedTasks.forEach(function(lt){var d=document.createElement('div');d.className='ptask-row';var dueStr=lt.due_date?fmtDateShort(lt.due_date):'';var typeTag=lt.type?'<span class="type-tag">'+esc(lt.type)+'</span>':'';d.innerHTML='<div class="circ-check'+(lt.status==='done'||lt.status==='ended'?' done':'')+'" onclick="event.stopPropagation();completeTask(\''+lt.task_id+'\')"></div><div class="ptask-name">'+esc(lt.name)+typeTag+'</div>'+(dueStr?'<div class="ptask-due">'+dueStr+'</div>':'');th.appendChild(d);});}
+  if(linkedTasks.length){linkedTasks.forEach(function(lt){var d=document.createElement('div');d.className='ptask-row';var dueStr=lt.due_date?fmtDateShort(lt.due_date):'';d.innerHTML='<div class="circ-check'+(lt.status==='done'||lt.status==='ended'?' done':'')+'" onclick="event.stopPropagation();completeTask(\''+lt.task_id+'\')"></div><div class="ptask-name">'+esc(lt.name)+'</div>'+(dueStr?'<div class="ptask-due">'+dueStr+'</div>':'');th.appendChild(d);});}
   else{th.innerHTML='<div style="font-size:12px;color:var(--text3);padding:4px 0">No active linked tasks.</div>';}
   setPanelTab('log');
   document.getElementById('panel').style.display='flex';
