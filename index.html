@@ -364,6 +364,9 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
 .manual-link:hover{text-decoration:underline}
 
 /* ACTIVITY */
+.stats-range-bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px}
+.range-btn{font-size:12px;padding:5px 12px;border-radius:20px;border:1px solid var(--border);background:var(--bg);color:var(--text2);cursor:pointer;font-family:inherit;transition:all .12s;white-space:nowrap}
+.range-btn.on{background:var(--green);border-color:var(--green);color:#fff;font-weight:500}
 .metrics-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;text-align:center}
 .metrics-num{font-size:28px;font-weight:600}
 .metrics-lbl{font-size:11.5px;color:var(--text2);margin-top:3px}
@@ -622,12 +625,11 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
         <button class="tab-btn" onclick="setMetricsTab('history')">Task History</button>
       </div>
       <div id="metrics-stats-panel" class="scroll">
-        <div style="display:flex;justify-content:flex-end">
-          <select class="form-input" id="metrics-window" onchange="renderStats()" style="width:auto;font-size:12.5px;padding:6px 10px">
-            <option value="30">Past 30 days</option>
-            <option value="90">Past quarter</option>
-            <option value="365">Past year</option>
-          </select>
+        <div class="stats-range-bar">
+          <button class="range-btn" data-days="15" onclick="setStatsRange(15)">Last 15 days</button>
+          <button class="range-btn on" data-days="30" onclick="setStatsRange(30)">Last 30 days</button>
+          <button class="range-btn" data-days="60" onclick="setStatsRange(60)">Last 60 days</button>
+          <button class="range-btn" data-days="90" onclick="setStatsRange(90)">Last 90 days</button>
         </div>
         <div class="metrics-grid" id="metrics-nums"></div>
         <div class="bar-wrap" id="metrics-bars"></div>
@@ -1010,6 +1012,7 @@ var currentUser=null,currentView='tasks',taskScope='household',taskTab='today';
 var loginUserPick=null,pickedOwner='',pickedScope='household',pickedUrgency='this_week';
 var selectMode=false,selectedTaskIds=new Set(),longPressTimer=null;
 var _recentlyCompleted=new Set();
+var statsDays=30;
 var snoozingTask=null,editingTask=null,openMenu=null,metricsTab='stats',pendingSnooze=null,editingProject=null,editingSubtask=null;
 var editingAsset=null,openAssetId=null,pickedAssetStatus='green',panelTab='info';
 var _drillAll=[],_drillF=[],_drillM=[],_histMenuLog=null;
@@ -2056,8 +2059,13 @@ function setMetricsTab(tab){
   document.querySelectorAll('#metrics-tab-bar .tab-btn').forEach(function(b,i){b.classList.toggle('on',(i===0&&tab==='stats')||(i===1&&tab==='history'));});
   if(tab==='history')renderHistory();else renderStats();
 }
+function setStatsRange(d){
+  statsDays=d;
+  document.querySelectorAll('.range-btn').forEach(function(b){b.classList.toggle('on',parseInt(b.dataset.days)===d);});
+  renderStats();
+}
 function renderStats(){
-  var days=parseInt((document.getElementById('metrics-window')||{}).value)||30;
+  var days=statsDays||30;
   var log=(state.task_log||[]).filter(function(l){return !l.scope||l.scope==='household';});
   var cutoff=new Date();cutoff.setDate(cutoff.getDate()-days);
   var filtered=log.filter(function(l){return new Date(l.completed_at)>=cutoff;});
@@ -2085,7 +2093,7 @@ function openMetricDrillDown(idx){
 }
 function renderTrendChart(){
   var wrapEl=document.getElementById('metrics-trend');if(!wrapEl)return;
-  var tdays=parseInt(((document.getElementById('trend-window')||{}).value)||'90')||90;
+  var tdays=statsDays||30;
   var log=(state.task_log||[]).filter(function(l){return !l.scope||l.scope==='household';});
   var now=new Date();now.setHours(0,0,0,0);
   var cutoff=new Date(now);cutoff.setDate(cutoff.getDate()-tdays);
@@ -2103,8 +2111,7 @@ function renderTrendChart(){
   // X-axis week labels (M/D)
   var xLabels='';var step=Math.max(1,Math.ceil(n/6));
   weeks.forEach(function(w,i){if(i%step!==0&&i!==n-1)return;var x=px+Math.round(i/(n-1||1)*(W-px-14));var m=w.start.getMonth()+1;var d=w.start.getDate();xLabels+='<text x="'+x+'" y="'+(H-1)+'" font-size="7" fill="var(--text3)" text-anchor="middle">'+m+'/'+d+'</text>';});
-  var wopt=function(v,lbl){return '<option value="'+v+'"'+(tdays===v?' selected':'')+'>'+lbl+'</option>';};
-  wrapEl.innerHTML='<div class="trend-title">Completions over time <select id="trend-window" onchange="renderTrendChart()" style="font-size:11.5px;padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)">'+wopt(90,'90 days')+wopt(60,'60 days')+'</select></div><svg width="100%" viewBox="0 0 '+W+' '+H+'" style="overflow:visible">'+yLines+'<polyline points="'+fPts+'" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><polyline points="'+mPts+'" fill="none" stroke="var(--yellow)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'+xLabels+'</svg><div class="trend-legend"><span><span class="trend-legend-dot" style="background:var(--purple)"></span>Frankie</span><span><span class="trend-legend-dot" style="background:var(--yellow)"></span>Meredith</span></div>';
+  wrapEl.innerHTML='<div class="trend-title">Completions over time</div><svg width="100%" viewBox="0 0 '+W+' '+H+'" style="overflow:visible">'+yLines+'<polyline points="'+fPts+'" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><polyline points="'+mPts+'" fill="none" stroke="var(--yellow)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'+xLabels+'</svg><div class="trend-legend"><span><span class="trend-legend-dot" style="background:var(--purple)"></span>Frankie</span><span><span class="trend-legend-dot" style="background:var(--yellow)"></span>Meredith</span></div>';
 }
 function renderHistory(){
   var search=((document.getElementById('history-search')||{}).value||'').toLowerCase();
