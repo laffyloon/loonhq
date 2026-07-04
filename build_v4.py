@@ -354,6 +354,8 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
 .contr-meta{font-size:11px;color:var(--text3)}
 .contr-phone{color:var(--blue);text-decoration:none;font-size:11.5px}
 .ptask-row{display:flex;align-items:center;gap:8px;padding:10px 0;font-size:13px;color:var(--text2);min-height:44px}
+.ptask-tappable{cursor:pointer;flex:1;min-width:0}
+.ptask-tappable:hover{color:var(--text)}
 .ptask-name{flex:1;min-width:0;word-break:break-word;font-size:13px}
 .ptask-due{font-size:11px;color:var(--text3);white-space:nowrap;flex-shrink:0}
 .manual-link{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--blue);text-decoration:none}
@@ -825,7 +827,7 @@ def HTML_BODY(logo, icon):
 <!-- EDIT SUBTASK -->
 <div class="modal-bg gone" id="modal-subtask">
   <div class="modal">
-    <div class="modal-title">Edit task</div>
+    <div class="modal-hdr"><div class="modal-title">Edit subtask</div><button class="modal-x" onclick="closeModal('modal-subtask')" aria-label="Close"><i class="ti ti-x"></i></button></div>
     <div class="form-row"><div class="form-label">Task name</div><input class="form-input" id="st-name"></div>
     <div class="form-row-h">
       <div class="form-row"><div class="form-label">Status</div><select class="form-input" id="st-status"><option value="todo">To do</option><option value="next_up">Next up</option><option value="in_progress">In progress</option><option value="done">Done</option></select></div>
@@ -1746,10 +1748,10 @@ function renderProjTaskRow(item,pid){
   var d=document.createElement('div');d.className='ptask-row';
   var dueStr=item.due?fmtDateShort(item.due):'';
   if(item.isTask){
-    d.innerHTML='<div class="circ-check'+(item.isDone?' done':'')+'" onclick="event.stopPropagation();completeTask(\\''+item.id+'\\')"></div><div class="ptask-name">'+esc(item.name)+'</div>'+(dueStr?'<div class="ptask-due">'+dueStr+'</div>':'');
+    d.innerHTML='<div class="circ-check'+(item.isDone?' done':'')+'" onclick="event.stopPropagation();completeTask(\\''+item.id+'\\')"></div><div class="ptask-name ptask-tappable" data-edittask="'+item.id+'">'+esc(item.name)+'</div>'+(dueStr?'<div class="ptask-due">'+dueStr+'</div>':'');
   }else{
     var isDone=item.isDone;
-    d.innerHTML='<div class="box'+(isDone?' done':'')+'" data-sub="'+item.id+'"></div><div class="ptask-name">'+esc(item.name)+(item.due?' <span style="font-size:11px;color:var(--text3)">'+fmtDate(item.due)+'</span>':'')+'</div>';
+    d.innerHTML='<div class="box'+(isDone?' done':'')+'" data-sub="'+item.id+'"></div><div class="ptask-name ptask-tappable" data-editsub="'+item.id+'">'+esc(item.name)+(item.due?' <span style="font-size:11px;color:var(--text3)">'+fmtDate(item.due)+'</span>':'')+'</div>';
   }
   return d;
 }
@@ -1802,6 +1804,8 @@ document.addEventListener('click',function(e){
   if(sub){toggleSub(sub.getAttribute('data-sub'),sub);return;}
   var esub=e.target.closest('[data-editsub]');
   if(esub){openEditSubtask(esub.getAttribute('data-editsub'));return;}
+  var etask=e.target.closest('[data-edittask]');
+  if(etask){var tid=etask.getAttribute('data-edittask');var t=state.tasks.find(function(x){return String(x.task_id)===String(tid);});if(t)openEditTask(t);return;}
   var eproj=e.target.closest('[data-editproj]');
   if(eproj){openEditProject(eproj.getAttribute('data-editproj'));return;}
   var add=e.target.closest('[data-addsub]');
