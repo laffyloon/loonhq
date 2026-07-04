@@ -364,8 +364,9 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
 .manual-link:hover{text-decoration:underline}
 
 /* ACTIVITY */
-.stats-range-bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px}
-.range-btn{font-size:12px;padding:5px 12px;border-radius:20px;border:1px solid var(--border);background:var(--bg);color:var(--text2);cursor:pointer;font-family:inherit;transition:all .12s;white-space:nowrap}
+.stats-range-bar{display:flex;gap:5px;align-items:center;flex-wrap:nowrap;margin-bottom:4px}
+.range-label{font-size:12.5px;color:var(--text2);white-space:nowrap}
+.range-btn{font-size:12px;padding:4px 10px;border-radius:20px;border:1px solid var(--border);background:var(--bg);color:var(--text2);cursor:pointer;font-family:inherit;transition:all .12s;white-space:nowrap;min-width:36px}
 .range-btn.on{background:var(--green);border-color:var(--green);color:#fff;font-weight:500}
 .metrics-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;text-align:center}
 .metrics-num{font-size:28px;font-weight:600}
@@ -626,10 +627,12 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
       </div>
       <div id="metrics-stats-panel" class="scroll">
         <div class="stats-range-bar">
-          <button class="range-btn" data-days="15" onclick="setStatsRange(15)">Last 15 days</button>
-          <button class="range-btn on" data-days="30" onclick="setStatsRange(30)">Last 30 days</button>
-          <button class="range-btn" data-days="60" onclick="setStatsRange(60)">Last 60 days</button>
-          <button class="range-btn" data-days="90" onclick="setStatsRange(90)">Last 90 days</button>
+          <span class="range-label">Last</span>
+          <button class="range-btn" data-days="15" onclick="setStatsRange(15)">15</button>
+          <button class="range-btn on" data-days="30" onclick="setStatsRange(30)">30</button>
+          <button class="range-btn" data-days="60" onclick="setStatsRange(60)">60</button>
+          <button class="range-btn" data-days="90" onclick="setStatsRange(90)">90</button>
+          <span class="range-label">days</span>
         </div>
         <div class="metrics-grid" id="metrics-nums"></div>
         <div class="bar-wrap" id="metrics-bars"></div>
@@ -1263,8 +1266,9 @@ function renderTasks(){
     var due=new Date(String(dueStr).split('T')[0]+'T12:00:00');due.setHours(0,0,0,0);
     var surf=due;
     if(t.reminder_offset){var ob={same_day:0,'1_day':1,'2_days':2,'3_days':3,'1_week':7};var bk=ob[t.reminder_offset]||0;surf=new Date(due);surf.setDate(surf.getDate()-bk);}
-    if(due<now)overdue.push(t);
-    else if(due.getTime()===now.getTime())today.push(t);
+    if(due<now){if(t.type==='interval'||t.type==='scheduled')today.push(t);else overdue.push(t);}
+    else
+    if(due.getTime()===now.getTime())today.push(t);
     else if(surf<=now)reminders.push(t);
     else if(due.getTime()===tm0.getTime())tomorrow.push(t);
     else if(due<=we)week.push(t);
@@ -1382,14 +1386,15 @@ function makeTaskCard(t){
     var today0=new Date();today0.setHours(0,0,0,0);
     var diff=Math.round((dd-today0)/86400000);
     var dcls,dtext;
-    if(diff<0){dcls='due-overdue';dtext=fmtDateShort(_effD);}
+    var isRecurring=(t.type==='interval'||t.type==='scheduled');
+    if(diff<0){dcls=isRecurring?'due-today':'due-overdue';dtext=fmtDateShort(_effD);}
     else if(diff===0){dcls='due-today';dtext='Today';}
     else if(diff===1){dcls='due-soon';dtext='Tomorrow';}
     else if(diff<=7){dcls='due-week';dtext=fmtDateShort(_effD);}
     else if(diff<=30){dcls='due-month';dtext=fmtDateShort(_effD);}
     else{dcls='due-future';dtext=fmtDateShort(_effD);}
     var dp=document.createElement('span');dp.className='due-tag '+dcls;
-    var dic=document.createElement('i');dic.className='ti '+(diff<0?'ti-alert-triangle':'ti-calendar-event');dp.appendChild(dic);
+    var dic=document.createElement('i');dic.className='ti '+(diff<0&&!isRecurring?'ti-alert-triangle':'ti-calendar-event');dp.appendChild(dic);
     dp.appendChild(document.createTextNode(dtext));
     tm.appendChild(dp);
   }
