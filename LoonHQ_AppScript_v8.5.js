@@ -546,10 +546,27 @@ function deleteTaskLog(data) {
 }
 
 function reassignCompletion(data) {
-  var sheet = getSheet('task_log');
-  var rowNum = findRow(sheet, 'log_id', data.log_id);
-  if (rowNum < 0) return { error: 'Log entry not found' };
-  updateRow(sheet, rowNum, { completed_by: data.completed_by });
+  var logSheet = getSheet('task_log');
+  var logRow = findRow(logSheet, 'log_id', data.log_id);
+  if (logRow < 0) return { error: 'Log entry not found' };
+
+  var logUpdates = {};
+  if (data.completed_by) logUpdates.completed_by = data.completed_by;
+  if (data.scope) logUpdates.scope = data.scope;
+  if (Object.keys(logUpdates).length) updateRow(logSheet, logRow, logUpdates);
+
+  // Reclassify the task itself if scope changed
+  if (data.scope && data.task_id) {
+    var taskSheet = getSheet('tasks');
+    var taskRow = findRow(taskSheet, 'task_id', data.task_id);
+    if (taskRow >= 0) {
+      var taskUpdates = { scope: data.scope };
+      // When moving to personal, assign to whoever completed it
+      if (data.scope === 'personal' && data.completed_by) taskUpdates.owner = data.completed_by;
+      updateRow(taskSheet, taskRow, taskUpdates);
+    }
+  }
+
   return { ok: true };
 }
 

@@ -155,8 +155,8 @@ run('computeFirstDue future start honored', ()=>{ const r=computeFirstDue({type:
 run('computeFirstDue past start clamps to today (week)', ()=>{ const r=computeFirstDue({type:'scheduled',sched_freq:'week',weekday:2,sched_start:plus(-30)}, today); if(new Date(r+'T12:00:00')<today) throw new Error('returned past date '+r); if(new Date(r+'T12:00:00').getDay()!==2) throw new Error('not Tuesday'); });
 run('computeFirstDue interval future start = start', ()=>{ const r=computeFirstDue({type:'interval',recurrence_days:20,sched_start:plus(5)}, today); if(r!==plus(5)) throw new Error('interval future start should be start date, got '+r); });
 run('computeFirstDue interval no start = today', ()=>{ const r=computeFirstDue({type:'interval',recurrence_days:20}, today); if(r!==iso(today)) throw new Error('interval no-start should be today, got '+r); });
-run('renderTasks interval start=today buckets to Today stripe', ()=>{ const sv=state.tasks; const svTab=taskTab; const svScope=taskScope; state.tasks=[{task_id:'it1',name:'Bowl',type:'interval',recurrence_days:5,sched_start:iso(today),due_date:'',status:'active',scope:'household'}]; taskScope='household';taskTab='today';renderTasks(); const n=el('task-list').children.length; state.tasks=sv;taskTab=svTab;taskScope=svScope; if(n<1) throw new Error('interval start=today task not in Today stripe ('+n+' stripes rendered)'); });
-run('renderTasks interval no sched_start, no due_date buckets to Today', ()=>{ const sv=state.tasks; const svTab=taskTab; const svScope=taskScope; state.tasks=[{task_id:'it2',name:'NoDue',type:'interval',recurrence_days:7,sched_start:'',due_date:'',status:'active',scope:'household'}]; taskScope='household';taskTab='today';renderTasks(); const n=el('task-list').children.length; state.tasks=sv;taskTab=svTab;taskScope=svScope; if(n<1) throw new Error('interval no-start task not in Today stripe ('+n+' stripes rendered)'); });
+run('renderTasks interval start=today buckets to Today stripe', ()=>{ const sv=state.tasks; const svTab=taskTab; state.tasks=[{task_id:'it1',name:'Bowl',type:'interval',recurrence_days:5,sched_start:iso(today),due_date:'',status:'active',scope:'household'}]; taskTab='today';renderTasks(); const n=el('task-list').children.length; state.tasks=sv;taskTab=svTab; if(n<1) throw new Error('interval start=today task not in Today stripe ('+n+' stripes rendered)'); });
+run('renderTasks interval no sched_start, no due_date buckets to Today', ()=>{ const sv=state.tasks; const svTab=taskTab; state.tasks=[{task_id:'it2',name:'NoDue',type:'interval',recurrence_days:7,sched_start:'',due_date:'',status:'active',scope:'household'}]; taskTab='today';renderTasks(); const n=el('task-list').children.length; state.tasks=sv;taskTab=svTab; if(n<1) throw new Error('interval no-start task not in Today stripe ('+n+' stripes rendered)'); });
 run('openEditTask date inputs are yyyy-mm-dd', ()=>{ openEditTask({task_id:'x',type:'one_off',due_date:'2026-06-09T06:00:00.000Z',name:'X',scope:'household'}); const v=el('t-due').value; if(/T|Z/.test(v)) throw new Error('input got timestamp: '+v); if(v!=='2026-06-09') throw new Error('input not yyyy-mm-dd: '+v); });
 run('computeNextDue handles ISO-timestamp due_date anchor', ()=>{ const r=computeNextDue({type:'scheduled',sched_freq:'day',sched_interval:1,due_date:iso(today)+'T06:00:00.000Z'}, today); if(!r||!/^\d{4}-\d{2}-\d{2}$/.test(r)) throw new Error('invalid result: '+r); if(r!==plus(1)) throw new Error('expected tomorrow, got '+r); });
 run('upcoming tab shows tomorrow task with ISO due date', ()=>{ const saved=state.tasks; state.tasks=[{task_id:'tt',name:'Tmrw',type:'one_off',due_date:plus(1)+'T06:00:00.000Z',scope:'household',status:'active'}]; taskScope='household'; taskTab='upcoming'; renderTasks(); const n=el('task-list').children.length; state.tasks=saved; if(n<1) throw new Error('tomorrow task not rendered in upcoming'); });
@@ -169,17 +169,21 @@ run('computeNextDue interval = +5', ()=>{ const r=computeNextDue({type:'interval
 run('computeNextDue past end null', ()=>{ const r=computeNextDue({type:'interval',recurrence_days:5,end_date:plus(-1)}, today); if(r!==null) throw new Error('should be null'); });
 run('schedFreqOf legacy inference', ()=>{ if(schedFreqOf({weekday:3})!=='week') throw new Error('week'); if(schedFreqOf({day_of_month:'5'})!=='month') throw new Error('month'); if(schedFreqOf({sched_month:'4',day_of_month:'2'})!=='year') throw new Error('year'); if(schedFreqOf({})!=='day') throw new Error('day'); });
 
-// render across both scopes and all tabs
-for (const scope of ['household','personal']) {
-  taskScope = scope;
-  for (const tab of ['all','today','upcoming','recurring']) {
-    taskTab = tab;
-    run(`renderTasks scope=${scope} tab=${tab}`, ()=>renderTasks());
-  }
+// render all tabs (both household and personal tasks are merged)
+for (const tab of ['all','today','upcoming','recurring']) {
+  taskTab = tab;
+  run(`renderTasks tab=${tab}`, ()=>renderTasks());
 }
-// switch user and re-render personal
-currentUser='Meredith'; taskScope='personal'; taskTab='all';
-run('renderTasks personal as Meredith', ()=>renderTasks());
+// personal task visibility: Meredith should not see Frankie's personal tasks
+currentUser='Meredith'; taskTab='all';
+run('renderTasks as Meredith hides Frankie personal', ()=>{
+  renderTasks();
+  var frankiePersonal=state.tasks.find(function(t){return t.task_id==='t6';});
+  if(frankiePersonal&&frankiePersonal.scope==='personal'&&frankiePersonal.owner==='Frankie'){
+    var taskListHTML=document.getElementById('task-list').innerHTML||'';
+    if(taskListHTML.includes('My private thing')) throw new Error('Frankie personal task visible to Meredith');
+  }
+});
 currentUser='Frankie';
 
 run('renderProjects', ()=>renderProjects());
@@ -227,7 +231,8 @@ run('go projects', ()=>go('projects'));
 run('go grocery', ()=>go('grocery'));
 run('go assets', ()=>go('assets'));
 run('go metrics', ()=>go('metrics'));
-run('setScope', ()=>setScope('personal'));
+run('setStatsScope personal', ()=>setStatsScope('personal'));
+run('setStatsScope household', ()=>setStatsScope('household'));
 run('setTaskTab', ()=>setTaskTab('today'));
 run('setMetricsTab stats', ()=>setMetricsTab('stats'));
 run('setMetricsTab history', ()=>setMetricsTab('history'));
