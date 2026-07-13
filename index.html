@@ -541,7 +541,7 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
       <div class="mobile-sub-title" id="mob-sub-title">Tasks</div>
       <div class="mob-hdr-actions">
         <button class="hdr-icon-btn" onclick="toggleSearch()"><i class="ti ti-search"></i></button>
-        <button class="btn btn-icon" id="select-btn" onclick="selectAll()" title="Select tasks"><i class="ti ti-checkbox-multiple"></i></button>
+        <button class="btn btn-icon" id="select-btn" onclick="enterBatch()" title="Select multiple tasks"><i class="ti ti-list-check"></i></button>
         <button class="btn btn-icon" onclick="refreshData()" title="Refresh"><i class="ti ti-refresh"></i></button>
         <button class="btn btn-icon" id="mob-more-btn" style="display:none" onclick="openMobileMenu()"><i class="ti ti-dots"></i></button>
       </div>
@@ -581,7 +581,10 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
         <div id="task-list"></div>
       </div>
       <div class="batch-bar" id="batch-bar">
-        <div class="batch-count" id="batch-count">0 selected</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="batch-count" id="batch-count">0 selected</div>
+          <button class="batch-btn" onclick="selectAll()" style="font-size:12px;padding:4px 8px"><i class="ti ti-select-all"></i> Select all</button>
+        </div>
         <div class="batch-actions">
           <button class="batch-btn" onclick="exitBatch()">Cancel</button>
           <button class="batch-btn" onclick="openBatchSnooze()"><i class="ti ti-clock"></i> Snooze</button>
@@ -1350,7 +1353,9 @@ function renderTaskHistory(){
   var el=document.getElementById('task-list');el.innerHTML='';
   var search=((document.getElementById('task-hist-search')||{}).value||'').toLowerCase();
   var log=(state.task_log||[]).filter(function(l){
-    if((l.log_type||'completion')!=='completion')return false;
+    var lt=l.log_type||'completion';
+    if(lt!=='completion')return false;
+    if(typeof l.details==='string'&&l.details.includes('until_date'))return false;
     if(l.scope==='personal'&&l.completed_by!==currentUser)return false;
     if(search&&!((l.task_name||'').toLowerCase().includes(search)||(l.completed_by||'').toLowerCase().includes(search)))return false;
     return true;
@@ -2157,7 +2162,7 @@ function setStatsScope(s){
 }
 function renderStats(){
   var days=statsDays||30;
-  var log=(state.task_log||[]).filter(function(l){if(statsScope==='all')return true;var s=l.scope||'household';return s===statsScope;});
+  var log=(state.task_log||[]).filter(function(l){var lt=l.log_type||'completion';if(lt!=='completion')return false;if(typeof l.details==='string'&&l.details.includes('until_date'))return false;if(statsScope==='all')return true;var s=l.scope||'household';return s===statsScope;});
   var cutoff=new Date();cutoff.setDate(cutoff.getDate()-days);
   var filtered=log.filter(function(l){return new Date(l.completed_at)>=cutoff;});
   _drillAll=filtered;
@@ -2185,7 +2190,7 @@ function openMetricDrillDown(idx){
 function renderTrendChart(){
   var wrapEl=document.getElementById('metrics-trend');if(!wrapEl)return;
   var tdays=statsDays||30;
-  var log=(state.task_log||[]).filter(function(l){if(statsScope==='all')return true;var s=l.scope||'household';return s===statsScope;});
+  var log=(state.task_log||[]).filter(function(l){var lt=l.log_type||'completion';if(lt!=='completion')return false;if(typeof l.details==='string'&&l.details.includes('until_date'))return false;if(statsScope==='all')return true;var s=l.scope||'household';return s===statsScope;});
   var now=new Date();now.setHours(0,0,0,0);
   var cutoff=new Date(now);cutoff.setDate(cutoff.getDate()-tdays);
   var weeks=[];var d=new Date(cutoff);
@@ -2208,6 +2213,7 @@ function renderHistory(){
   var search=((document.getElementById('history-search')||{}).value||'').toLowerCase();
   var log=(state.task_log||[]).filter(function(l){
     var lt=l.log_type||'completion';if(lt!=='completion')return false;
+    if(typeof l.details==='string'&&l.details.includes('until_date'))return false;
     if(l.scope==='personal'&&l.completed_by!==currentUser)return false;
     if(search&&!((l.task_name||'').toLowerCase().includes(search)||(l.completed_by||'').toLowerCase().includes(search)))return false;
     return true;

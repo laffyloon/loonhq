@@ -12,7 +12,7 @@ var HEADERS = {
   projects:['project_id','name','description','status','target_date','created_at'],
   subtasks:['subtask_id','project_id','name','status','due_date','sort_order'],
   grocery: ['item_id','name','category','status','added_by','checked_at','sort_order'],
-  task_log:['log_id','task_id','task_name','completed_by','completed_at','scope','notes','log_type','details'],
+  task_log:['log_id','task_id','task_name','completed_by','completed_at','scope','notes','details','log_type'],
   assets:  ['asset_id','name','category','status','notes','install_date','last_service_date',
             'next_service_date','warranty_expiry','icon','icon_bg','icon_color',
             'purchase_price','manual_url','contractors'],
