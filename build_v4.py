@@ -100,6 +100,11 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 
 /* PERSONAL BADGE on task cards */
 .personal-badge{display:inline-flex;align-items:center;font-size:11px;color:var(--text3);padding:2px 5px;border-radius:8px;background:var(--bg2);border:1px solid var(--border)}
+/* PROJECT TAG on task cards */
+.proj-tag{display:inline-flex;align-items:center;gap:3px;font-size:11px;color:var(--text3);padding:2px 7px;border-radius:8px;background:var(--bg2);border:1px solid var(--border);cursor:pointer;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0}
+.proj-tag:hover{color:var(--text);border-color:var(--green)}
+/* HISTORY BAR inside tasks view */
+.hist-bar{padding:6px 12px;border-bottom:1px solid var(--border);background:var(--bg);display:flex;align-items:center;gap:6px;flex-shrink:0}
 /* STATS SCOPE FILTER */
 .stats-scope-bar{display:flex;gap:5px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
 .scope-pill{font-size:12px;padding:4px 11px;border-radius:16px;border:1px solid var(--border);background:var(--bg);color:var(--text2);cursor:pointer;font-family:inherit;transition:all .12s;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
@@ -533,6 +538,7 @@ def HTML_BODY(logo, icon):
       <div class="mobile-sub-title" id="mob-sub-title">Tasks</div>
       <div class="mob-hdr-actions">
         <button class="hdr-icon-btn" onclick="toggleSearch()"><i class="ti ti-search"></i></button>
+        <button class="btn btn-icon" id="select-btn" onclick="selectAll()" title="Select tasks"><i class="ti ti-checkbox-multiple"></i></button>
         <button class="btn btn-icon" onclick="refreshData()" title="Refresh"><i class="ti ti-refresh"></i></button>
         <button class="btn btn-icon" id="mob-more-btn" style="display:none" onclick="openMobileMenu()"><i class="ti ti-dots"></i></button>
       </div>
@@ -550,10 +556,16 @@ def HTML_BODY(logo, icon):
     <!-- TASKS -->
     <div id="v-tasks" class="view gone">
       <div class="tab-bar">
-        <button class="tab-btn on" data-tab="today" onclick="setTaskTab('today')">Today</button>
-        <button class="tab-btn" data-tab="upcoming" onclick="setTaskTab('upcoming')">Upcoming</button>
+        <button class="tab-btn on" data-tab="upcoming" onclick="setTaskTab('upcoming')">Upcoming</button>
         <button class="tab-btn" data-tab="recurring" onclick="setTaskTab('recurring')">Recurring</button>
         <button class="tab-btn" data-tab="all" onclick="setTaskTab('all')">All</button>
+        <button class="tab-btn" data-tab="history" onclick="setTaskTab('history')">History</button>
+      </div>
+      <div id="task-hist-bar" class="hist-bar gone">
+        <div class="search-input-wrap" style="flex:1">
+          <input class="search-inp" id="task-hist-search" type="search" placeholder="Search history..." oninput="renderTaskHistory()">
+          <button class="search-clear" onclick="document.getElementById('task-hist-search').value='';renderTaskHistory()">&#x2715;</button>
+        </div>
       </div>
       <div class="search-bar" id="search-bar">
         <div class="search-input-wrap">
@@ -876,8 +888,8 @@ def HTML_BODY(logo, icon):
     <div class="snooze-opts">
       <button class="snooze-opt" data-snooze="1">1 day<span class="snooze-opt-sub" id="snooze-1">--</span></button>
       <button class="snooze-opt" data-snooze="3">3 days<span class="snooze-opt-sub" id="snooze-3">--</span></button>
+      <button class="snooze-opt" data-snooze="5">5 days<span class="snooze-opt-sub" id="snooze-5">--</span></button>
       <button class="snooze-opt" data-snooze="7">1 week<span class="snooze-opt-sub" id="snooze-7">--</span></button>
-      <button class="snooze-opt" data-snooze="14">2 weeks<span class="snooze-opt-sub" id="snooze-14">--</span></button>
     </div>
     <div class="form-row"><div class="form-label">Or pick a date</div><input class="form-input" id="snooze-date" type="date" onchange="pickSnoozeDate(this.value)"></div>
     <div class="form-help">Overdue tasks snooze from today; future tasks from their due date.</div>
@@ -1007,8 +1019,8 @@ def HTML_BODY(logo, icon):
     <div style="display:flex;flex-direction:column;gap:8px">
       <button class="snooze-opt" data-bsnooze="1"><i class="ti ti-clock"></i> 1 day</button>
       <button class="snooze-opt" data-bsnooze="3"><i class="ti ti-clock"></i> 3 days</button>
+      <button class="snooze-opt" data-bsnooze="5"><i class="ti ti-clock"></i> 5 days</button>
       <button class="snooze-opt" data-bsnooze="7"><i class="ti ti-clock"></i> 1 week</button>
-      <button class="snooze-opt" data-bsnooze="14"><i class="ti ti-clock"></i> 2 weeks</button>
     </div>
     <div class="form-row"><div class="form-label">Or pick a date</div><input class="form-input" id="batch-snooze-date" type="date" oninput="onBatchSnoozeDateInput()"></div>
     <div class="modal-actions">
@@ -1025,7 +1037,7 @@ JS = """
 var API='__API__';
 var PINS={Frankie:'225522',Meredith:'8627'};
 var state={tasks:[],projects:[],subtasks:[],grocery:[],assets:[],task_log:[],maintenance_logs:[]};
-var currentUser=null,currentView='tasks',taskTab='today';
+var currentUser=null,currentView='tasks',taskTab='upcoming';
 var loginUserPick=null,pickedOwner='',pickedScope='household',pickedUrgency='this_week';
 var selectMode=false,selectedTaskIds=new Set(),longPressTimer=null;
 var _recentlyCompleted=new Set();
@@ -1110,7 +1122,13 @@ function refreshData(silent){
   });
 }
 function setSyncState(s,msg){var d=document.getElementById('sync-dot'),l=document.getElementById('sync-lbl');if(d)d.className='sync-dot'+(s==='err'?' err':s==='loading'?' loading':'');if(l)l.textContent=msg;}
-function renderAll(){renderTasks();renderProjects();renderGrocery();renderAssets();if(currentView==='metrics'){if(metricsTab==='history')renderHistory();else renderStats();}}
+function renderAll(){
+  if(currentView==='tasks')renderTasks();
+  else if(currentView==='projects')renderProjects();
+  else if(currentView==='grocery')renderGrocery();
+  else if(currentView==='assets')renderAssets();
+  else if(currentView==='metrics'){if(metricsTab==='history')renderHistory();else renderStats();}
+}
 
 // ── NAV ───────────────────────────────────────────────────
 var pageNames={tasks:'Tasks',projects:'Projects',grocery:'Shopping List',assets:'Assets',metrics:'Activity'};
@@ -1127,8 +1145,13 @@ function go(name){
   document.getElementById('topbtn').style.display=(name==='metrics'||name==='assets')?'none':'flex';
   document.getElementById('fab').style.display=(name==='metrics'||name==='assets')?'none':'flex';
   var mb=document.getElementById('mob-more-btn');if(mb)mb.style.display=name==='tasks'?'flex':'none';
+  var sb=document.getElementById('select-btn');if(sb)sb.style.display=(name==='tasks'&&taskTab!=='history')?'':'none';
   closePanel();
-  if(name==='metrics')renderStats();
+  if(name==='metrics'){if(metricsTab==='history')renderHistory();else renderStats();}
+  else if(name==='projects')renderProjects();
+  else if(name==='grocery')renderGrocery();
+  else if(name==='assets')renderAssets();
+  else renderTasks();
 }
 function handleAdd(){if(currentView==='tasks')openAddTask();else if(currentView==='projects')openAddProject();else if(currentView==='grocery')openAddGrocery();}
 function openMobileMenu(){openModal('modal-mobile-menu');}
@@ -1137,6 +1160,11 @@ function openMobileMenu(){openModal('modal-mobile-menu');}
 function setTaskTab(t){
   taskTab=t;
   document.querySelectorAll('[data-tab]').forEach(function(b){b.classList.toggle('on',b.dataset.tab===t);});
+  var isHist=t==='history';
+  // Toggle history search bar vs task search bar
+  var hb=document.getElementById('task-hist-bar');if(hb)hb.classList.toggle('gone',!isHist);
+  if(isHist&&searchVisible){searchVisible=false;var sb2=document.getElementById('search-bar');if(sb2)sb2.classList.remove('on');}
+  var sb=document.getElementById('select-btn');if(sb)sb.style.display=isHist?'none':'';
   exitBatch();renderTasks();
 }
 function toggleLegend(){}
@@ -1296,6 +1324,7 @@ function renderTasks(){
     (projs||[]).forEach(function(pr){w.appendChild(makeProjRow(pr));});
     el.appendChild(w);
   }
+  if(taskTab==='history'){renderTaskHistory();return;}
   if(taskTab==='all'){
     stripe('Overdue',overdue,[],'r');
     stripe('Today',today,[],'o');
@@ -1305,7 +1334,6 @@ function renderTasks(){
     stripe('This next month',month,[],'p');
     stripe('Later',later,[],'n');
   }
-  else if(taskTab==='today'){stripe('Overdue',overdue,[],'r');stripe('Today',today,[],'o');stripe('Reminders',reminders,[],'n');}
   else if(taskTab==='upcoming'){
     stripe('Overdue',overdue,[],'r');
     stripe('Today',today,[],'o');
@@ -1316,6 +1344,24 @@ function renderTasks(){
   }
   else if(taskTab==='recurring'){var rec=all.filter(function(t){return t.type==='scheduled'||t.type==='interval';});stripe('All recurring',rec,[],'g');}
   if(!el.children.length)el.innerHTML='<div style="font-size:13.5px;color:var(--text3);padding:30px 0;text-align:center">No tasks here. Nice work!</div>';
+}
+function renderTaskHistory(){
+  var el=document.getElementById('task-list');el.innerHTML='';
+  var search=((document.getElementById('task-hist-search')||{}).value||'').toLowerCase();
+  var log=(state.task_log||[]).filter(function(l){
+    if((l.log_type||'completion')!=='completion')return false;
+    if(l.scope==='personal'&&l.completed_by!==currentUser)return false;
+    if(search&&!((l.task_name||'').toLowerCase().includes(search)||(l.completed_by||'').toLowerCase().includes(search)))return false;
+    return true;
+  }).slice().sort(function(a,b){return new Date(b.completed_at)-new Date(a.completed_at);});
+  if(!log.length){el.innerHTML='<div style="font-size:12.5px;color:var(--text3);padding:20px 0;text-align:center">No completions found.</div>';return;}
+  log.forEach(function(l){
+    var d=document.createElement('div');d.className='history-item';
+    var mb=document.createElement('button');mb.className='history-menu-btn';mb.innerHTML='<i class="ti ti-dots-vertical"></i>';
+    mb.addEventListener('click',function(e){e.stopPropagation();openHistoryActionMenu(e,l);});
+    d.innerHTML='<div class="ldot '+(l.completed_by==='Frankie'?'':'b')+'"></div><div style="flex:1;min-width:0"><div class="lt">'+esc(l.task_name)+'</div><div class="lm">'+esc(l.completed_by)+' · '+fmtTimestamp(l.completed_at)+'</div></div>';
+    d.appendChild(mb);el.appendChild(d);
+  });
 }
 
 function makeTaskCard(t){
@@ -1375,8 +1421,11 @@ function makeTaskCard(t){
     tm.appendChild(ai);
   }
   if(t.linked_project_id){
-    var pli=document.createElement('i');
-    pli.className='ti ti-clipboard-list link-icon link-icon-proj';pli.title='Linked project';
+    var proj=(state.projects||[]).find(function(p){return String(p.project_id)===String(t.linked_project_id);});
+    var pName=proj?proj.name:'Project';
+    var pShort=pName.length>10?pName.substring(0,9)+'…':pName;
+    var pli=document.createElement('span');pli.className='proj-tag';pli.title=pName;
+    pli.innerHTML='<i class="ti ti-clipboard-list"></i>';pli.appendChild(document.createTextNode(' '+pShort));
     pli.addEventListener('click',function(e){e.stopPropagation();go('projects');});
     tm.appendChild(pli);
   }
@@ -1485,8 +1534,28 @@ function attachLongPress(cardEl,task){
   cardEl.addEventListener('contextmenu',function(e){e.preventDefault();if(!selectMode)enterBatch();toggleSelect(task.task_id);});
 }
 function enterBatch(){selectMode=true;selectedTaskIds.clear();document.getElementById('batch-bar').classList.add('on');updateBatchCount();}
-function exitBatch(){selectMode=false;selectedTaskIds.clear();document.getElementById('batch-bar').classList.remove('on');renderTasks();}
-function toggleSelect(id){if(selectedTaskIds.has(id))selectedTaskIds.delete(id);else selectedTaskIds.add(id);if(!selectedTaskIds.size){exitBatch();return;}updateBatchCount();renderTasks();}
+function exitBatch(){selectMode=false;selectedTaskIds.clear();document.getElementById('batch-bar').classList.remove('on');}
+function selectAll(){
+  if(!selectMode)enterBatch();
+  document.querySelectorAll('.tc-wrap[data-task-id]').forEach(function(wrap){
+    var id=wrap.dataset.taskId;if(!id)return;
+    selectedTaskIds.add(id);
+    var tc=wrap.querySelector('.tc');if(tc)tc.classList.add('selected');
+    var circ=wrap.querySelector('.circ');if(circ)circ.classList.add('sel');
+  });
+  updateBatchCount();
+}
+function toggleSelect(id){
+  if(selectedTaskIds.has(id))selectedTaskIds.delete(id);else selectedTaskIds.add(id);
+  if(!selectedTaskIds.size){exitBatch();renderTasks();return;}
+  updateBatchCount();
+  var wrap=document.querySelector('.tc-wrap[data-task-id="'+id+'"]');
+  if(wrap){
+    var isSel=selectedTaskIds.has(id);
+    var tc=wrap.querySelector('.tc');if(tc)tc.classList.toggle('selected',isSel);
+    var circ=wrap.querySelector('.circ');if(circ)circ.classList.toggle('sel',isSel);
+  }
+}
 function updateBatchCount(){document.getElementById('batch-count').textContent=selectedTaskIds.size+' selected';}
 function batchCompleteSelected(){
   var picks=[];
@@ -1557,7 +1626,7 @@ function openSnooze(t){
   var isOverdue=t.due_date&&new Date(String(t.due_date).split('T')[0]+'T12:00:00')<today0;
   var fromEl=document.getElementById('snooze-from');
   if(fromEl)fromEl.textContent='Snoozed from: '+(isOverdue?'today (task is overdue)':fmtDateShort(t.due_date));
-  [1,3,7,14].forEach(function(n){var d=new Date(base);d.setDate(d.getDate()+n);var el=document.getElementById('snooze-'+n);if(el)el.textContent='\u2192 '+fmtDateShort(d.toISOString().split('T')[0]);});
+  [1,3,5,7].forEach(function(n){var d=new Date(base);d.setDate(d.getDate()+n);var el=document.getElementById('snooze-'+n);if(el)el.textContent='\u2192 '+fmtDateShort(d.toISOString().split('T')[0]);});
   document.getElementById('snooze-date').value='';
   document.querySelectorAll('#modal-snooze .snooze-opt').forEach(function(b){b.classList.remove('sel');});
   document.getElementById('snooze-confirm-btn').disabled=true;

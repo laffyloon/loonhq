@@ -155,8 +155,8 @@ run('computeFirstDue future start honored', ()=>{ const r=computeFirstDue({type:
 run('computeFirstDue past start clamps to today (week)', ()=>{ const r=computeFirstDue({type:'scheduled',sched_freq:'week',weekday:2,sched_start:plus(-30)}, today); if(new Date(r+'T12:00:00')<today) throw new Error('returned past date '+r); if(new Date(r+'T12:00:00').getDay()!==2) throw new Error('not Tuesday'); });
 run('computeFirstDue interval future start = start', ()=>{ const r=computeFirstDue({type:'interval',recurrence_days:20,sched_start:plus(5)}, today); if(r!==plus(5)) throw new Error('interval future start should be start date, got '+r); });
 run('computeFirstDue interval no start = today', ()=>{ const r=computeFirstDue({type:'interval',recurrence_days:20}, today); if(r!==iso(today)) throw new Error('interval no-start should be today, got '+r); });
-run('renderTasks interval start=today buckets to Today stripe', ()=>{ const sv=state.tasks; const svTab=taskTab; state.tasks=[{task_id:'it1',name:'Bowl',type:'interval',recurrence_days:5,sched_start:iso(today),due_date:'',status:'active',scope:'household'}]; taskTab='today';renderTasks(); const n=el('task-list').children.length; state.tasks=sv;taskTab=svTab; if(n<1) throw new Error('interval start=today task not in Today stripe ('+n+' stripes rendered)'); });
-run('renderTasks interval no sched_start, no due_date buckets to Today', ()=>{ const sv=state.tasks; const svTab=taskTab; state.tasks=[{task_id:'it2',name:'NoDue',type:'interval',recurrence_days:7,sched_start:'',due_date:'',status:'active',scope:'household'}]; taskTab='today';renderTasks(); const n=el('task-list').children.length; state.tasks=sv;taskTab=svTab; if(n<1) throw new Error('interval no-start task not in Today stripe ('+n+' stripes rendered)'); });
+run('renderTasks interval start=today buckets to Today stripe', ()=>{ const sv=state.tasks; const svTab=taskTab; state.tasks=[{task_id:'it1',name:'Bowl',type:'interval',recurrence_days:5,sched_start:iso(today),due_date:'',status:'active',scope:'household'}]; taskTab='upcoming';renderTasks(); const n=el('task-list').children.length; state.tasks=sv;taskTab=svTab; if(n<1) throw new Error('interval start=today task not in Upcoming ('+n+' stripes rendered)'); });
+run('renderTasks interval no sched_start, no due_date buckets to Today', ()=>{ const sv=state.tasks; const svTab=taskTab; state.tasks=[{task_id:'it2',name:'NoDue',type:'interval',recurrence_days:7,sched_start:'',due_date:'',status:'active',scope:'household'}]; taskTab='upcoming';renderTasks(); const n=el('task-list').children.length; state.tasks=sv;taskTab=svTab; if(n<1) throw new Error('interval no-start task not in Upcoming ('+n+' stripes rendered)'); });
 run('openEditTask date inputs are yyyy-mm-dd', ()=>{ openEditTask({task_id:'x',type:'one_off',due_date:'2026-06-09T06:00:00.000Z',name:'X',scope:'household'}); const v=el('t-due').value; if(/T|Z/.test(v)) throw new Error('input got timestamp: '+v); if(v!=='2026-06-09') throw new Error('input not yyyy-mm-dd: '+v); });
 run('computeNextDue handles ISO-timestamp due_date anchor', ()=>{ const r=computeNextDue({type:'scheduled',sched_freq:'day',sched_interval:1,due_date:iso(today)+'T06:00:00.000Z'}, today); if(!r||!/^\d{4}-\d{2}-\d{2}$/.test(r)) throw new Error('invalid result: '+r); if(r!==plus(1)) throw new Error('expected tomorrow, got '+r); });
 run('upcoming tab shows tomorrow task with ISO due date', ()=>{ const saved=state.tasks; state.tasks=[{task_id:'tt',name:'Tmrw',type:'one_off',due_date:plus(1)+'T06:00:00.000Z',scope:'household',status:'active'}]; taskScope='household'; taskTab='upcoming'; renderTasks(); const n=el('task-list').children.length; state.tasks=saved; if(n<1) throw new Error('tomorrow task not rendered in upcoming'); });
@@ -170,7 +170,7 @@ run('computeNextDue past end null', ()=>{ const r=computeNextDue({type:'interval
 run('schedFreqOf legacy inference', ()=>{ if(schedFreqOf({weekday:3})!=='week') throw new Error('week'); if(schedFreqOf({day_of_month:'5'})!=='month') throw new Error('month'); if(schedFreqOf({sched_month:'4',day_of_month:'2'})!=='year') throw new Error('year'); if(schedFreqOf({})!=='day') throw new Error('day'); });
 
 // render all tabs (both household and personal tasks are merged)
-for (const tab of ['all','today','upcoming','recurring']) {
+for (const tab of ['all','upcoming','recurring','history']) {
   taskTab = tab;
   run(`renderTasks tab=${tab}`, ()=>renderTasks());
 }
@@ -233,7 +233,10 @@ run('go assets', ()=>go('assets'));
 run('go metrics', ()=>go('metrics'));
 run('setStatsScope personal', ()=>setStatsScope('personal'));
 run('setStatsScope household', ()=>setStatsScope('household'));
-run('setTaskTab', ()=>setTaskTab('today'));
+run('setTaskTab upcoming', ()=>setTaskTab('upcoming'));
+run('setTaskTab history', ()=>setTaskTab('history'));
+run('renderTaskHistory', ()=>renderTaskHistory());
+run('setTaskTab all', ()=>setTaskTab('all'));
 run('setMetricsTab stats', ()=>setMetricsTab('stats'));
 run('setMetricsTab history', ()=>setMetricsTab('history'));
 run('toggleLegend', ()=>toggleLegend());
@@ -328,14 +331,14 @@ run('quickSwitch', ()=>quickSwitch('Meredith'));
 run('toggleLegend no-op', ()=>toggleLegend());
 run('toggleSearch', ()=>{ toggleSearch(); toggleSearch(); });
 run('onSearchInput filters', ()=>{
-  taskSearch=''; taskScope='household'; taskTab='all';
+  taskSearch=''; taskTab='all';
   el('search-inp').value='recycling'; onSearchInput(); taskSearch='';
 });
 run('search filter excludes non-matching', ()=>{
   const sv=state.tasks,sp=state.projects,ss=state.subtasks;
   state.tasks=[{task_id:'sa',name:'Walk dog',type:'one_off',due_date:plus(1),scope:'household',status:'active',notes:''},{task_id:'sb',name:'Wash dishes',type:'one_off',due_date:plus(2),scope:'household',status:'active',notes:''}];
   state.projects=[];state.subtasks=[];
-  taskSearch='dog'; taskScope='household'; taskTab='all'; renderTasks();
+  taskSearch='dog'; taskTab='all'; renderTasks();
   const n=el('task-list').children.length;
   state.tasks=sv;state.projects=sp;state.subtasks=ss; taskSearch='';
   if(n!==1) throw new Error('expected 1 stripe got '+n);
@@ -343,7 +346,7 @@ run('search filter excludes non-matching', ()=>{
 run('reminder bucketing renders', ()=>{
   const sv=state.tasks;
   state.tasks=[{task_id:'r1',name:'Reminder task',type:'one_off',due_date:plus(2),reminder_offset:'3_days',scope:'household',status:'active',notes:''}];
-  taskScope='household'; taskTab='today'; renderTasks();
+  taskTab='upcoming'; renderTasks();
   state.tasks=sv;
 });
 run('nthWeekdayOfMonth first Monday Jan 2026', ()=>{
@@ -382,13 +385,13 @@ run('sched_pattern first-1 computeFirstDue (week)', ()=>{
 run('asset link icon renders in task card', ()=>{
   const sv=state.tasks;
   state.tasks=[{task_id:'al1',name:'Asset task',type:'one_off',due_date:plus(1),scope:'household',status:'active',linked_asset_id:'a-furnace',notes:''}];
-  taskScope='household'; taskTab='all'; renderTasks();
+  taskTab='all'; renderTasks();
   state.tasks=sv;
 });
 run('project link icon renders in task card', ()=>{
   const sv=state.tasks;
   state.tasks=[{task_id:'pl1',name:'Proj task',type:'one_off',due_date:plus(1),scope:'household',status:'active',linked_project_id:'p1',notes:''}];
-  taskScope='household'; taskTab='all'; renderTasks();
+  taskTab='all'; renderTasks();
   state.tasks=sv;
 });
 run('done projects filtered from active/planned', ()=>{
@@ -444,7 +447,10 @@ run('submitTask scheduled clears sched_pattern', ()=>{
   const d=__posts[__posts.length-1].data;
   if(d.sched_pattern!=='') throw new Error('sched_pattern should be empty: '+d.sched_pattern);
 });
-run('renderAll with history tab active', ()=>{ currentView='metrics'; metricsTab='history'; renderAll(); metricsTab='stats'; });
+run('renderAll tasks view', ()=>{ currentView='tasks'; taskTab='upcoming'; renderAll(); });
+run('renderAll projects view', ()=>{ currentView='projects'; renderAll(); currentView='tasks'; });
+run('renderAll metrics history', ()=>{ currentView='metrics'; metricsTab='history'; renderAll(); metricsTab='stats'; currentView='tasks'; });
+run('selectAll enters batch and selects', ()=>{ taskTab='upcoming'; renderTasks(); selectAll(); if(!selectMode) throw new Error('not in batch mode'); exitBatch(); renderTasks(); });
 
 // ── v8.2 new tests ───────────────────────────────────────
 run('openAssetPanel with new fields', ()=>{
