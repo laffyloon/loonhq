@@ -1,4 +1,4 @@
-// LoonHQ Apps Script v8.5
+// LoonHQ Apps Script v8.6
 // Deploy: paste into script.google.com -> Save -> Deploy -> New version
 // After schema changes: run setupHeaders() once in the editor (safe, appends columns only)
 
