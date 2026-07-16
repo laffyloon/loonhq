@@ -1785,7 +1785,7 @@ function submitTask(){
   var name=document.getElementById('t-name').value.trim();if(!name){alert('Task name required');return;}
   var type=document.getElementById('t-type').value;
   var data={name:name,type:type,scope:pickedScope,owner:pickedScope==='personal'?currentUser:pickedOwner,notes:document.getElementById('t-notes').value.trim(),status:'active'};
-  if(type==='one_off'){var due=document.getElementById('t-due').value||'';if(!due&&!editingTask){due=new Date().toISOString().split('T')[0];}data.due_date=due;data.reminder_offset=document.getElementById('t-remind').value||'';}
+  if(type==='one_off'){var due=document.getElementById('t-due').value||'';var projSel2=document.getElementById('t-proj-link');var hasProj=projSel2&&projSel2.value;if(!due&&!editingTask&&!hasProj){due=new Date().toISOString().split('T')[0];}data.due_date=due;data.reminder_offset=document.getElementById('t-remind').value||'';}
   else if(type==='floating'){data.urgency_window=pickedUrgency;}
   else if(type==='scheduled'){
     var f=document.getElementById('t-sched-freq').value;
@@ -1873,6 +1873,7 @@ function renderProjects(){
 function openAddTaskForProject(pid){
   openAddTask();
   var sel=document.getElementById('t-proj-link');if(sel)sel.value=pid;
+  document.getElementById('t-type').value='floating';pickUrgency('no_rush');updateTaskTypeFields();
 }
 function togglePastProjects(){
   var d=document.getElementById('proj-done');var c=document.getElementById('past-proj-chev');
