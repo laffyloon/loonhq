@@ -1348,13 +1348,19 @@ function renderTasks(){
   else if(taskTab==='recurring'){var rec=all.filter(function(t){return t.type==='scheduled'||t.type==='interval';});stripe('All recurring',rec,[],'g');}
   if(!el.children.length)el.innerHTML='<div style="font-size:13.5px;color:var(--text3);padding:30px 0;text-align:center">No tasks here. Nice work!</div>';
 }
+function isCompletionLog(l){
+  var lt=l.log_type||'completion';
+  if(lt!=='completion')return false;
+  var det=l.details||'';
+  if(det==='snooze'||det==='edit'||det==='manual_note')return false;
+  if(typeof det==='string'&&det.includes('until_date'))return false;
+  return true;
+}
 function renderTaskHistory(){
   var el=document.getElementById('task-list');el.innerHTML='';
   var search=((document.getElementById('task-hist-search')||{}).value||'').toLowerCase();
   var log=(state.task_log||[]).filter(function(l){
-    var lt=l.log_type||'completion';
-    if(lt!=='completion')return false;
-    if(typeof l.details==='string'&&l.details.includes('until_date'))return false;
+    if(!isCompletionLog(l))return false;
     if(l.scope==='personal'&&l.completed_by!==currentUser)return false;
     if(search&&!((l.task_name||'').toLowerCase().includes(search)||(l.completed_by||'').toLowerCase().includes(search)))return false;
     return true;
@@ -2162,7 +2168,7 @@ function setStatsScope(s){
 }
 function renderStats(){
   var days=statsDays||30;
-  var log=(state.task_log||[]).filter(function(l){var lt=l.log_type||'completion';if(lt!=='completion')return false;if(typeof l.details==='string'&&l.details.includes('until_date'))return false;if(statsScope==='all')return true;var s=l.scope||'household';return s===statsScope;});
+  var log=(state.task_log||[]).filter(function(l){if(!isCompletionLog(l))return false;if(statsScope==='all')return true;var s=l.scope||'household';return s===statsScope;});
   var cutoff=new Date();cutoff.setDate(cutoff.getDate()-days);
   var filtered=log.filter(function(l){return new Date(l.completed_at)>=cutoff;});
   _drillAll=filtered;
@@ -2190,7 +2196,7 @@ function openMetricDrillDown(idx){
 function renderTrendChart(){
   var wrapEl=document.getElementById('metrics-trend');if(!wrapEl)return;
   var tdays=statsDays||30;
-  var log=(state.task_log||[]).filter(function(l){var lt=l.log_type||'completion';if(lt!=='completion')return false;if(typeof l.details==='string'&&l.details.includes('until_date'))return false;if(statsScope==='all')return true;var s=l.scope||'household';return s===statsScope;});
+  var log=(state.task_log||[]).filter(function(l){if(!isCompletionLog(l))return false;if(statsScope==='all')return true;var s=l.scope||'household';return s===statsScope;});
   var now=new Date();now.setHours(0,0,0,0);
   var cutoff=new Date(now);cutoff.setDate(cutoff.getDate()-tdays);
   var weeks=[];var d=new Date(cutoff);
@@ -2212,8 +2218,7 @@ function renderTrendChart(){
 function renderHistory(){
   var search=((document.getElementById('history-search')||{}).value||'').toLowerCase();
   var log=(state.task_log||[]).filter(function(l){
-    var lt=l.log_type||'completion';if(lt!=='completion')return false;
-    if(typeof l.details==='string'&&l.details.includes('until_date'))return false;
+    if(!isCompletionLog(l))return false;
     if(l.scope==='personal'&&l.completed_by!==currentUser)return false;
     if(search&&!((l.task_name||'').toLowerCase().includes(search)||(l.completed_by||'').toLowerCase().includes(search)))return false;
     return true;
