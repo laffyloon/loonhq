@@ -2311,12 +2311,11 @@ function submitReassign(){
   closeModal('modal-reassign');setSyncState('loading','Updating...');
   apiPost({action:'reassignCompletion',data:{log_id:_histMenuLog.log_id,task_id:_histMenuLog.task_id,completed_by:_reassignPerson,scope:_reassignScope}}).then(function(){refreshData(true);});
 }
-function renderMetrics(){renderStats();}
-
 // ── MODALS ────────────────────────────────────────────────
 function openModal(id){document.getElementById(id).classList.remove('gone');}
 function closeModal(id){document.getElementById(id).classList.add('gone');}
-document.addEventListener('click',function(e){['modal-task','modal-project','modal-subtask','modal-grocery','modal-qs','modal-snooze','modal-mobile-menu','modal-edit-asset','modal-maint-note','modal-metric-drill','modal-reassign','modal-batch-snooze','modal-type-info','modal-task-history'].forEach(function(id){if(e.target.id===id)closeModal(id);});});
+var _MODAL_BG_IDS=['modal-task','modal-project','modal-subtask','modal-grocery','modal-qs','modal-snooze','modal-mobile-menu','modal-edit-asset','modal-maint-note','modal-metric-drill','modal-reassign','modal-batch-snooze','modal-type-info','modal-task-history'];
+document.addEventListener('click',function(e){if(!e.target.id)return;var i=_MODAL_BG_IDS.indexOf(e.target.id);if(i>=0)closeModal(_MODAL_BG_IDS[i]);});
 
 // ── PROJECT / GROCERY ─────────────────────────────────────
 function openAddProject(){
@@ -2329,7 +2328,7 @@ function openAddProject(){
   openModal('modal-project');
 }
 function openEditProject(pid){
-  var p=state.projects.filter(function(x){return String(x.project_id)===String(pid);})[0];if(!p)return;
+  var p=state.projects.find(function(x){return String(x.project_id)===String(pid);});if(!p)return;
   editingProject=p;
   document.getElementById('project-modal-title').textContent='Edit project';
   document.getElementById('project-submit-btn').textContent='Save changes';

@@ -164,6 +164,11 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
    ═══════════════════════════════════════════════ */
 .tc-wrap{position:relative;overflow:hidden;border-radius:var(--radius);width:100%;display:block}
 .swipe-bg{position:absolute;inset:0;display:none;align-items:center;border-radius:var(--radius);z-index:1;pointer-events:none}
+.swipe-complete{background:var(--green);justify-content:flex-start;padding-left:18px}
+.swipe-snooze{background:var(--amber);justify-content:flex-end;padding-right:18px}
+.swipe-complete-content,.swipe-snooze-content{display:none;align-items:center;gap:7px;color:#fff;font-weight:600;font-size:13px}
+.swipe-complete-content i,.swipe-snooze-content i{font-size:22px;flex-shrink:0}
+.swipe-complete .swipe-complete-content,.swipe-snooze .swipe-snooze-content{display:flex}
 .tc{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:11px 12px;display:flex;align-items:flex-start;gap:10px;cursor:pointer;transition:transform .12s,border-color .12s;position:relative;z-index:2;touch-action:pan-y;width:100%}
 .tc:hover{border-color:var(--border2)}
 .tc.selected{border-color:var(--green);background:var(--green-light)}
@@ -1385,7 +1390,9 @@ function makeTaskCard(t){
   wrap.className='tc-wrap';wrap.dataset.taskId=t.task_id;
 
   // Single dynamic swipe background (FIXED: one element, updated dynamically)
-  var swipeBg=document.createElement('div');swipeBg.className='swipe-bg';wrap.appendChild(swipeBg);
+  var swipeBg=document.createElement('div');swipeBg.className='swipe-bg';
+  swipeBg.innerHTML='<span class="swipe-complete-content"><i class="ti ti-check"></i><span>Complete</span></span><span class="swipe-snooze-content"><i class="ti ti-clock"></i><span>Snooze</span></span>';
+  wrap.appendChild(swipeBg);
 
   var div=document.createElement('div');div.className='tc';
   if(selectMode&&selectedTaskIds.has(t.task_id))div.classList.add('selected');
@@ -2305,12 +2312,11 @@ function submitReassign(){
   closeModal('modal-reassign');setSyncState('loading','Updating...');
   apiPost({action:'reassignCompletion',data:{log_id:_histMenuLog.log_id,task_id:_histMenuLog.task_id,completed_by:_reassignPerson,scope:_reassignScope}}).then(function(){refreshData(true);});
 }
-function renderMetrics(){renderStats();}
-
 // ── MODALS ────────────────────────────────────────────────
 function openModal(id){document.getElementById(id).classList.remove('gone');}
 function closeModal(id){document.getElementById(id).classList.add('gone');}
-document.addEventListener('click',function(e){['modal-task','modal-project','modal-subtask','modal-grocery','modal-qs','modal-snooze','modal-mobile-menu','modal-edit-asset','modal-maint-note','modal-metric-drill','modal-reassign','modal-batch-snooze','modal-type-info','modal-task-history'].forEach(function(id){if(e.target.id===id)closeModal(id);});});
+var _MODAL_BG_IDS=['modal-task','modal-project','modal-subtask','modal-grocery','modal-qs','modal-snooze','modal-mobile-menu','modal-edit-asset','modal-maint-note','modal-metric-drill','modal-reassign','modal-batch-snooze','modal-type-info','modal-task-history'];
+document.addEventListener('click',function(e){if(!e.target.id)return;var i=_MODAL_BG_IDS.indexOf(e.target.id);if(i>=0)closeModal(_MODAL_BG_IDS[i]);});
 
 // ── PROJECT / GROCERY ─────────────────────────────────────
 function openAddProject(){
@@ -2323,7 +2329,7 @@ function openAddProject(){
   openModal('modal-project');
 }
 function openEditProject(pid){
-  var p=state.projects.filter(function(x){return String(x.project_id)===String(pid);})[0];if(!p)return;
+  var p=state.projects.find(function(x){return String(x.project_id)===String(pid);});if(!p)return;
   editingProject=p;
   document.getElementById('project-modal-title').textContent='Edit project';
   document.getElementById('project-submit-btn').textContent='Save changes';
