@@ -2268,7 +2268,7 @@ function openTaskHistory(){
   var tid=editingTask.task_id;
   var name=editingTask.name;
   document.getElementById('th-task-name').textContent=name;
-  var logs=(state.task_log||[]).filter(function(l){return l.task_id===tid;}).slice().sort(function(a,b){return new Date(b.completed_at)-new Date(a.completed_at);});
+  var logs=(state.task_log||[]).filter(function(l){return l.task_id===tid&&isCompletionLog(l);}).slice().sort(function(a,b){return new Date(b.completed_at)-new Date(a.completed_at);});
   var el=document.getElementById('th-list');el.innerHTML='';
   if(!logs.length){el.innerHTML='<div style="font-size:13px;color:var(--text3);padding:12px 0">No history yet.</div>';openModal('modal-task-history');return;}
   logs.forEach(function(l){

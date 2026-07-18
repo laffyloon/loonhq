@@ -189,7 +189,10 @@ function getAllData() {
   var projects = sheetToObjects(getSheet('projects')).filter(function(p) { return p.status !== 'deleted'; });
   var subtasks = sheetToObjects(getSheet('subtasks'));
   var grocery  = sheetToObjects(getSheet('grocery')).filter(function(g) { return g.status !== 'deleted'; });
-  var task_log = sheetToObjects(getSheet('task_log'));
+  var task_log = sheetToObjects(getSheet('task_log')).filter(function(l) {
+    var lt = (l.log_type || '').toString();
+    return lt === '' || lt === 'completion';
+  });
 
   // Seed assets on first load
   var assetSheet = getSheet('assets');
@@ -367,18 +370,6 @@ function snoozeTask(data) {
   if (rowNum < 0) return { error: 'Task not found' };
   var newDue = data.until_date;
   updateRow(sheet, rowNum, { due_date: newDue, status: 'active' });
-  // Log the snooze event
-  var taskObjs = sheetToObjects(sheet);
-  var taskObj = taskObjs.find(function(t) { return t.task_id === data.task_id; }) || {};
-  appendRow(getSheet('task_log'), HEADERS.task_log, {
-    log_id: newId('l'), task_id: data.task_id,
-    task_name: taskObj.name || data.task_id,
-    completed_by: data.snoozed_by || '',
-    completed_at: new Date().toISOString(),
-    scope: taskObj.scope || 'household',
-    notes: '', log_type: 'snooze',
-    details: JSON.stringify({ until_date: newDue })
-  });
   return { ok: true };
 }
 
