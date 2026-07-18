@@ -346,7 +346,7 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
 .log-item{display:flex;gap:9px;padding:8px 0;border-bottom:1px solid var(--border)}
 .log-item:last-child{border-bottom:none}
 .ldot{width:8px;height:8px;border-radius:50%;background:var(--green);margin-top:5px;flex-shrink:0}
-.ldot.b{background:var(--blue)}
+.ldot.b{background:var(--blue)}.ldot.n{background:var(--border2)}
 .lt{font-size:12.5px;word-break:break-word}
 .lm{font-size:11px;color:var(--text3);margin-top:2px}
 .flag-box{background:var(--amber-light);border:1px solid #F0C86A;border-radius:var(--radius-sm);padding:9px 11px;font-size:12px;color:var(--amber);display:flex;gap:7px}
@@ -557,7 +557,8 @@ def HTML_BODY(logo, icon):
     <!-- TASKS -->
     <div id="v-tasks" class="view gone">
       <div class="tab-bar">
-        <button class="tab-btn on" data-tab="upcoming" onclick="setTaskTab('upcoming')">Upcoming</button>
+        <button class="tab-btn on" data-tab="today" onclick="setTaskTab('today')">Today</button>
+        <button class="tab-btn" data-tab="upcoming" onclick="setTaskTab('upcoming')">Upcoming</button>
         <button class="tab-btn" data-tab="recurring" onclick="setTaskTab('recurring')">Recurring</button>
         <button class="tab-btn" data-tab="all" onclick="setTaskTab('all')">All</button>
         <button class="tab-btn" data-tab="history" onclick="setTaskTab('history')">History</button>
@@ -1041,7 +1042,7 @@ JS = """
 var API='__API__';
 var PINS={Frankie:'225522',Meredith:'8627'};
 var state={tasks:[],projects:[],subtasks:[],grocery:[],assets:[],task_log:[],maintenance_logs:[]};
-var currentUser=null,currentView='tasks',taskTab='upcoming';
+var currentUser=null,currentView='tasks',taskTab='today';
 var loginUserPick=null,pickedOwner='',pickedScope='household',pickedUrgency='this_week';
 var selectMode=false,selectedTaskIds=new Set(),longPressTimer=null;
 var _recentlyCompleted=new Set();
@@ -1337,6 +1338,12 @@ function renderTasks(){
     el.appendChild(w);
   }
   if(taskTab==='history'){renderTaskHistory();return;}
+  if(taskTab==='today'){
+    stripe('Overdue',overdue,[],'r');
+    stripe('Today',today,[],'o');
+    if(!overdue.length&&!today.length)el.innerHTML='<div style="font-size:13.5px;color:var(--text3);padding:30px 0;text-align:center">Nothing due today.</div>';
+    return;
+  }
   if(taskTab==='all'){
     stripe('Overdue',overdue,[],'r');
     stripe('Today',today,[],'o');
@@ -1379,7 +1386,9 @@ function renderTaskHistory(){
     var d=document.createElement('div');d.className='history-item';
     var mb=document.createElement('button');mb.className='history-menu-btn';mb.innerHTML='<i class="ti ti-dots-vertical"></i>';
     mb.addEventListener('click',function(e){e.stopPropagation();openHistoryActionMenu(e,l);});
-    d.innerHTML='<div class="ldot '+(l.completed_by==='Frankie'?'':'b')+'"></div><div style="flex:1;min-width:0"><div class="lt">'+esc(l.task_name)+'</div><div class="lm">'+esc(l.completed_by)+' · '+fmtTimestamp(l.completed_at)+'</div></div>';
+    var who=l.completed_by||'Unknown';
+    var dotCls=l.completed_by==='Frankie'?'':l.completed_by==='Meredith'?'b':'n';
+    d.innerHTML='<div class="ldot '+dotCls+'"></div><div style="flex:1;min-width:0"><div class="lt">'+esc(l.task_name)+'</div><div class="lm">'+esc(who)+' · '+fmtTimestamp(l.completed_at)+'</div></div>';
     d.appendChild(mb);el.appendChild(d);
   });
 }

@@ -170,7 +170,7 @@ run('computeNextDue past end null', ()=>{ const r=computeNextDue({type:'interval
 run('schedFreqOf legacy inference', ()=>{ if(schedFreqOf({weekday:3})!=='week') throw new Error('week'); if(schedFreqOf({day_of_month:'5'})!=='month') throw new Error('month'); if(schedFreqOf({sched_month:'4',day_of_month:'2'})!=='year') throw new Error('year'); if(schedFreqOf({})!=='day') throw new Error('day'); });
 
 // render all tabs (both household and personal tasks are merged)
-for (const tab of ['all','upcoming','recurring','history']) {
+for (const tab of ['today','all','upcoming','recurring','history']) {
   taskTab = tab;
   run(`renderTasks tab=${tab}`, ()=>renderTasks());
 }
