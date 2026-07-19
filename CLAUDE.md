@@ -5,7 +5,7 @@ Shared household task management PWA for Frankie and Meredith (Denver).
 Tracks recurring household tasks, projects, shopping list, and home asset maintenance.
 
 ## Tech stack
-- Frontend: Single-file HTML/CSS/JS (index.html, ~240KB, no build tools, vanilla JS)
+- Frontend: Single-file HTML/CSS/JS (index.html, ~168KB, no build tools, vanilla JS)
 - Backend: Google Apps Script Web App + Google Sheets
 - Icons: Tabler Icons webfont (CDN). DM Sans/DM Mono (Google Fonts CDN)
 - Hosting: GitHub Pages → index.html
@@ -17,9 +17,9 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 
 ## Repo structure
 - index.html — the entire app (built output, source of truth for deployment)
-- build_v4.py — Python build script that generates index.html (~1600 lines)
-- qa_harness.js — Node.js DOM mock + 110 runtime checks
-- LoonHQ_AppScript_v8.5.js — current Apps Script source (deploy separately to script.google.com)
+- build_v4.py — Python build script that generates index.html
+- qa_harness.js — Node.js DOM mock + 172 runtime checks
+- LoonHQ_AppScript_v8.6.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
 
 ## Build workflow
@@ -40,13 +40,24 @@ DO NOT recommend clearing, resetting, or deleting sheet data under any circumsta
 without explicit approval AND a second confirmation from Frankie. This is a hard rule.
 Real user data is live in the sheet.
 
-## Current version: v8.5
+## Current version: v8.7.6
 index.html in the repo is the live deployed build. build_v4.py is the source of truth.
+
+## PENDING: AppScript v8.6 not yet deployed by user
+The following manual steps are required before the app is fully fixed:
+1. Copy LoonHQ_AppScript_v8.6.js → paste into script.google.com → Save
+2. Deploy → Manage deployments → pencil on EXISTING deployment → New version → Deploy
+3. Run setupHeaders() once from the editor (Apps Script editor → Run → Run function → setupHeaders)
+   This adds the log_type column to task_log so snooze entries are permanently excluded from history.
+Without steps 1-3, snoozed tasks may still appear in task history.
 
 ## Apps Script schema (tasks tab columns in order)
 task_id, name, type, weekday, day_of_month, recurrence_days, due_date, end_date,
 urgency_window, reminder_offset, linked_asset_id, owner, scope, status, notes,
 created_at, sched_month, sched_freq, sched_interval, sched_start
+
+task_log tab columns: log_id, task_id, task_name, completed_by, completed_at, scope, notes, details, log_type
+(log_type is at the END so setupHeaders can append it cleanly to existing sheets)
 
 Other tabs: projects, subtasks, grocery, task_log
 assets tab exists in schema but assets are currently HARDCODED in JS — not yet migrated to sheet
@@ -71,16 +82,63 @@ assets tab exists in schema but assets are currently HARDCODED in JS — not yet
 - All date parsing must use: new Date(String(d).split('T')[0] + 'T12:00:00')
 - Never concatenate a raw date field + 'T12:00:00' without stripping first
 
-## Views and stripe colors
-Tabs: Today (default) | Tomorrow | This week | This month | Recurring | All
-Stripe colors by urgency: Today=red (r), Tomorrow=orange (o), This week=green (g), This month=blue (b), Later=neutral (n)
-Week tab shows: Today + Tomorrow + This week (three separate stripes)
-Month tab shows: Today + Tomorrow + This week + This month (four stripes)
+## Task scope rules
+- scope='household': visible to both users always
+- scope='personal': visible only to the owner (filtered by owner === currentUser in renderTasks)
+- When creating a personal task: owner auto-set to currentUser, owner field hidden
+- Personal tasks shown with a lock badge on the card
+- Analytics has a Household / Personal / All scope filter (statsScope global)
+- Personal tasks visible to both in analytics (intentional — metrics should be complete)
+
+## Views — Tasks section
+Tab order: Today (default) | Upcoming | Recurring | All | History
+- Today: Overdue (red stripe) + Today (amber stripe) only
+- Upcoming: Overdue + Today + Reminders + Tomorrow + This next week + This next month
+- Recurring: all scheduled and interval tasks
+- All: every bucket including Later
+- History: completed task log (completions only — snooze/edit events excluded)
+
+Stripe colors: r=red, o=amber, g=green, b=blue, p=purple, n=neutral
+- Overdue → r, Today → o, Tomorrow → g, Week → b, Month → p, Later/Reminders → n
 
 ## Due date tag classes
 .due-overdue = red solid, .due-today = red outline, .due-soon = amber (tomorrow/2-3 days)
 .due-week = green outline, .due-month = blue outline, .due-future = neutral outline
 Tags are outlined style (white bg, colored border) not filled
+
+## Task log / history rules
+- isCompletionLog(l): shared helper used by ALL log rendering and analytics. Three-layer snooze defense:
+  1. log_type !== 'completion' (catches correct schema)
+  2. details === 'snooze'|'edit'|'manual_note' (catches old AppScript schema mismatch)
+  3. details.includes('until_date') (catches snooze JSON in wrong column)
+- AppScript getAllData filters task_log to log_type='' or 'completion' before returning (server-side defense)
+- AppScript snoozeTask no longer writes to task_log (no new snooze entries will ever appear)
+- completed_by shows 'Unknown' when empty; uses neutral grey dot instead of Meredith-blue
+
+## Performance notes
+- Pre-built Maps updated after every refreshData: _taskById, _subtasksByProj, _tasksByAsset
+- _REMINDER_DAYS, _DAYS, _URG_LABELS are module-level constants (not allocated per card render)
+- Search input debounced 120ms via _searchTimer
+- Swipe gesture: innerHTML pre-built once, touchmove only toggles CSS classes
+- Document click handler: short-circuits when e.target.id is empty before checking modal list
+- renderAll only re-renders current view; go() renders destination on navigation
+- toggleSelect updates card CSS directly without full list re-render
+- KNOWN REMAINING PERF ITEMS (not yet tackled — flag for dedicated session):
+  - Event delegation on task cards (8+ listeners per card per render — biggest remaining win)
+  - computeNextDue memoization (runs date math per task per render, correctness-sensitive)
+
+## Multi-select behavior
+- Select button (ti-list-check icon) enters batch mode with zero tasks pre-selected
+- "Select all" button appears inside the batch bar only when batch mode is active
+- Long-press or right-click on any task card also enters batch mode
+
+## Project task defaults
+- Tasks created from a project (openAddTaskForProject) default to type=floating, urgency=no_rush
+- One-off tasks with a linked project skip the "default to today" due date behavior
+- Keeps project planning out of the main task list unless explicitly given a date
+
+## Snooze cadences
+1 day, 3 days, 5 days, 1 week (no 2-week option)
 
 ## Coding conventions
 - Vanilla JS, no frameworks, no build tools, no imports
@@ -90,23 +148,17 @@ Tags are outlined style (white bg, colored border) not filled
 - build_v4.py is the source of truth — edit it, then run python3 build_v4.py to regenerate index.html
 - Never edit index.html directly
 
-## Known issues in deployed v7 (fixed in v7.1, not yet deployed)
-- Recurring task completion glitches (disappears then reappears) — root cause: ISO timestamp date parse in computeNextDue
-- Tomorrow tab shows empty — root cause: same ISO timestamp bug in the bucket filter
-- Date fields show raw ISO timestamps on task/project cards
-- Date input fields show blank when editing tasks with saved dates
-
 ## Pending backlog
 ARCHITECTURE (big, suggest tackling in Claude Code):
 - Assets: migrate from hardcoded JS array to sheet, make editable, allow task-linking from asset page
 - Priority/urgency system: low priority rolls forward silently, high priority = red/bold/floats to top
 - Consolidate subtasks into tasks with project_id (projects as views not separate objects)
-- UI performance: swipe-to-complete latency, optimistic updates
+- Event delegation on task cards: biggest remaining perf win, needs dedicated refactor session
+- computeNextDue memoization: runs date math per task per render, needs careful cache-invalidation design
 
 UI POLISH (smaller, faster):
 - Color scheme refresh (overall palette, esp. tags)
 - Reminder vs due-today visual distinction (clock icon vs calendar icon, or section split)
-- Batch snooze (add snooze to multi-select alongside complete)
 
 FEATURES:
 - Task health flags: track snooze-without-completion patterns, flag cadence mismatches
@@ -122,11 +174,11 @@ FEATURES:
 - Sustainability = efficiency + resilience + durability, not perfection
 - For any plumbing/drain/appliance advice: Frankie had a basement water main backup, washing machine suspected contributor, no scope done yet
 
-  ## Versioning rules
+## Versioning rules
 - Major versions (v8, v9...) = significant new features or architectural changes
-- Minor versions (v7.1, v7.2...) = bug fixes, UI tweaks, small additions
+- Minor versions (v8.1, v8.2...) = bug fixes, UI tweaks, small additions
 - The file in the repo is always index.html — never named with a version number
-- Apps Script file in the repo is named LoonHQ_AppScript_vX.js matching the current version
+- Apps Script file in the repo is named LoonHQ_AppScript_vX.js matching the current major.minor version
 - Commit message format: "Deploy LoonHQ vX" or "Deploy LoonHQ vX.Y"
 - Commit description: short blurb 8-15 words summarizing what changed
 
