@@ -5,7 +5,7 @@ Shared household task management PWA for Frankie and Meredith (Denver).
 Tracks recurring household tasks, projects, shopping list, and home asset maintenance.
 
 ## Tech stack
-- Frontend: Single-file HTML/CSS/JS (index.html, ~168KB, no build tools, vanilla JS)
+- Frontend: Single-file HTML/CSS/JS (index.html, ~169KB, no build tools, vanilla JS)
 - Backend: Google Apps Script Web App + Google Sheets
 - Icons: Tabler Icons webfont (CDN). DM Sans/DM Mono (Google Fonts CDN)
 - Hosting: GitHub Pages → index.html
@@ -119,10 +119,10 @@ Tags are outlined style (white bg, colored border) not filled
 - Pre-built Maps updated after every refreshData: _taskById, _subtasksByProj, _tasksByAsset
 - _REMINDER_DAYS, _DAYS, _URG_LABELS are module-level constants (not allocated per card render)
 - Search input debounced 120ms via _searchTimer
-- Swipe gesture: innerHTML pre-built once, touchmove only toggles CSS classes
+- Swipe gesture: innerHTML pre-built once per card; touchmove toggles className (swipe-complete/swipe-snooze) and sets style.transform/display inline
 - Document click handler: short-circuits when e.target.id is empty before checking modal list
 - renderAll only re-renders current view; go() renders destination on navigation
-- toggleSelect updates card CSS directly without full list re-render
+- toggleSelect updates card CSS directly without full list re-render (exception: deselecting the last item calls renderTasks to exit batch cleanly)
 - KNOWN REMAINING PERF ITEMS (not yet tackled — flag for dedicated session):
   - Event delegation on task cards (8+ listeners per card per render — biggest remaining win)
   - computeNextDue memoization (runs date math per task per render, correctness-sensitive)

@@ -2245,7 +2245,9 @@ function renderHistory(){
     var d=document.createElement('div');d.className='history-item';
     var mb=document.createElement('button');mb.className='history-menu-btn';mb.innerHTML='<i class="ti ti-dots-vertical"></i>';
     mb.addEventListener('click',function(e){e.stopPropagation();openHistoryActionMenu(e,l);});
-    d.innerHTML='<div class="ldot '+(l.completed_by==='Frankie'?'':'b')+'"></div><div style="flex:1;min-width:0"><div class="lt">'+esc(l.task_name)+'</div><div class="lm">'+esc(l.completed_by)+' - '+fmtTimestamp(l.completed_at)+'</div></div>';
+    var who=l.completed_by||'Unknown';
+    var dotCls=l.completed_by==='Frankie'?'':l.completed_by==='Meredith'?'b':'n';
+    d.innerHTML='<div class="ldot '+dotCls+'"></div><div style="flex:1;min-width:0"><div class="lt">'+esc(l.task_name)+'</div><div class="lm">'+esc(who)+' - '+fmtTimestamp(l.completed_at)+'</div></div>';
     d.appendChild(mb);
     listEl.appendChild(d);
   });
