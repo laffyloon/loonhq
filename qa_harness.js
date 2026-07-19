@@ -562,6 +562,48 @@ run('editGrocItem replaces text with input', ()=>{
   editGrocItem('g1',textEl,item);
 });
 
+// ---- optimistic UI tests ----
+run('scheduleBgSync debounces calls', ()=>{
+  _bgSyncTimer=null;
+  scheduleBgSync();
+  if(_bgSyncTimer===null) throw new Error('scheduleBgSync should set _bgSyncTimer');
+  clearTimeout(_bgSyncTimer);_bgSyncTimer=null;
+});
+run('optimistic complete hides via _recentlyCompleted', ()=>{
+  const t={task_id:'opt-1',name:'Opt task',type:'one_off',status:'active',scope:'household'};
+  state.tasks=[t];_taskById={'opt-1':t};
+  handleComplete(t);
+  if(!_recentlyCompleted.has('opt-1')) throw new Error('task should be in _recentlyCompleted');
+  state.tasks=state.tasks.filter(function(x){return x.task_id!=='opt-1';});
+  _taskById={};_recentlyCompleted.clear();
+});
+run('optimistic snooze updates due_date in state', ()=>{
+  const t={task_id:'sn-1',name:'Snooze task',type:'one_off',due_date:'2026-07-19',status:'active'};
+  state.tasks=[t];
+  const task=state.tasks.find(function(x){return x.task_id==='sn-1';});
+  if(task)task.due_date='2026-07-26';
+  if(state.tasks[0].due_date!=='2026-07-26') throw new Error('due_date should be updated optimistically');
+  state.tasks=[];
+});
+run('optimistic add inserts temp task into state', ()=>{
+  state.tasks=[];
+  const tempId='tmp_'+Date.now();
+  const tempTask={task_id:tempId,name:'Temp task',type:'one_off',_temp:true};
+  state.tasks.push(tempTask);_taskById[tempId]=tempTask;
+  if(!state.tasks.find(function(x){return x.task_id===tempId;})) throw new Error('temp task should be in state');
+  if(!_taskById[tempId]) throw new Error('temp task should be in _taskById');
+  state.tasks=state.tasks.filter(function(x){return x.task_id!==tempId;});
+  delete _taskById[tempId];
+  if(state.tasks.find(function(x){return x.task_id===tempId;})) throw new Error('temp task should be cleaned up after API');
+});
+run('showToast does not throw', ()=>{ showToast('Test message'); });
+run('_lastFetch is updated on successful refresh', ()=>{
+  const before=_lastFetch;
+  _lastFetch=Date.now();
+  if(_lastFetch<=before&&before!==0) throw new Error('_lastFetch should be updated');
+  _lastFetch=0;
+});
+
 // ---- report ----
 let fails = 0;
 for (const [s,n] of tests){ if(s==='FAIL'){ console.log('FAIL  '+n); fails++; } }

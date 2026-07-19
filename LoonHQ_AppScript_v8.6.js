@@ -139,6 +139,7 @@ function doGet(e) {
   try {
     if (action === 'getAllData') result = getAllData();
     else if (action === 'getSubtasks') result = sheetToObjects(getSheet('subtasks'));
+    else if (action === 'ping') result = { ok: true };
     else result = { error: 'Unknown action: ' + action };
   } catch(err) {
     result = { error: err.message };

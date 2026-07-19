@@ -86,6 +86,9 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .sync-dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0}
 .sync-dot.err{background:var(--red)}.sync-dot.loading{background:var(--amber);animation:pulse 1s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.tc.loading{opacity:.55;animation:pulse 1s infinite}
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(12px);background:rgba(30,30,30,.95);color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .22s,transform .22s;z-index:9999;pointer-events:none;white-space:nowrap;max-width:90vw;text-align:center}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;background:var(--bg);min-width:0}
 .topbar{padding:12px 16px;background:var(--card);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;padding-top:calc(12px + var(--safe-top))}
@@ -1053,6 +1056,7 @@ var _DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 var _URG_LABELS={this_week:'This week',this_month:'This month',no_rush:'No rush'};
 var _reassignPerson='',_reassignScope='household';
 var _searchTimer=null;
+var _bgSyncTimer=null,_lastFetch=0;
 var _taskById={},_subtasksByProj={},_tasksByAsset={};
 var snoozingTask=null,editingTask=null,openMenu=null,metricsTab='stats',pendingSnooze=null,editingProject=null,editingSubtask=null;
 var editingAsset=null,openAssetId=null,pickedAssetStatus='green',panelTab='info';
@@ -1077,7 +1081,7 @@ var STATIC_ASSETS=[
 // ── BOOT ──────────────────────────────────────────────────
 window.onload=function(){
   var s=localStorage.getItem('loonhq_user');
-  if(s==='Frankie'||s==='Meredith'){currentUser=s;showApp();refreshData();}
+  if(s==='Frankie'||s==='Meredith'){currentUser=s;showApp();refreshData();apiGet({action:'ping'}).catch(function(){});}
   else showLogin();
 };
 function showLogin(){document.getElementById('login-screen').classList.remove('gone');document.getElementById('main-app').classList.add('gone');}
@@ -1095,7 +1099,7 @@ document.getElementById('pin-input').addEventListener('input',function(e){
   var val=e.target.value;document.getElementById('pin-err').textContent='';
   if(!loginUserPick)return;
   if(val.length>=PINS[loginUserPick].length){
-    if(val===PINS[loginUserPick]){currentUser=loginUserPick;localStorage.setItem('loonhq_user',currentUser);showApp();refreshData();}
+    if(val===PINS[loginUserPick]){currentUser=loginUserPick;localStorage.setItem('loonhq_user',currentUser);showApp();refreshData();apiGet({action:'ping'}).catch(function(){});}
     else{document.getElementById('pin-err').textContent='Incorrect PIN';e.target.value='';}
   }
 });
@@ -1117,6 +1121,7 @@ function refreshData(silent){
   if(!silent){setSyncState('loading','Syncing...');_recentlyCompleted.clear();}
   return apiGet({action:'getAllData'}).then(function(data){
     if(data.error){setSyncState('err','Sync failed');return;}
+    _lastFetch=Date.now();
     state.tasks=data.tasks||[];state.projects=data.projects||[];state.subtasks=data.subtasks||[];
     state.grocery=data.grocery||[];state.task_log=data.task_log||[];
     _taskById={};(state.tasks||[]).forEach(function(t){_taskById[t.task_id]=t;});
@@ -1135,6 +1140,9 @@ function refreshData(silent){
     state.assets=STATIC_ASSETS;state.maintenance_logs=[];renderAll();setSyncState('err','Offline');
   });
 }
+function scheduleBgSync(){if(_bgSyncTimer)clearTimeout(_bgSyncTimer);_bgSyncTimer=setTimeout(function(){_bgSyncTimer=null;refreshData(true);},3000);}
+function showToast(msg){var t=document.getElementById('toast-msg');if(!t)return;t.textContent=msg;t.classList.add('on');setTimeout(function(){t.classList.remove('on');},4000);}
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&_lastFetch&&(Date.now()-_lastFetch)>60000)refreshData(true);});
 function setSyncState(s,msg){var d=document.getElementById('sync-dot'),l=document.getElementById('sync-lbl');if(d)d.className='sync-dot'+(s==='err'?' err':s==='loading'?' loading':'');if(l)l.textContent=msg;}
 function renderAll(){
   if(currentView==='tasks')renderTasks();
@@ -1403,7 +1411,7 @@ function makeTaskCard(t){
   swipeBg.innerHTML='<span class="swipe-complete-content"><i class="ti ti-check"></i><span>Complete</span></span><span class="swipe-snooze-content"><i class="ti ti-clock"></i><span>Snooze</span></span>';
   wrap.appendChild(swipeBg);
 
-  var div=document.createElement('div');div.className='tc';
+  var div=document.createElement('div');div.className='tc'+(t._temp?' loading':'');
   if(selectMode&&selectedTaskIds.has(t.task_id))div.classList.add('selected');
 
   // Circle: tap = complete (or select in batch mode)
@@ -1588,8 +1596,8 @@ function batchCompleteSelected(){
   selectedTaskIds.forEach(function(id){var t=state.tasks.find(function(x){return x.task_id===id;});if(t)picks.push({task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,sched_month:t.sched_month,due_date:t.due_date,end_date:t.end_date,scope:t.scope});});
   if(!picks.length)return;
   picks.forEach(function(p){_recentlyCompleted.add(p.task_id);});
-  exitBatch();setSyncState('loading','Completing...');
-  apiPost({action:'batchComplete',data:{tasks:picks,completed_by:currentUser}}).then(function(){refreshData(true);});
+  exitBatch();renderTasks();setSyncState('loading','Completing...');
+  apiPost({action:'batchComplete',data:{tasks:picks,completed_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){picks.forEach(function(p){_recentlyCompleted.delete(p.task_id);});renderTasks();showToast("Couldn't complete tasks");setSyncState('err','Could not complete');});
 }
 function openBatchSnooze(){
   var n=selectedTaskIds.size;if(!n)return;
@@ -1619,25 +1627,22 @@ function confirmBatchSnooze(){
   var tasks=[];
   selectedTaskIds.forEach(function(id){var t=state.tasks.find(function(x){return x.task_id===id;});if(t)tasks.push(t);});
   var p=pendingBatchSnooze;
-  var calls=tasks.map(function(t){
-    var base=snoozeBase(t);var targetDate;
-    if(p.kind==='until'){targetDate=p.value;}
-    else{var d=new Date(base);d.setDate(d.getDate()+p.value);targetDate=d.toISOString().split('T')[0];}
-    return apiPost({action:'snoozeTask',data:{task_id:t.task_id,until_date:targetDate}});
-  });
-  closeModal('modal-batch-snooze');exitBatch();setSyncState('loading','Snoozing...');
-  Promise.all(calls).then(function(){refreshData(true);}).catch(function(){setSyncState('error','Could not snooze');refreshData(true);});
+  var updates=tasks.map(function(t){var base=snoozeBase(t);var targetDate;if(p.kind==='until'){targetDate=p.value;}else{var d=new Date(base);d.setDate(d.getDate()+p.value);targetDate=d.toISOString().split('T')[0];}return {task:t,targetDate:targetDate};});
+  var prevDates={};updates.forEach(function(u){prevDates[u.task.task_id]=u.task.due_date;u.task.due_date=u.targetDate;});
+  closeModal('modal-batch-snooze');exitBatch();renderTasks();setSyncState('loading','Snoozing...');
+  var calls=updates.map(function(u){return apiPost({action:'snoozeTask',data:{task_id:u.task.task_id,until_date:u.targetDate}});});
+  Promise.all(calls).then(function(){scheduleBgSync();}).catch(function(){updates.forEach(function(u){u.task.due_date=prevDates[u.task.task_id];});renderTasks();showToast("Couldn't snooze tasks");setSyncState('err','Could not snooze');});
 }
 
 // ── COMPLETE / SNOOZE ─────────────────────────────────────
 function completeTask(id){var t=(state.tasks||[]).find(function(x){return x.task_id===id;});if(t&&t.status!=='done'&&t.status!=='ended')handleComplete(t);}
 function handleComplete(t){
-  _recentlyCompleted.add(t.task_id);
-  var wrap=document.querySelector('.tc-wrap[data-task-id="'+t.task_id+'"]');
+  var tid=t.task_id,ttype=t.type;
+  _recentlyCompleted.add(tid);
+  var wrap=document.querySelector('.tc-wrap[data-task-id="'+tid+'"]');
   if(wrap){wrap.style.height=wrap.offsetHeight+'px';wrap.style.transition='all .2s';setTimeout(function(){wrap.style.height='0';wrap.style.opacity='0';wrap.style.overflow='hidden';},10);}
   setSyncState('loading','Logging...');
-  var tid=t.task_id,ttype=t.type;
-  apiPost({action:'completeTask',data:{task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_month:t.sched_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,due_date:t.due_date,end_date:t.end_date,completed_by:currentUser,scope:t.scope||'household',notes:''}}).then(function(){if(ttype==='scheduled'||ttype==='interval')_recentlyCompleted.delete(tid);refreshData(true);}).catch(function(){setSyncState('error','Could not complete');refreshData(true);});
+  apiPost({action:'completeTask',data:{task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_month:t.sched_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,due_date:t.due_date,end_date:t.end_date,completed_by:currentUser,scope:t.scope||'household',notes:''}}).then(function(){if(ttype==='scheduled'||ttype==='interval')_recentlyCompleted.delete(tid);scheduleBgSync();}).catch(function(){_recentlyCompleted.delete(tid);renderTasks();showToast("Couldn't complete — try again");setSyncState('err','Could not complete');});
 }
 function snoozeBase(t){
   var today0=new Date();today0.setHours(0,0,0,0);
@@ -1677,8 +1682,11 @@ function confirmSnooze(){
   var targetDate;
   if(p.kind==='until'){targetDate=p.value;}
   else{var base=snoozeBase(snoozingTask);var d=new Date(base);d.setDate(d.getDate()+p.value);targetDate=d.toISOString().split('T')[0];}
-  closeModal('modal-snooze');setSyncState('loading','Snoozing...');
-  apiPost({action:'snoozeTask',data:{task_id:snoozingTask.task_id,until_date:targetDate,snoozed_by:currentUser}}).then(function(){refreshData(true);}).catch(function(){setSyncState('error','Could not snooze');refreshData(true);});
+  var tid=snoozingTask.task_id,prevDue=snoozingTask.due_date;
+  var taskRef=state.tasks.find(function(x){return x.task_id===tid;});
+  if(taskRef)taskRef.due_date=targetDate;
+  closeModal('modal-snooze');renderTasks();setSyncState('loading','Snoozing...');
+  apiPost({action:'snoozeTask',data:{task_id:tid,until_date:targetDate,snoozed_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){var t2=state.tasks.find(function(x){return x.task_id===tid;});if(t2)t2.due_date=prevDue;renderTasks();showToast("Couldn't snooze — try again");setSyncState('err','Could not snooze');});
 }
 
 // ── TASK MENU ─────────────────────────────────────────────
@@ -1695,7 +1703,7 @@ function openTaskMenu(e,t){
     if(a==='edit')openEditTask(t);
     else if(a==='complete')handleComplete(t);
     else if(a==='snooze')openSnooze(t);
-    else if(a==='delete'){if(!confirm('Delete this task?'))return;setSyncState('loading','Deleting...');apiPost({action:'deleteTask',data:{task_id:t.task_id}}).then(function(){refreshData(true);});}
+    else if(a==='delete'){if(!confirm('Delete this task?'))return;var dtid=t.task_id;var prevT=state.tasks.slice();state.tasks=state.tasks.filter(function(x){return x.task_id!==dtid;});delete _taskById[dtid];renderTasks();setSyncState('loading','Deleting...');apiPost({action:'deleteTask',data:{task_id:dtid}}).then(function(){scheduleBgSync();}).catch(function(){state.tasks=prevT;_taskById={};state.tasks.forEach(function(x){_taskById[x.task_id]=x;});renderTasks();showToast("Couldn't delete task");setSyncState('err','Could not delete');});}
   });
   openMenu=m;setTimeout(function(){document.addEventListener('click',closeTaskMenuOnce);},10);
 }
@@ -1829,13 +1837,25 @@ function submitTask(){
   data.linked_project_id=projSel?projSel.value||'':'';
   if(type==='scheduled'){data.sched_pattern='';}
   closeModal('modal-task');setSyncState('loading','Saving...');
-  if(editingTask){apiPost({action:'updateTask',data:{task_id:editingTask.task_id,updates:data,updated_by:currentUser}}).then(function(){refreshData(true);});}
-  else{apiPost({action:'addTask',data:data}).then(function(){refreshData(true);});}
+  if(editingTask){
+    var etid=editingTask.task_id;var prevTask=Object.assign({},editingTask);
+    var taskRef=state.tasks.find(function(x){return x.task_id===etid;});if(taskRef)Object.assign(taskRef,data);
+    if(currentView==='tasks')renderTasks();
+    apiPost({action:'updateTask',data:{task_id:etid,updates:data,updated_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){var t2=state.tasks.find(function(x){return x.task_id===etid;});if(t2)Object.assign(t2,prevTask);renderTasks();showToast("Couldn't save changes");setSyncState('err','Could not save');});
+  }else{
+    var tempId='tmp_'+Date.now();
+    var tempTask=Object.assign({},data,{task_id:tempId,_temp:true});
+    state.tasks.push(tempTask);_taskById[tempId]=tempTask;
+    if(currentView==='tasks')renderTasks();
+    apiPost({action:'addTask',data:data}).then(function(){state.tasks=state.tasks.filter(function(x){return x.task_id!==tempId;});delete _taskById[tempId];scheduleBgSync();}).catch(function(){state.tasks=state.tasks.filter(function(x){return x.task_id!==tempId;});delete _taskById[tempId];renderTasks();showToast("Couldn't save task");setSyncState('err','Could not save');});
+  }
 }
 function deleteEditingTask(){
   if(!editingTask||!confirm('Delete this task?'))return;
-  closeModal('modal-task');setSyncState('loading','Deleting...');
-  apiPost({action:'deleteTask',data:{task_id:editingTask.task_id}}).then(function(){refreshData(true);});
+  var dtid=editingTask.task_id;var prevTasks=state.tasks.slice();
+  state.tasks=state.tasks.filter(function(x){return x.task_id!==dtid;});delete _taskById[dtid];
+  closeModal('modal-task');if(currentView==='tasks')renderTasks();setSyncState('loading','Deleting...');
+  apiPost({action:'deleteTask',data:{task_id:dtid}}).then(function(){scheduleBgSync();}).catch(function(){state.tasks=prevTasks;_taskById={};state.tasks.forEach(function(x){_taskById[x.task_id]=x;});renderTasks();showToast("Couldn't delete task");setSyncState('err','Could not delete');});
 }
 
 // ── PROJECTS ──────────────────────────────────────────────
@@ -2007,7 +2027,7 @@ function renderGrocery(){
   document.getElementById('count-costco').textContent=cnt.Costco?'('+cnt.Costco+')':'';
   document.getElementById('count-household').textContent=cnt.Household?'('+cnt.Household+')':'';
 }
-function toggleGrocery(id,el){var got=el.classList.contains('got');el.classList.toggle('got');el.querySelector('.gbox').classList.toggle('done');apiPost({action:'updateGrocery',data:{item_id:id,updates:{status:got?'need':'got'}}});}
+function toggleGrocery(id,el){var got=el.classList.contains('got');el.classList.toggle('got');el.querySelector('.gbox').classList.toggle('done');var item=state.grocery.find(function(g){return g.item_id===id;});if(item)item.status=got?'need':'got';apiPost({action:'updateGrocery',data:{item_id:id,updates:{status:got?'need':'got'}}}).catch(function(){el.classList.toggle('got');el.querySelector('.gbox').classList.toggle('done');if(item)item.status=got?'got':'need';showToast("Couldn't update item");});}
 function clearGrocery(){if(!confirm('Remove all checked items?'))return;state.grocery=state.grocery.filter(function(g){return g.status!=='got';});renderGrocery();apiPost({action:'clearChecked',data:{}});}
 
 // ── ASSETS ────────────────────────────────────────────────
@@ -2267,13 +2287,13 @@ function markIncomplete(){
   if(!_histMenuLog)return;closeTaskMenu();
   if(!confirm('Resurface "'+_histMenuLog.task_name+'" as an active task?'))return;
   setSyncState('loading','Restoring...');
-  apiPost({action:'uncompleteTask',data:{log_id:_histMenuLog.log_id,task_id:_histMenuLog.task_id}}).then(function(){refreshData(true);});
+  apiPost({action:'uncompleteTask',data:{log_id:_histMenuLog.log_id,task_id:_histMenuLog.task_id}}).then(function(){scheduleBgSync();});
 }
 function deleteTaskLogEntry(){
   if(!_histMenuLog)return;closeTaskMenu();
   if(!confirm('Delete this history entry? This cannot be undone.'))return;
   setSyncState('loading','Deleting...');
-  apiPost({action:'deleteTaskLog',data:{log_id:_histMenuLog.log_id}}).then(function(){refreshData(true);}).catch(function(){setSyncState('error','Could not delete');refreshData(true);});
+  apiPost({action:'deleteTaskLog',data:{log_id:_histMenuLog.log_id}}).then(function(){scheduleBgSync();}).catch(function(){setSyncState('err','Could not delete');showToast("Couldn't delete entry");});
 }
 function openTaskHistory(){
   if(!editingTask)return;
@@ -2321,7 +2341,7 @@ function pickReassignScope(s){
 function submitReassign(){
   if(!_histMenuLog)return;
   closeModal('modal-reassign');setSyncState('loading','Updating...');
-  apiPost({action:'reassignCompletion',data:{log_id:_histMenuLog.log_id,task_id:_histMenuLog.task_id,completed_by:_reassignPerson,scope:_reassignScope}}).then(function(){refreshData(true);});
+  apiPost({action:'reassignCompletion',data:{log_id:_histMenuLog.log_id,task_id:_histMenuLog.task_id,completed_by:_reassignPerson,scope:_reassignScope}}).then(function(){scheduleBgSync();});
 }
 // ── MODALS ────────────────────────────────────────────────
 function openModal(id){document.getElementById(id).classList.remove('gone');}
@@ -2353,14 +2373,14 @@ function submitProject(){
   var n=document.getElementById('p-name').value.trim();if(!n){alert('Name required');return;}
   var data={name:n,description:document.getElementById('p-desc').value.trim(),status:document.getElementById('p-status').value,target_date:document.getElementById('p-target').value||''};
   closeModal('modal-project');setSyncState('loading','Saving...');
-  if(editingProject){apiPost({action:'updateProject',data:{project_id:editingProject.project_id,updates:data}}).then(function(){refreshData(true);});}
-  else{apiPost({action:'addProject',data:data}).then(function(){refreshData(true);});}
+  if(editingProject){apiPost({action:'updateProject',data:{project_id:editingProject.project_id,updates:data}}).then(function(){scheduleBgSync();});}
+  else{apiPost({action:'addProject',data:data}).then(function(){scheduleBgSync();});}
 }
 function deleteEditingProject(){
   if(!editingProject)return;
   if(!confirm('Delete this project and all its tasks?'))return;
   closeModal('modal-project');setSyncState('loading','Deleting...');
-  apiPost({action:'deleteProject',data:{project_id:editingProject.project_id}}).then(function(){refreshData(true);});
+  apiPost({action:'deleteProject',data:{project_id:editingProject.project_id}}).then(function(){scheduleBgSync();});
 }
 function openEditSubtask(sid){
   var s=state.subtasks.filter(function(x){return String(x.subtask_id)===String(sid);})[0];if(!s)return;
@@ -2384,7 +2404,7 @@ function deleteEditingSubtask(){
   apiPost({action:'deleteSubtask',data:{subtask_id:editingSubtask.subtask_id}}).then(function(){apiGet({action:'getSubtasks'}).then(function(r){state.subtasks=r||[];renderProjects();setSyncState('ok','Deleted');});});
 }
 function openAddGrocery(){document.getElementById('g-name').value='';openModal('modal-grocery');}
-function submitGrocery(){var n=document.getElementById('g-name').value.trim();if(!n)return;closeModal('modal-grocery');setSyncState('loading','Saving...');apiPost({action:'addGroceryItem',data:{name:n,category:document.getElementById('g-cat').value,added_by:currentUser}}).then(function(){refreshData(true);});}
+function submitGrocery(){var n=document.getElementById('g-name').value.trim();if(!n)return;closeModal('modal-grocery');setSyncState('loading','Saving...');var tempId='tmp_'+Date.now();var cat=document.getElementById('g-cat').value;var tempItem={item_id:tempId,name:n,category:cat,added_by:currentUser,status:'need',_temp:true};state.grocery.push(tempItem);renderGrocery();apiPost({action:'addGroceryItem',data:{name:n,category:cat,added_by:currentUser}}).then(function(){state.grocery=state.grocery.filter(function(g){return g.item_id!==tempId;});scheduleBgSync();}).catch(function(){state.grocery=state.grocery.filter(function(g){return g.item_id!==tempId;});renderGrocery();showToast("Couldn't add item");setSyncState('err','Could not save');});}
 
 // ── UTILS ─────────────────────────────────────────────────
 function esc(s){if(s===null||s===undefined)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -2394,5 +2414,6 @@ function dval(d){return d?String(d).split('T')[0]:'';}
 function fmtDateShort(d){if(!d)return'';try{var ds=String(d).split('T')[0];var dt=new Date(ds+'T12:00:00');if(isNaN(dt))return String(d);var DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];return DOW[dt.getDay()]+' '+(dt.getMonth()+1)+'/'+dt.getDate();}catch(e){return String(d);}}
 </script>
 
+<div id="toast-msg" class="toast"></div>
 </body>
 </html>

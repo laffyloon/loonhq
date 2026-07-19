@@ -5,7 +5,7 @@ Shared household task management PWA for Frankie and Meredith (Denver).
 Tracks recurring household tasks, projects, shopping list, and home asset maintenance.
 
 ## Tech stack
-- Frontend: Single-file HTML/CSS/JS (index.html, ~169KB, no build tools, vanilla JS)
+- Frontend: Single-file HTML/CSS/JS (index.html, ~173KB, no build tools, vanilla JS)
 - Backend: Google Apps Script Web App + Google Sheets
 - Icons: Tabler Icons webfont (CDN). DM Sans/DM Mono (Google Fonts CDN)
 - Hosting: GitHub Pages → index.html
@@ -18,7 +18,7 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 ## Repo structure
 - index.html — the entire app (built output, source of truth for deployment)
 - build_v4.py — Python build script that generates index.html
-- qa_harness.js — Node.js DOM mock + 172 runtime checks
+- qa_harness.js — Node.js DOM mock + 178 runtime checks
 - LoonHQ_AppScript_v8.6.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
 
@@ -40,7 +40,7 @@ DO NOT recommend clearing, resetting, or deleting sheet data under any circumsta
 without explicit approval AND a second confirmation from Frankie. This is a hard rule.
 Real user data is live in the sheet.
 
-## Current version: v8.7.6
+## Current version: v8.8
 index.html in the repo is the live deployed build. build_v4.py is the source of truth.
 
 ## PENDING: AppScript v8.6 not yet deployed by user
@@ -123,8 +123,19 @@ Tags are outlined style (white bg, colored border) not filled
 - Document click handler: short-circuits when e.target.id is empty before checking modal list
 - renderAll only re-renders current view; go() renders destination on navigation
 - toggleSelect updates card CSS directly without full list re-render (exception: deselecting the last item calls renderTasks to exit batch cleanly)
-- KNOWN REMAINING PERF ITEMS (not yet tackled — flag for dedicated session):
-  - Event delegation on task cards (8+ listeners per card per render — biggest remaining win)
+- Optimistic UI: all task actions (complete, snooze, add, edit, delete, grocery toggle) update UI instantly
+  - complete: adds to _recentlyCompleted (filtered from render) + animate card out
+  - snooze: updates task.due_date in state + re-renders immediately
+  - add task: inserts temp task (task_id=tmp_XXX, _temp=true, pulsing) into state + renders; replaced by real task after bg sync
+  - edit task: updates task in state immediately; bg sync reconciles
+  - delete: removes from state immediately; bg sync confirms
+  - grocery toggle: already was optimistic (DOM toggle); now also updates state + rolls back on failure
+- scheduleBgSync(): debounced 3-second background reconcile; replaces refreshData(true) after all actions
+- State cache: _lastFetch updated on each successful fetch; visibilitychange listener refetches if >60s stale
+- Apps Script warm-up: silent apiGet({action:'ping'}) fired immediately after login to trigger GAS cold-start
+- Error feedback: showToast() shows brief bottom-of-screen message on API failures
+- KNOWN REMAINING PERF ITEMS (not yet tackled - flag for dedicated session):
+  - Event delegation on task cards (8+ listeners per card per render - biggest remaining win)
   - computeNextDue memoization (runs date math per task per render, correctness-sensitive)
 
 ## Multi-select behavior
