@@ -236,8 +236,13 @@ function computeNextDue(task, fromDate) {
   if (task.end_date) { var e = new Date(stripDate(task.end_date) + 'T12:00:00'); e.setHours(0,0,0,0); if (from > e) return null; }
   var next = null;
   if (task.type === 'interval') {
-    var days = parseInt(task.recurrence_days) || 0; if (!days) return null;
-    next = new Date(from); next.setDate(next.getDate() + days);
+    var n = parseInt(task.recurrence_days) || 0; if (!n) return null;
+    var unit = task.sched_freq || 'day';
+    next = new Date(from);
+    if (unit === 'week') { next.setDate(next.getDate() + n * 7); }
+    else if (unit === 'month') { next.setMonth(next.getMonth() + n); }
+    else if (unit === 'year') { next.setFullYear(next.getFullYear() + n); }
+    else { next.setDate(next.getDate() + n); }
   } else if (task.type === 'scheduled') {
     var freq = schedFreqOf(task);
     var X = Math.max(1, parseInt(task.sched_interval) || 1);
