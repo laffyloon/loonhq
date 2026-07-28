@@ -1125,13 +1125,16 @@ function openQuickSwitch(){openModal('modal-qs');}
 function quickSwitch(name){currentUser=name;localStorage.setItem('loonhq_user',name);updateUserDisplay();closeModal('modal-qs');renderAll();}
 
 // ── API ───────────────────────────────────────────────────
-function apiGet(params){var url=API+'?'+Object.entries(params).map(function(p){return p[0]+'='+encodeURIComponent(p[1]);}).join('&');return fetch(url).then(function(r){return r.json();});}
-function apiPost(body){return fetch(API,{method:'POST',body:JSON.stringify(body)}).then(function(r){return r.json();});}
+// Apps Script returns {error:...} inside an HTTP 200 body, so a plain .json()
+// would resolve on failure and make every .catch() below unreachable. Reject
+// instead, tagging the error so refreshData can tell it apart from being offline.
+function _apiParse(r){return r.json().then(function(d){if(d&&d.error){var e=new Error(d.error);e.apiError=true;throw e;}return d;});}
+function apiGet(params){var url=API+'?'+Object.entries(params).map(function(p){return p[0]+'='+encodeURIComponent(p[1]);}).join('&');return fetch(url).then(_apiParse);}
+function apiPost(body){return fetch(API,{method:'POST',body:JSON.stringify(body)}).then(_apiParse);}
 
 function refreshData(silent){
   if(!silent){setSyncState('loading','Syncing...');_recentlyCompleted.clear();}
   return apiGet({action:'getAllData'}).then(function(data){
-    if(data.error){setSyncState('err','Sync failed');return;}
     _lastFetch=Date.now();
     state.tasks=data.tasks||[];state.projects=data.projects||[];state.subtasks=data.subtasks||[];
     state.grocery=data.grocery||[];state.task_log=data.task_log||[];
@@ -1145,14 +1148,19 @@ function refreshData(silent){
     document.getElementById('loader').style.display='none';
     document.getElementById('v-'+currentView).classList.remove('gone');
     renderAll();setSyncState('ok','Synced '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
-  }).catch(function(){
+  }).catch(function(err){
     document.getElementById('loader').style.display='none';
     document.getElementById('v-'+currentView).classList.remove('gone');
+    // Server reachable but rejected the request: keep cached data, don't fall back to STATIC_ASSETS.
+    if(err&&err.apiError){setSyncState('err','Sync failed');return;}
     state.assets=STATIC_ASSETS;state.maintenance_logs=[];renderAll();setSyncState('err','Offline');
   });
 }
 function scheduleBgSync(){if(_bgSyncTimer)clearTimeout(_bgSyncTimer);_bgSyncTimer=setTimeout(function(){_bgSyncTimer=null;refreshData(true);},3000);}
 function showToast(msg){var t=document.getElementById('toast-msg');if(!t)return;t.textContent=msg;t.classList.add('on');setTimeout(function(){t.classList.remove('on');},4000);}
+// Backstop: now that apiPost rejects on server errors, any call site without its
+// own .catch() would surface an unhandled rejection. Report it rather than fail silently.
+if(typeof window!=='undefined'&&window.addEventListener)window.addEventListener('unhandledrejection',function(e){if(e.reason&&e.reason.apiError){e.preventDefault();showToast("Couldn't save — try again");setSyncState('err','Save failed');scheduleBgSync();}});
 document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&_lastFetch&&(Date.now()-_lastFetch)>60000)refreshData(true);});
 function setSyncState(s,msg){var d=document.getElementById('sync-dot'),l=document.getElementById('sync-lbl');if(d)d.className='sync-dot'+(s==='err'?' err':s==='loading'?' loading':'');if(l)l.textContent=msg;}
 function renderAll(){
@@ -1271,7 +1279,14 @@ function computeNextDue(task,fromDate){
   var from=new Date(fromDate);from.setHours(0,0,0,0);
   if(task.end_date){var e=new Date(String(task.end_date).split('T')[0]+'T12:00:00');if(from>e)return null;}
   var next=null;
-  if(task.type==='interval'){var n=parseInt(task.recurrence_days)||0;if(!n)return null;var unit=task.sched_freq||'day';next=new Date(from);if(unit==='week'){next.setDate(next.getDate()+n*7);}else if(unit==='month'){next.setMonth(next.getMonth()+n);}else if(unit==='year'){next.setFullYear(next.getFullYear()+n);}else{next.setDate(next.getDate()+n);}}
+  if(task.type==='interval'){
+    var n=parseInt(task.recurrence_days)||0;if(!n)return null;
+    var unit=task.sched_freq||'day';
+    // month/year must clamp to the last valid day, not overflow: Jan 31 + 1mo is Feb 28, not Mar 3.
+    if(unit==='month')next=monthStepDate(from.getFullYear(),from.getMonth(),n,from.getDate());
+    else if(unit==='year')next=monthStepDate(from.getFullYear(),from.getMonth(),n*12,from.getDate());
+    else{next=new Date(from);next.setDate(next.getDate()+(unit==='week'?n*7:n));}
+  }
   else if(task.type==='scheduled'){
     var freq=schedFreqOf(task);var X=Math.max(1,parseInt(task.sched_interval)||1);
     var base=task.due_date?new Date(String(task.due_date).split('T')[0]+'T12:00:00'):null;
@@ -1932,7 +1947,7 @@ function togglePastProjects(){
   if(d)d.classList.toggle('gone');
   if(c)c.className=d&&!d._classes&&!d.classList.contains('gone')?'ti ti-chevron-down':'ti ti-chevron-right';
 }
-function toggleSub(id,el){var d=el.classList.contains('done');el.classList.toggle('done');el.closest('.sub').classList.toggle('done-sub');apiPost({action:'updateSubtask',data:{subtask_id:id,updates:{status:d?'todo':'done'}}}).then(function(){apiGet({action:'getSubtasks'}).then(function(r){state.subtasks=r||[];renderProjects();});});}
+function toggleSub(id,el){var d=el.classList.contains('done');el.classList.toggle('done');el.closest('.sub').classList.toggle('done-sub');apiPost({action:'updateSubtask',data:{subtask_id:id,updates:{status:d?'todo':'done'}}}).then(function(){apiGet({action:'getSubtasks'}).then(function(r){state.subtasks=r||[];renderProjects();});}).catch(function(){el.classList.toggle('done');el.closest('.sub').classList.toggle('done-sub');showToast("Couldn't update subtask");});}
 function quickAddSub(pid){var n=prompt('Subtask name:');if(!n)return;apiPost({action:'addSubtask',data:{project_id:pid,name:n.trim(),status:'todo'}}).then(function(){apiGet({action:'getSubtasks'}).then(function(r){state.subtasks=r||[];renderProjects();});});}
 document.addEventListener('click',function(e){
   var sub=e.target.closest('[data-sub]');
@@ -1979,7 +1994,7 @@ function makeGrocEl(item){
     var order=[];parent.querySelectorAll('.gi[data-category="'+cat+'"]').forEach(function(el){if(el.dataset.itemId)order.push(el.dataset.itemId);});
     apiPost({action:'reorderGrocery',data:{category:cat,order:order}}).then(function(){
       order.forEach(function(id,i){var it=state.grocery.find(function(g){return g.item_id===id;});if(it)it.sort_order=i+1;});
-    });
+    }).catch(function(){renderGrocery();showToast("Couldn't save order");});
   });
   return d;
 }
@@ -1996,7 +2011,7 @@ function editGrocItem(id,textEl,item){
     if(!val||val===current)return;
     textEl.textContent=val;
     var it=state.grocery.find(function(g){return g.item_id===id;});if(it)it.name=val;
-    apiPost({action:'updateGrocery',data:{item_id:id,updates:{name:val}}});
+    apiPost({action:'updateGrocery',data:{item_id:id,updates:{name:val}}}).catch(function(){textEl.textContent=current;if(it)it.name=current;showToast("Couldn't rename item");});
   }
   inp.addEventListener('blur',save);
   inp.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();inp.blur();}if(e.key==='Escape'){inp.value=current;inp.blur();}});
@@ -2039,7 +2054,7 @@ function renderGrocery(){
   document.getElementById('count-household').textContent=cnt.Household?'('+cnt.Household+')':'';
 }
 function toggleGrocery(id,el){var got=el.classList.contains('got');el.classList.toggle('got');el.querySelector('.gbox').classList.toggle('done');var item=state.grocery.find(function(g){return g.item_id===id;});if(item)item.status=got?'need':'got';apiPost({action:'updateGrocery',data:{item_id:id,updates:{status:got?'need':'got'}}}).catch(function(){el.classList.toggle('got');el.querySelector('.gbox').classList.toggle('done');if(item)item.status=got?'got':'need';showToast("Couldn't update item");});}
-function clearGrocery(){if(!confirm('Remove all checked items?'))return;state.grocery=state.grocery.filter(function(g){return g.status!=='got';});renderGrocery();apiPost({action:'clearChecked',data:{}});}
+function clearGrocery(){if(!confirm('Remove all checked items?'))return;var prev=state.grocery.slice();state.grocery=state.grocery.filter(function(g){return g.status!=='got';});renderGrocery();apiPost({action:'clearChecked',data:{}}).catch(function(){state.grocery=prev;renderGrocery();showToast("Couldn't clear items");});}
 
 // ── ASSETS ────────────────────────────────────────────────
 var STATUS_COLOR={green:'#22C55E',amber:'#C97A10',red:'#C84040'};

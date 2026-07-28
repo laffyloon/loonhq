@@ -73,13 +73,25 @@ global.localStorage = {
 };
 // fetch: resolve with a JSON-returning object; capture POST bodies
 global.__posts = [];
+// set __failNext to make the next request come back the way Apps Script reports
+// failures: an {error} body inside an HTTP 200 response.
+global.__failNext = false;
 global.fetch = function(url, opts){
   if (opts && opts.method === 'POST' && opts.body) {
     try { global.__posts.push(JSON.parse(opts.body)); } catch(e){}
   }
+  if (global.__failNext) {
+    global.__failNext = false;
+    return Promise.resolve({ json: function(){ return Promise.resolve({ error: 'boom' }); } });
+  }
   return Promise.resolve({ json: function(){ return Promise.resolve({}); } });
 };
-global.setTimeout = function(fn){ /* don't actually defer in tests */ };
+// don't actually defer in tests, but return a handle so debounce logic is observable
+let __timerSeq = 0;
+global.setTimeout = function(fn){ return ++__timerSeq; };
+global.clearTimeout = function(){};
+// let promise chains settle (real macrotask, so it runs after all microtasks)
+const tick = () => new Promise(r => setImmediate(r));
 global.Set = Set;
 
 // ---- load and run the app script ----
@@ -136,6 +148,16 @@ currentUser = 'Frankie';
 // ---- exercise every path ----
 const tests = [];
 function run(name, fn){ try { fn(); tests.push(['PASS', name]); } catch(e){ tests.push(['FAIL', name + ' :: ' + e.message]); } }
+// async variant for tests that must wait on a promise chain to settle.
+// Chained, not parallel: these mutate shared globals (state, __failNext) and
+// would otherwise interleave at each await and stomp on each other.
+let asyncChain = Promise.resolve();
+function runAsync(name, fn){
+  asyncChain = asyncChain.then(fn).then(
+    ()=>tests.push(['PASS', name]),
+    (e)=>tests.push(['FAIL', name + ' :: ' + e.message])
+  );
+}
 
 // fmtDate / fmtDateShort / recurrence logic
 run('fmtDate basic', ()=>{ if(!fmtDate(plus(2))) throw new Error('empty'); });
@@ -562,50 +584,163 @@ run('editGrocItem replaces text with input', ()=>{
   editGrocItem('g1',textEl,item);
 });
 
-// ---- optimistic UI tests ----
-run('scheduleBgSync debounces calls', ()=>{
-  _bgSyncTimer=null;
-  scheduleBgSync();
-  if(_bgSyncTimer===null) throw new Error('scheduleBgSync should set _bgSyncTimer');
-  clearTimeout(_bgSyncTimer);_bgSyncTimer=null;
+// ---- interval recurrence units (v8.8.1) ----
+// computeNextDue anchors interval tasks to the completion date passed as fromDate.
+const intervalNext = (n, unit, from) => computeNextDue(
+  {type:'interval',recurrence_days:n,sched_freq:unit}, new Date(from+'T12:00:00')
+);
+run('interval days advances by N days', ()=>{
+  const r=intervalNext(10,'day','2026-03-01');
+  if(r!=='2026-03-11') throw new Error('expected 2026-03-11, got '+r);
 });
-run('optimistic complete hides via _recentlyCompleted', ()=>{
-  const t={task_id:'opt-1',name:'Opt task',type:'one_off',status:'active',scope:'household'};
-  state.tasks=[t];_taskById={'opt-1':t};
-  handleComplete(t);
-  if(!_recentlyCompleted.has('opt-1')) throw new Error('task should be in _recentlyCompleted');
-  state.tasks=state.tasks.filter(function(x){return x.task_id!=='opt-1';});
-  _taskById={};_recentlyCompleted.clear();
+run('interval weeks advances by N*7 days', ()=>{
+  const r=intervalNext(3,'week','2026-03-01');
+  if(r!=='2026-03-22') throw new Error('expected 2026-03-22, got '+r);
 });
-run('optimistic snooze updates due_date in state', ()=>{
-  const t={task_id:'sn-1',name:'Snooze task',type:'one_off',due_date:'2026-07-19',status:'active'};
-  state.tasks=[t];
-  const task=state.tasks.find(function(x){return x.task_id==='sn-1';});
-  if(task)task.due_date='2026-07-26';
-  if(state.tasks[0].due_date!=='2026-07-26') throw new Error('due_date should be updated optimistically');
-  state.tasks=[];
+run('interval months advances by N months', ()=>{
+  const r=intervalNext(3,'month','2026-03-15');
+  if(r!=='2026-06-15') throw new Error('expected 2026-06-15, got '+r);
 });
-run('optimistic add inserts temp task into state', ()=>{
-  state.tasks=[];
-  const tempId='tmp_'+Date.now();
-  const tempTask={task_id:tempId,name:'Temp task',type:'one_off',_temp:true};
-  state.tasks.push(tempTask);_taskById[tempId]=tempTask;
-  if(!state.tasks.find(function(x){return x.task_id===tempId;})) throw new Error('temp task should be in state');
-  if(!_taskById[tempId]) throw new Error('temp task should be in _taskById');
-  state.tasks=state.tasks.filter(function(x){return x.task_id!==tempId;});
-  delete _taskById[tempId];
-  if(state.tasks.find(function(x){return x.task_id===tempId;})) throw new Error('temp task should be cleaned up after API');
+run('interval years advances by N years', ()=>{
+  const r=intervalNext(1,'year','2026-03-15');
+  if(r!=='2027-03-15') throw new Error('expected 2027-03-15, got '+r);
 });
-run('showToast does not throw', ()=>{ showToast('Test message'); });
-run('_lastFetch is updated on successful refresh', ()=>{
-  const before=_lastFetch;
-  _lastFetch=Date.now();
-  if(_lastFetch<=before&&before!==0) throw new Error('_lastFetch should be updated');
-  _lastFetch=0;
+run('interval defaults to days when sched_freq absent (back-compat)', ()=>{
+  const r=computeNextDue({type:'interval',recurrence_days:30}, new Date('2026-03-01T12:00:00'));
+  if(r!=='2026-03-31') throw new Error('legacy interval task should still step in days, got '+r);
+});
+// regression guards for the setMonth/setFullYear overflow shipped in v8.8.1
+run('interval month clamps Jan 31 to end of Feb, not Mar 3', ()=>{
+  const r=intervalNext(1,'month','2026-01-31');
+  if(r!=='2026-02-28') throw new Error('expected 2026-02-28, got '+r);
+});
+run('interval month clamps Jan 31 + 3mo to Apr 30, not May 1', ()=>{
+  const r=intervalNext(3,'month','2026-01-31');
+  if(r!=='2026-04-30') throw new Error('expected 2026-04-30, got '+r);
+});
+run('interval month clamps May 31 to Jun 30', ()=>{
+  const r=intervalNext(1,'month','2026-05-31');
+  if(r!=='2026-06-30') throw new Error('expected 2026-06-30, got '+r);
+});
+run('interval month keeps leap day when target month allows', ()=>{
+  const r=intervalNext(12,'month','2024-02-29');
+  if(r!=='2025-02-28') throw new Error('expected 2025-02-28, got '+r);
+});
+run('interval year clamps leap day to Feb 28', ()=>{
+  const r=intervalNext(1,'year','2024-02-29');
+  if(r!=='2025-02-28') throw new Error('expected 2025-02-28, got '+r);
+});
+run('interval respects end_date', ()=>{
+  const r=computeNextDue({type:'interval',recurrence_days:1,sched_freq:'year',end_date:'2026-06-01'}, new Date('2026-03-01T12:00:00'));
+  if(r!==null) throw new Error('expected null past end_date, got '+r);
+});
+run('submitTask interval sends recurrence_days + sched_freq unit', ()=>{
+  __posts.length=0; editingTask=null;
+  el('t-name').value='Filter'; el('t-type').value='interval';
+  el('t-days').value='6'; el('t-days-unit').value='month';
+  el('t-interval-start').value=''; el('t-end-interval').value='';
+  submitTask();
+  const d=__posts[__posts.length-1].data;
+  if(d.recurrence_days!==6) throw new Error('recurrence_days not 6: '+d.recurrence_days);
+  if(d.sched_freq!=='month') throw new Error('sched_freq not month: '+d.sched_freq);
+});
+run('openEditTask restores interval unit into the dropdown', ()=>{
+  openEditTask({task_id:'iv1',name:'AC',type:'interval',recurrence_days:6,sched_freq:'month',scope:'household',status:'active'});
+  if(String(el('t-days').value)!=='6') throw new Error('count not restored: '+el('t-days').value);
+  if(el('t-days-unit').value!=='month') throw new Error('unit not restored: '+el('t-days-unit').value);
 });
 
+// ---- optimistic UI + API error handling (v8.8) ----
+run('scheduleBgSync stores a timer handle and replaces it on re-entry', ()=>{
+  _bgSyncTimer=null;
+  scheduleBgSync();
+  const first=_bgSyncTimer;
+  if(!first) throw new Error('scheduleBgSync should store a timer handle');
+  scheduleBgSync();
+  if(_bgSyncTimer===first) throw new Error('second call should reschedule, not reuse the handle');
+  _bgSyncTimer=null;
+});
+runAsync('apiPost rejects when Apps Script returns an {error} body', async ()=>{
+  __failNext=true;
+  let rejected=null;
+  await apiPost({action:'noop',data:{}}).then(()=>{rejected=false;},(e)=>{rejected=e;});
+  if(rejected===false) throw new Error('should not resolve on {error} body');
+  if(!rejected) throw new Error('never settled');
+  if(!rejected.apiError) throw new Error('error should be tagged apiError');
+});
+runAsync('optimistic complete hides task, and restores it when the API errors', async ()=>{
+  const t={task_id:'rb-c',name:'Complete me',type:'one_off',due_date:plus(1),status:'active',scope:'household'};
+  state.tasks=[t]; _taskById={'rb-c':t}; _recentlyCompleted.clear();
+  __failNext=true;
+  handleComplete(t);
+  if(!_recentlyCompleted.has('rb-c')) throw new Error('task should hide immediately');
+  await tick();
+  if(_recentlyCompleted.has('rb-c')) throw new Error('failed completion should un-hide the task');
+  _recentlyCompleted.clear(); state.tasks=[]; _taskById={};
+});
+runAsync('optimistic snooze writes due_date, and restores it when the API errors', async ()=>{
+  const t={task_id:'rb-s',name:'Snooze me',type:'one_off',due_date:plus(10),status:'active',scope:'household'};
+  state.tasks=[t]; _taskById={'rb-s':t};
+  const before=t.due_date;
+  snoozingTask=t; pickSnoozeDays(3,new FakeEl('button'));
+  __failNext=true;
+  confirmSnooze();
+  if(state.tasks[0].due_date===before) throw new Error('due_date should update immediately');
+  await tick();
+  if(state.tasks[0].due_date!==before) throw new Error('failed snooze should restore the original due_date, got '+state.tasks[0].due_date);
+  state.tasks=[]; _taskById={}; snoozingTask=null; pendingSnooze=null;
+});
+runAsync('optimistic delete removes task, and restores it when the API errors', async ()=>{
+  const t={task_id:'rb-d',name:'Delete me',type:'one_off',due_date:plus(1),status:'active',scope:'household'};
+  state.tasks=[t]; _taskById={'rb-d':t};
+  editingTask=t;
+  __failNext=true;
+  deleteEditingTask();
+  if(state.tasks.find(x=>x.task_id==='rb-d')) throw new Error('task should be removed immediately');
+  await tick();
+  if(!state.tasks.find(x=>x.task_id==='rb-d')) throw new Error('failed delete should restore the task');
+  if(!_taskById['rb-d']) throw new Error('_taskById should be rebuilt on rollback');
+  state.tasks=[]; _taskById={}; editingTask=null;
+});
+runAsync('optimistic add inserts a temp task, and removes it when the API errors', async ()=>{
+  state.tasks=[]; _taskById={}; editingTask=null;
+  el('t-name').value='Temp task'; el('t-type').value='one_off';
+  el('t-due').value=plus(2); el('t-remind').value=''; el('t-notes').value='';
+  el('t-proj-link').value=''; el('t-asset-link').value='';
+  __failNext=true;
+  submitTask();
+  const temp=state.tasks.filter(x=>x._temp);
+  if(temp.length!==1) throw new Error('expected 1 temp task, got '+temp.length);
+  if(!String(temp[0].task_id).startsWith('tmp_')) throw new Error('temp task needs a tmp_ id');
+  await tick();
+  if(state.tasks.some(x=>x._temp)) throw new Error('failed add should remove the temp task');
+  // the success path also clears the temp task, so assert the failure path specifically
+  if(el('sync-lbl').textContent!=='Could not save') throw new Error('failed add should report an error, got: '+el('sync-lbl').textContent);
+  state.tasks=[]; _taskById={};
+});
+runAsync('grocery toggle reverts state when the API errors', async ()=>{
+  state.grocery=[{item_id:'g-rb',name:'Eggs',category:'Food',status:'need'}];
+  const e=new FakeEl('div'); e.querySelector=()=>new FakeEl('div');
+  __failNext=true;
+  toggleGrocery('g-rb', e);
+  if(state.grocery[0].status!=='got') throw new Error('status should flip immediately');
+  await tick();
+  if(state.grocery[0].status!=='need') throw new Error('failed toggle should revert status, got '+state.grocery[0].status);
+  state.grocery=[];
+});
+runAsync('refreshData keeps cached data on a server error instead of falling back to STATIC_ASSETS', async ()=>{
+  state.assets=[{asset_id:'keep-me',name:'Real asset',category:'Home systems'}];
+  __failNext=true;
+  await refreshData(true);
+  await tick();
+  if(!state.assets.find(a=>a.asset_id==='keep-me')) throw new Error('server error should not clobber cached assets');
+});
+run('showToast does not throw', ()=>{ showToast('Test message'); });
+
 // ---- report ----
+asyncChain.then(function(){
 let fails = 0;
 for (const [s,n] of tests){ if(s==='FAIL'){ console.log('FAIL  '+n); fails++; } }
 console.log('\n'+tests.length+' checks run, '+fails+' failed, '+(tests.length-fails)+' passed');
 process.exit(fails? 1:0);
+});

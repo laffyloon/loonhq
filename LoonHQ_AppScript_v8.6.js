@@ -238,11 +238,10 @@ function computeNextDue(task, fromDate) {
   if (task.type === 'interval') {
     var n = parseInt(task.recurrence_days) || 0; if (!n) return null;
     var unit = task.sched_freq || 'day';
-    next = new Date(from);
-    if (unit === 'week') { next.setDate(next.getDate() + n * 7); }
-    else if (unit === 'month') { next.setMonth(next.getMonth() + n); }
-    else if (unit === 'year') { next.setFullYear(next.getFullYear() + n); }
-    else { next.setDate(next.getDate() + n); }
+    // month/year must clamp to the last valid day, not overflow: Jan 31 + 1mo is Feb 28, not Mar 3.
+    if (unit === 'month') { next = monthStep(from.getFullYear(), from.getMonth(), n, from.getDate()); }
+    else if (unit === 'year') { next = monthStep(from.getFullYear(), from.getMonth(), n * 12, from.getDate()); }
+    else { next = new Date(from); next.setDate(next.getDate() + (unit === 'week' ? n * 7 : n)); }
   } else if (task.type === 'scheduled') {
     var freq = schedFreqOf(task);
     var X = Math.max(1, parseInt(task.sched_interval) || 1);

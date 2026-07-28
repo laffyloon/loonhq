@@ -5,7 +5,7 @@ Shared household task management PWA for Frankie and Meredith (Denver).
 Tracks recurring household tasks, projects, shopping list, and home asset maintenance.
 
 ## Tech stack
-- Frontend: Single-file HTML/CSS/JS (index.html, ~173KB, no build tools, vanilla JS)
+- Frontend: Single-file HTML/CSS/JS (index.html, ~176KB, no build tools, vanilla JS)
 - Backend: Google Apps Script Web App + Google Sheets
 - Icons: Tabler Icons webfont (CDN). DM Sans/DM Mono (Google Fonts CDN)
 - Hosting: GitHub Pages → index.html
@@ -18,7 +18,7 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 ## Repo structure
 - index.html — the entire app (built output, source of truth for deployment)
 - build_v4.py — Python build script that generates index.html
-- qa_harness.js — Node.js DOM mock + 178 runtime checks
+- qa_harness.js — Node.js DOM mock + 194 runtime checks
 - LoonHQ_AppScript_v8.6.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
 
@@ -40,16 +40,20 @@ DO NOT recommend clearing, resetting, or deleting sheet data under any circumsta
 without explicit approval AND a second confirmation from Frankie. This is a hard rule.
 Real user data is live in the sheet.
 
-## Current version: v8.8
+## Current version: v8.8.2
 index.html in the repo is the live deployed build. build_v4.py is the source of truth.
 
 ## PENDING: AppScript v8.6 not yet deployed by user
-The following manual steps are required before the app is fully fixed:
+LoonHQ_AppScript_v8.6.js has accumulated three separate changes that are all still undeployed:
+snooze/log_type fix, the ping action, and interval recurrence units with month/year clamping.
+Deploy once, after the current round of frontend work is finished.
 1. Copy LoonHQ_AppScript_v8.6.js → paste into script.google.com → Save
 2. Deploy → Manage deployments → pencil on EXISTING deployment → New version → Deploy
 3. Run setupHeaders() once from the editor (Apps Script editor → Run → Run function → setupHeaders)
    This adds the log_type column to task_log so snooze entries are permanently excluded from history.
-Without steps 1-3, snoozed tasks may still appear in task history.
+Until this is deployed: snoozed tasks may still appear in task history, the login ping is a
+no-op (harmless, it is caught), and interval tasks with a week/month/year unit advance
+server-side as if the unit were days.
 
 ## Apps Script schema (tasks tab columns in order)
 task_id, name, type, weekday, day_of_month, recurrence_days, due_date, end_date,
@@ -73,6 +77,14 @@ assets tab exists in schema but assets are currently HARDCODED in JS — not yet
 - schedFreqOf(task): infers freq from sched_freq field, falls back to legacy weekday/day_of_month inference for old rows
 - computeFirstDue(task, today): picks first occurrence, respects sched_start if it is a future date
 - computeNextDue(task, fromDate): advances by X intervals from due_date anchor
+- sched_freq is OVERLOADED and its meaning depends on type:
+    scheduled -> calendar frequency (day|week|month|year), paired with sched_interval
+    interval  -> the unit for recurrence_days (day|week|month|year), e.g. every 6 months
+  schedFreqOf() must only ever be called on scheduled tasks. All four call sites are
+  type-guarded today; keep it that way or interval units will be read as calendar frequency.
+- Interval month/year math MUST clamp to the last valid day via monthStepDate (frontend) /
+  monthStep (AppScript). Never setMonth/setFullYear directly: they overflow, so Jan 31 + 1
+  month becomes Mar 3 instead of Feb 28. Regression tests cover this in qa_harness.js.
 - ALWAYS strip ISO timestamps before date parsing: String(d).split('T')[0]
   Reason: Google Sheets returns dates as full ISO timestamps (2026-06-09T06:00:00.000Z)
   Failing to strip this breaks all recurrence math and was the root cause of the completion glitch
@@ -134,6 +146,11 @@ Tags are outlined style (white bg, colored border) not filled
 - State cache: _lastFetch updated on each successful fetch; visibilitychange listener refetches if >60s stale
 - Apps Script warm-up: silent apiGet({action:'ping'}) fired immediately after login to trigger GAS cold-start
 - Error feedback: showToast() shows brief bottom-of-screen message on API failures
+- apiGet/apiPost REJECT when the body contains {error}. Apps Script reports failures inside an
+  HTTP 200 body, so a plain .json() would resolve on failure and make every .catch() dead code.
+  Errors are tagged err.apiError so refreshData can distinguish "server said no" (keep cached
+  data) from "offline" (fall back to STATIC_ASSETS). A window unhandledrejection backstop
+  reports any apiPost call site that lacks its own .catch().
 - KNOWN REMAINING PERF ITEMS (not yet tackled - flag for dedicated session):
   - Event delegation on task cards (8+ listeners per card per render - biggest remaining win)
   - computeNextDue memoization (runs date math per task per render, correctness-sensitive)
