@@ -5,7 +5,7 @@ Shared household task management PWA for Frankie and Meredith (Denver).
 Tracks recurring household tasks, projects, shopping list, and home asset maintenance.
 
 ## Tech stack
-- Frontend: Single-file HTML/CSS/JS (index.html, ~176KB, no build tools, vanilla JS)
+- Frontend: Single-file HTML/CSS/JS (index.html, ~178KB, no build tools, vanilla JS)
 - Backend: Google Apps Script Web App + Google Sheets
 - Icons: Tabler Icons webfont (CDN). DM Sans/DM Mono (Google Fonts CDN)
 - Hosting: GitHub Pages → index.html
@@ -18,7 +18,7 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 ## Repo structure
 - index.html — the entire app (built output, source of truth for deployment)
 - build_v4.py — Python build script that generates index.html
-- qa_harness.js — Node.js DOM mock + 202 runtime checks
+- qa_harness.js — Node.js DOM mock + 209 runtime checks
 - LoonHQ_AppScript_v8.6.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
 
@@ -40,7 +40,7 @@ DO NOT recommend clearing, resetting, or deleting sheet data under any circumsta
 without explicit approval AND a second confirmation from Frankie. This is a hard rule.
 Real user data is live in the sheet.
 
-## Current version: v8.8.3
+## Current version: v8.8.4
 index.html in the repo is the live deployed build. build_v4.py is the source of truth.
 
 ## PENDING: AppScript v8.6 not yet deployed by user
@@ -145,7 +145,15 @@ Tags are outlined style (white bg, colored border) not filled
 - scheduleBgSync(): debounced 3-second background reconcile; replaces refreshData(true) after all actions
 - State cache: _lastFetch updated on each successful fetch; visibilitychange listener refetches if >60s stale
 - Apps Script warm-up: silent apiGet({action:'ping'}) fired immediately after login to trigger GAS cold-start
-- Error feedback: showToast() shows brief bottom-of-screen message on API failures
+- Error feedback: showToast(msg, retry) shows a bottom-of-screen message on API failures.
+  It stores its hide timer and cancels the previous one, so back-to-back toasts each get their
+  full dwell instead of the older timer cutting the newer one short.
+- Tap to retry: every optimistic task/grocery handler wraps its work in a local attempt()
+  function that is safe to re-run after a rollback, and passes it to actionFailed as the retry.
+  A retryable toast is tappable (7s dwell), plain toasts are not (4s, pointer-events:none).
+  onToastTap() disarms the retry first, so a double tap cannot fire the action twice.
+  Retry closures must capture IDs, never task objects: the reconcile sync replaces state.tasks
+  wholesale within 3s while the retry toast lives 7s, so a captured object can be orphaned.
 - apiGet/apiPost REJECT when the body contains {error}. Apps Script reports failures inside an
   HTTP 200 body, so a plain .json() would resolve on failure and make every .catch() dead code.
   Errors are tagged err.apiError so refreshData can distinguish "server said no" (keep cached

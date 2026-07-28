@@ -91,7 +91,8 @@ global.fetch = function(url, opts){
 // don't actually defer in tests, but return a handle so debounce logic is observable
 let __timerSeq = 0;
 global.setTimeout = function(fn){ return ++__timerSeq; };
-global.clearTimeout = function(){};
+global.__clearedTimers = [];
+global.clearTimeout = function(h){ global.__clearedTimers.push(h); };
 // let promise chains settle (real macrotask, so it runs after all microtasks)
 const tick = () => new Promise(r => setImmediate(r));
 global.Set = Set;
@@ -811,6 +812,89 @@ runAsync('a successful grocery add keeps the temp item until the sync replaces i
   await tick();
   if(state.grocery.filter(g=>g._temp).length!==1) throw new Error('temp grocery item must survive until the sync replaces it');
   state.grocery=[];
+});
+
+// ---- toast queueing + tap-to-retry (v8.8.4) ----
+run('a second toast cancels the first hide timer', ()=>{
+  _toastTimer=null; hideToast(); __clearedTimers.length=0;
+  showToast('first');
+  const first=_toastTimer;
+  if(!first) throw new Error('showToast should store a hide timer');
+  showToast('second');
+  // without the cancel, the first timer fires 4s in and hides the second toast early
+  if(__clearedTimers.indexOf(first)<0) throw new Error('second toast must cancel the first hide timer');
+  hideToast();
+});
+run('a toast without a retry is not tappable', ()=>{
+  hideToast(); showToast('plain message');
+  if(_toastRetry) throw new Error('no retry should be armed');
+  if(el('toast-msg')._classes.has('tappable')) throw new Error('plain toast must not be tappable');
+  if(el('toast-msg').textContent!=='plain message') throw new Error('unexpected text: '+el('toast-msg').textContent);
+  hideToast();
+});
+run('a retryable toast is tappable and says so', ()=>{
+  hideToast(); showToast('Could not save', function(){});
+  if(!_toastRetry) throw new Error('retry should be armed');
+  if(!el('toast-msg')._classes.has('tappable')) throw new Error('retryable toast must be tappable');
+  if(!el('toast-msg').textContent.includes('Tap to retry')) throw new Error('missing retry affordance: '+el('toast-msg').textContent);
+  hideToast();
+});
+run('tapping a toast fires the retry once and disarms it', ()=>{
+  let fired=0;
+  hideToast(); showToast('Could not save', function(){fired++;});
+  onToastTap();
+  onToastTap();                       // a second tap must not re-fire
+  if(fired!==1) throw new Error('retry should fire exactly once, fired '+fired);
+  if(_toastRetry) throw new Error('retry should be disarmed after tapping');
+});
+runAsync('a failed complete offers retry, and tapping it re-runs the action', async ()=>{
+  const t={task_id:'retry-1',name:'Retry me',type:'one_off',due_date:plus(1),status:'active',scope:'household'};
+  state.tasks=[t]; rebuildTaskIndex(); _recentlyCompleted.clear(); _inFlightWrites=[]; _lastWriteAt=0;
+  hideToast();
+  __failNext=true;
+  handleComplete(t);
+  await tick();
+  if(_recentlyCompleted.has('retry-1')) throw new Error('failed completion should have rolled back');
+  if(!_toastRetry) throw new Error('a failed completion should offer a retry');
+  __posts.length=0;
+  onToastTap();                       // this attempt succeeds
+  await tick();
+  if(__posts.length!==1||__posts[0].action!=='completeTask') throw new Error('retry should re-issue completeTask, got '+JSON.stringify(__posts.map(p=>p.action)));
+  if(!_recentlyCompleted.has('retry-1')) throw new Error('a successful retry should hide the task again');
+  _recentlyCompleted.clear(); state.tasks=[]; _taskById={}; hideToast();
+});
+runAsync('a failed add offers retry, and tapping it re-creates the temp task', async ()=>{
+  state.tasks=[]; _taskById={}; editingTask=null; _inFlightWrites=[]; _lastWriteAt=0; hideToast();
+  el('t-name').value='Retry add'; el('t-type').value='one_off'; el('t-due').value=plus(2);
+  el('t-remind').value=''; el('t-notes').value=''; el('t-proj-link').value=''; el('t-asset-link').value='';
+  __failNext=true;
+  submitTask();
+  await tick();
+  if(state.tasks.some(x=>x._temp)) throw new Error('failed add should have removed the temp task');
+  if(!_toastRetry) throw new Error('a failed add should offer a retry');
+  __posts.length=0;
+  onToastTap();
+  await tick();
+  if(__posts.length!==1||__posts[0].action!=='addTask') throw new Error('retry should re-issue addTask');
+  if(state.tasks.filter(x=>x._temp).length!==1) throw new Error('successful retry should leave exactly one temp task');
+  state.tasks=[]; _taskById={}; hideToast();
+});
+
+runAsync('batch snooze retry applies to current tasks, not stale object references', async ()=>{
+  const a={task_id:'bsr-a',name:'A',type:'one_off',due_date:plus(5),status:'active',scope:'household'};
+  state.tasks=[a]; rebuildTaskIndex(); _inFlightWrites=[]; _lastWriteAt=0; hideToast();
+  selectedTaskIds=new Set(['bsr-a']); selectMode=true; pendingBatchSnooze={kind:'days',value:3};
+  __failNext=true;
+  confirmBatchSnooze();
+  await tick();
+  if(!_toastRetry) throw new Error('failed batch snooze should offer a retry');
+  // the reconcile sync lands before the user taps retry, replacing state with fresh objects
+  state.tasks=[{task_id:'bsr-a',name:'A',type:'one_off',due_date:plus(5),status:'active',scope:'household'}];
+  rebuildTaskIndex();
+  onToastTap();
+  await tick();
+  if(state.tasks[0].due_date!==plus(8)) throw new Error('retry must snooze the current task object, got '+state.tasks[0].due_date);
+  state.tasks=[]; _taskById={}; selectedTaskIds=new Set(); selectMode=false; pendingBatchSnooze=null; hideToast();
 });
 
 // ---- report ----

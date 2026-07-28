@@ -85,6 +85,8 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .tc.loading{opacity:.55;animation:pulse 1s infinite}
 .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(12px);background:rgba(30,30,30,.95);color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .22s,transform .22s;z-index:9999;pointer-events:none;white-space:nowrap;max-width:90vw;text-align:center}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.tappable{pointer-events:auto;cursor:pointer;text-decoration:none}
+.toast.tappable:active{opacity:.8}
 
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;background:var(--bg);min-width:0}
 .topbar{padding:12px 16px;background:var(--card);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;padding-top:calc(12px + var(--safe-top))}
@@ -1067,6 +1069,7 @@ var _URG_LABELS={this_week:'This week',this_month:'This month',no_rush:'No rush'
 var _reassignPerson='',_reassignScope='household';
 var _searchTimer=null;
 var _bgSyncTimer=null,_lastFetch=0,_inFlightWrites=[],_lastWriteAt=0;
+var _toastTimer=null,_toastRetry=null;
 var _taskById={},_subtasksByProj={},_tasksByAsset={};
 var snoozingTask=null,editingTask=null,openMenu=null,metricsTab='stats',pendingSnooze=null,editingProject=null,editingSubtask=null;
 var editingAsset=null,openAssetId=null,pickedAssetStatus='green',panelTab='info';
@@ -1182,11 +1185,22 @@ function rebuildTaskIndex(){_taskById={};(state.tasks||[]).forEach(function(t){_
 // Shared tail for every failed optimistic action: undo locally, tell the user, then let the
 // server settle it. The reconcile matters because a local undo can disagree with the server
 // (a batch that partly landed, an edit that added fields the snapshot never had).
-function actionFailed(msg,render,label){
+function actionFailed(msg,render,label,retry){
   if(render)render();
-  scheduleBgSync();showToast(msg);setSyncState('err',label||'Could not save');
+  scheduleBgSync();showToast(msg,retry);setSyncState('err',label||'Could not save');
 }
-function showToast(msg){var t=document.getElementById('toast-msg');if(!t)return;t.textContent=msg;t.classList.add('on');setTimeout(function(){t.classList.remove('on');},4000);}
+// retry is optional; when given, the toast becomes tappable and re-runs the failed action.
+function showToast(msg,retry){
+  var t=document.getElementById('toast-msg');if(!t)return;
+  if(_toastTimer){clearTimeout(_toastTimer);_toastTimer=null;}   // don't let an older toast cut this one short
+  t.textContent=retry?(msg+'  \u00b7  Tap to retry'):msg;
+  t.classList.toggle('tappable',!!retry);
+  _toastRetry=retry||null;
+  t.classList.add('on');
+  _toastTimer=setTimeout(function(){_toastTimer=null;hideToast();},retry?7000:4000);
+}
+function hideToast(){var t=document.getElementById('toast-msg');if(t){t.classList.remove('on');t.classList.remove('tappable');}_toastRetry=null;}
+function onToastTap(){var r=_toastRetry;hideToast();if(_toastTimer){clearTimeout(_toastTimer);_toastTimer=null;}if(r)r();}
 // Backstop: now that apiPost rejects on server errors, any call site without its
 // own .catch() would surface an unhandled rejection. Report it rather than fail silently.
 if(typeof window!=='undefined'&&window.addEventListener)window.addEventListener('unhandledrejection',function(e){if(e.reason&&e.reason.apiError){e.preventDefault();scheduleBgSync();showToast("Couldn't save, try again");setSyncState('err','Save failed');}});
@@ -1650,9 +1664,13 @@ function batchCompleteSelected(){
   var picks=[];
   selectedTaskIds.forEach(function(id){var t=state.tasks.find(function(x){return x.task_id===id;});if(t)picks.push({task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,sched_month:t.sched_month,due_date:t.due_date,end_date:t.end_date,scope:t.scope});});
   if(!picks.length)return;
-  picks.forEach(function(p){_recentlyCompleted.add(p.task_id);});
-  exitBatch();renderTasks();setSyncState('loading','Completing...');
-  apiPost({action:'batchComplete',data:{tasks:picks,completed_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){picks.forEach(function(p){_recentlyCompleted.delete(p.task_id);});actionFailed("Couldn't complete tasks",renderTasks,'Could not complete');});
+  exitBatch();
+  function attempt(){
+    picks.forEach(function(p){_recentlyCompleted.add(p.task_id);});
+    renderTasks();setSyncState('loading','Completing...');
+    apiPost({action:'batchComplete',data:{tasks:picks,completed_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){picks.forEach(function(p){_recentlyCompleted.delete(p.task_id);});actionFailed("Couldn't complete tasks",renderTasks,'Could not complete',attempt);});
+  }
+  attempt();
 }
 function openBatchSnooze(){
   var n=selectedTaskIds.size;if(!n)return;
@@ -1682,22 +1700,33 @@ function confirmBatchSnooze(){
   var tasks=[];
   selectedTaskIds.forEach(function(id){var t=state.tasks.find(function(x){return x.task_id===id;});if(t)tasks.push(t);});
   var p=pendingBatchSnooze;
-  var updates=tasks.map(function(t){var base=snoozeBase(t);var targetDate;if(p.kind==='until'){targetDate=p.value;}else{var d=new Date(base);d.setDate(d.getDate()+p.value);targetDate=d.toISOString().split('T')[0];}return {task:t,targetDate:targetDate};});
-  var prevDates={};updates.forEach(function(u){prevDates[u.task.task_id]=u.task.due_date;u.task.due_date=u.targetDate;});
-  closeModal('modal-batch-snooze');exitBatch();renderTasks();setSyncState('loading','Snoozing...');
-  var calls=updates.map(function(u){return apiPost({action:'snoozeTask',data:{task_id:u.task.task_id,until_date:u.targetDate}});});
-  Promise.all(calls).then(function(){scheduleBgSync();}).catch(function(){updates.forEach(function(u){u.task.due_date=prevDates[u.task.task_id];});actionFailed("Couldn't snooze tasks",renderTasks,'Could not snooze');});
+  // keep ids, not object references: a reconcile sync can replace state.tasks wholesale
+  // before the user taps retry, which would leave us mutating orphaned objects.
+  var updates=tasks.map(function(t){var base=snoozeBase(t);var targetDate;if(p.kind==='until'){targetDate=p.value;}else{var d=new Date(base);d.setDate(d.getDate()+p.value);targetDate=d.toISOString().split('T')[0];}return {task_id:t.task_id,targetDate:targetDate};});
+  closeModal('modal-batch-snooze');exitBatch();
+  function attempt(){
+    var prevDates={};
+    updates.forEach(function(u){var t=_taskById[u.task_id];if(t){prevDates[u.task_id]=t.due_date;t.due_date=u.targetDate;}});
+    renderTasks();setSyncState('loading','Snoozing...');
+    var calls=updates.map(function(u){return apiPost({action:'snoozeTask',data:{task_id:u.task_id,until_date:u.targetDate}});});
+    Promise.all(calls).then(function(){scheduleBgSync();}).catch(function(){updates.forEach(function(u){var t=_taskById[u.task_id];if(t&&prevDates.hasOwnProperty(u.task_id))t.due_date=prevDates[u.task_id];});actionFailed("Couldn't snooze tasks",renderTasks,'Could not snooze',attempt);});
+  }
+  attempt();
 }
 
 // ── COMPLETE / SNOOZE ─────────────────────────────────────
 function completeTask(id){var t=(state.tasks||[]).find(function(x){return x.task_id===id;});if(t&&t.status!=='done'&&t.status!=='ended')handleComplete(t);}
 function handleComplete(t){
   var tid=t.task_id,ttype=t.type;
-  _recentlyCompleted.add(tid);
-  var wrap=document.querySelector('.tc-wrap[data-task-id="'+tid+'"]');
-  if(wrap){wrap.style.height=wrap.offsetHeight+'px';wrap.style.transition='all .2s';setTimeout(function(){wrap.style.height='0';wrap.style.opacity='0';wrap.style.overflow='hidden';},10);}
-  setSyncState('loading','Logging...');
-  apiPost({action:'completeTask',data:{task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_month:t.sched_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,due_date:t.due_date,end_date:t.end_date,completed_by:currentUser,scope:t.scope||'household',notes:''}}).then(function(){if(ttype==='scheduled'||ttype==='interval')_recentlyCompleted.delete(tid);scheduleBgSync();}).catch(function(){_recentlyCompleted.delete(tid);actionFailed("Couldn't complete, try again",renderTasks,'Could not complete');});
+  // attempt() re-runs cleanly after a rollback, so it doubles as the retry handler
+  function attempt(){
+    _recentlyCompleted.add(tid);
+    var wrap=document.querySelector('.tc-wrap[data-task-id="'+tid+'"]');
+    if(wrap){wrap.style.height=wrap.offsetHeight+'px';wrap.style.transition='all .2s';setTimeout(function(){wrap.style.height='0';wrap.style.opacity='0';wrap.style.overflow='hidden';},10);}
+    setSyncState('loading','Logging...');
+    apiPost({action:'completeTask',data:{task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_month:t.sched_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,due_date:t.due_date,end_date:t.end_date,completed_by:currentUser,scope:t.scope||'household',notes:''}}).then(function(){if(ttype==='scheduled'||ttype==='interval')_recentlyCompleted.delete(tid);scheduleBgSync();}).catch(function(){_recentlyCompleted.delete(tid);actionFailed("Couldn't complete",renderTasks,'Could not complete',attempt);});
+  }
+  attempt();
 }
 function snoozeBase(t){
   var today0=new Date();today0.setHours(0,0,0,0);
@@ -1737,11 +1766,16 @@ function confirmSnooze(){
   var targetDate;
   if(p.kind==='until'){targetDate=p.value;}
   else{var base=snoozeBase(snoozingTask);var d=new Date(base);d.setDate(d.getDate()+p.value);targetDate=d.toISOString().split('T')[0];}
-  var tid=snoozingTask.task_id,prevDue=snoozingTask.due_date;
-  var taskRef=state.tasks.find(function(x){return x.task_id===tid;});
-  if(taskRef)taskRef.due_date=targetDate;
-  closeModal('modal-snooze');renderTasks();setSyncState('loading','Snoozing...');
-  apiPost({action:'snoozeTask',data:{task_id:tid,until_date:targetDate,snoozed_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){var t2=state.tasks.find(function(x){return x.task_id===tid;});if(t2)t2.due_date=prevDue;actionFailed("Couldn't snooze, try again",renderTasks,'Could not snooze');});
+  var tid=snoozingTask.task_id;
+  closeModal('modal-snooze');
+  function attempt(){
+    var taskRef=state.tasks.find(function(x){return x.task_id===tid;});
+    var prevDue=taskRef?taskRef.due_date:null;
+    if(taskRef)taskRef.due_date=targetDate;
+    renderTasks();setSyncState('loading','Snoozing...');
+    apiPost({action:'snoozeTask',data:{task_id:tid,until_date:targetDate,snoozed_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){var t2=state.tasks.find(function(x){return x.task_id===tid;});if(t2)t2.due_date=prevDue;actionFailed("Couldn't snooze",renderTasks,'Could not snooze',attempt);});
+  }
+  attempt();
 }
 
 // ── TASK MENU ─────────────────────────────────────────────
@@ -1758,7 +1792,7 @@ function openTaskMenu(e,t){
     if(a==='edit')openEditTask(t);
     else if(a==='complete')handleComplete(t);
     else if(a==='snooze')openSnooze(t);
-    else if(a==='delete'){if(!confirm('Delete this task?'))return;var dtid=t.task_id;var prevT=state.tasks.slice();state.tasks=state.tasks.filter(function(x){return x.task_id!==dtid;});delete _taskById[dtid];renderTasks();setSyncState('loading','Deleting...');apiPost({action:'deleteTask',data:{task_id:dtid}}).then(function(){scheduleBgSync();}).catch(function(){state.tasks=prevT;rebuildTaskIndex();actionFailed("Couldn't delete task",renderTasks,'Could not delete');});}
+    else if(a==='delete'){if(!confirm('Delete this task?'))return;var dtid=t.task_id;(function delAttempt(){var prevT=state.tasks.slice();state.tasks=state.tasks.filter(function(x){return x.task_id!==dtid;});delete _taskById[dtid];renderTasks();setSyncState('loading','Deleting...');apiPost({action:'deleteTask',data:{task_id:dtid}}).then(function(){scheduleBgSync();}).catch(function(){state.tasks=prevT;rebuildTaskIndex();actionFailed("Couldn't delete task",renderTasks,'Could not delete',delAttempt);});})();}
   });
   openMenu=m;setTimeout(function(){document.addEventListener('click',closeTaskMenuOnce);},10);
 }
@@ -1893,24 +1927,35 @@ function submitTask(){
   if(type==='scheduled'){data.sched_pattern='';}
   closeModal('modal-task');setSyncState('loading','Saving...');
   if(editingTask){
-    var etid=editingTask.task_id;var prevTask=Object.assign({},editingTask);
-    var taskRef=state.tasks.find(function(x){return x.task_id===etid;});if(taskRef)Object.assign(taskRef,data);
-    if(currentView==='tasks')renderTasks();
-    apiPost({action:'updateTask',data:{task_id:etid,updates:data,updated_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){var t2=state.tasks.find(function(x){return x.task_id===etid;});if(t2)Object.assign(t2,prevTask);actionFailed("Couldn't save changes",renderTasks);});
+    var etid=editingTask.task_id;
+    (function editAttempt(){
+      var taskRef=state.tasks.find(function(x){return x.task_id===etid;});
+      var prevTask=taskRef?Object.assign({},taskRef):null;
+      if(taskRef)Object.assign(taskRef,data);
+      if(currentView==='tasks')renderTasks();
+      apiPost({action:'updateTask',data:{task_id:etid,updates:data,updated_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){var t2=state.tasks.find(function(x){return x.task_id===etid;});if(t2&&prevTask)Object.assign(t2,prevTask);actionFailed("Couldn't save changes",renderTasks,'Could not save',editAttempt);});
+    })();
   }else{
-    var tempId='tmp_'+Date.now();
-    var tempTask=Object.assign({},data,{task_id:tempId,_temp:true});
-    state.tasks.push(tempTask);_taskById[tempId]=tempTask;
-    if(currentView==='tasks')renderTasks();
-    apiPost({action:'addTask',data:data}).then(function(){scheduleBgSync();}).catch(function(){state.tasks=state.tasks.filter(function(x){return x.task_id!==tempId;});delete _taskById[tempId];renderTasks();scheduleBgSync();showToast("Couldn't save task");setSyncState('err','Could not save');});
+    (function addAttempt(){
+      var tempId='tmp_'+Date.now();
+      var tempTask=Object.assign({},data,{task_id:tempId,_temp:true});
+      state.tasks.push(tempTask);_taskById[tempId]=tempTask;
+      if(currentView==='tasks')renderTasks();
+      apiPost({action:'addTask',data:data}).then(function(){scheduleBgSync();}).catch(function(){state.tasks=state.tasks.filter(function(x){return x.task_id!==tempId;});delete _taskById[tempId];actionFailed("Couldn't save task",renderTasks,'Could not save',addAttempt);});
+    })();
   }
 }
 function deleteEditingTask(){
   if(!editingTask||!confirm('Delete this task?'))return;
-  var dtid=editingTask.task_id;var prevTasks=state.tasks.slice();
-  state.tasks=state.tasks.filter(function(x){return x.task_id!==dtid;});delete _taskById[dtid];
-  closeModal('modal-task');if(currentView==='tasks')renderTasks();setSyncState('loading','Deleting...');
-  apiPost({action:'deleteTask',data:{task_id:dtid}}).then(function(){scheduleBgSync();}).catch(function(){state.tasks=prevTasks;rebuildTaskIndex();actionFailed("Couldn't delete task",renderTasks,'Could not delete');});
+  var dtid=editingTask.task_id;
+  closeModal('modal-task');
+  function attempt(){
+    var prevTasks=state.tasks.slice();
+    state.tasks=state.tasks.filter(function(x){return x.task_id!==dtid;});delete _taskById[dtid];
+    if(currentView==='tasks')renderTasks();setSyncState('loading','Deleting...');
+    apiPost({action:'deleteTask',data:{task_id:dtid}}).then(function(){scheduleBgSync();}).catch(function(){state.tasks=prevTasks;rebuildTaskIndex();actionFailed("Couldn't delete task",renderTasks,'Could not delete',attempt);});
+  }
+  attempt();
 }
 
 // ── PROJECTS ──────────────────────────────────────────────
@@ -2459,7 +2504,7 @@ function deleteEditingSubtask(){
   apiPost({action:'deleteSubtask',data:{subtask_id:editingSubtask.subtask_id}}).then(function(){apiGet({action:'getSubtasks'}).then(function(r){state.subtasks=r||[];renderProjects();setSyncState('ok','Deleted');});});
 }
 function openAddGrocery(){document.getElementById('g-name').value='';openModal('modal-grocery');}
-function submitGrocery(){var n=document.getElementById('g-name').value.trim();if(!n)return;closeModal('modal-grocery');setSyncState('loading','Saving...');var tempId='tmp_'+Date.now();var cat=document.getElementById('g-cat').value;var tempItem={item_id:tempId,name:n,category:cat,added_by:currentUser,status:'need',_temp:true};state.grocery.push(tempItem);renderGrocery();apiPost({action:'addGroceryItem',data:{name:n,category:cat,added_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){state.grocery=state.grocery.filter(function(g){return g.item_id!==tempId;});renderGrocery();scheduleBgSync();showToast("Couldn't add item");setSyncState('err','Could not save');});}
+function submitGrocery(){var n=document.getElementById('g-name').value.trim();if(!n)return;closeModal('modal-grocery');setSyncState('loading','Saving...');var tempId='tmp_'+Date.now();var cat=document.getElementById('g-cat').value;(function addAttempt(){var tid2=tempId;var tempItem={item_id:tid2,name:n,category:cat,added_by:currentUser,status:'need',_temp:true};state.grocery.push(tempItem);renderGrocery();apiPost({action:'addGroceryItem',data:{name:n,category:cat,added_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){state.grocery=state.grocery.filter(function(g){return g.item_id!==tid2;});actionFailed("Couldn't add item",renderGrocery,'Could not save',addAttempt);});})();}
 
 // ── UTILS ─────────────────────────────────────────────────
 function esc(s){if(s===null||s===undefined)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -2493,7 +2538,7 @@ HTML = f"""<!DOCTYPE html>
 <body>
 {body}
 {js}
-<div id="toast-msg" class="toast"></div>
+<div id="toast-msg" class="toast" onclick="onToastTap()"></div>
 </body>
 </html>"""
 
