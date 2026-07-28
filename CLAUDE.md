@@ -19,7 +19,7 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 - index.html — the entire app (built output, source of truth for deployment)
 - build_v4.py — Python build script that generates index.html
 - qa_harness.js — Node.js DOM mock + 209 runtime checks
-- LoonHQ_AppScript_v8.6.js — current Apps Script source (deploy separately to script.google.com)
+- LoonHQ_AppScript_v8.8.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
 
 ## Build workflow
@@ -43,14 +43,21 @@ Real user data is live in the sheet.
 ## Current version: v8.8.4
 index.html in the repo is the live deployed build. build_v4.py is the source of truth.
 
-## PENDING: AppScript v8.6 not yet deployed by user
-LoonHQ_AppScript_v8.6.js has accumulated three separate changes that are all still undeployed:
-snooze/log_type fix, the ping action, and interval recurrence units with month/year clamping.
-Deploy once, after the current round of frontend work is finished.
-1. Copy LoonHQ_AppScript_v8.6.js → paste into script.google.com → Save
+## PENDING: AppScript v8.8 not yet deployed by user
+FOUR separate changes have accumulated in LoonHQ_AppScript_v8.8.js, none of them deployed:
+- log_type moved to the END of HEADERS.task_log (v8.7.1). Load-bearing: appendRow writes in
+  HEADERS order and setupHeaders appends missing columns at the far right, so the array order
+  must match. Deploy the code BEFORE running setupHeaders, never the other way round.
+- snoozeTask no longer writes to task_log, and getAllData filters it server-side (v8.7.5).
+- ping action for cold-start warm-up (v8.8).
+- Interval recurrence units via sched_freq, with month/year clamping (v8.8.1, fixed v8.8.2).
+
+Deploy steps (in this order):
+1. Copy LoonHQ_AppScript_v8.8.js → paste into script.google.com → Save
 2. Deploy → Manage deployments → pencil on EXISTING deployment → New version → Deploy
+   Version description: "v8.8.4 - snooze log fix, ping, interval units"
 3. Run setupHeaders() once from the editor (Apps Script editor → Run → Run function → setupHeaders)
-   This adds the log_type column to task_log so snooze entries are permanently excluded from history.
+   Appends the log_type column to task_log. Append-only, never reorders or clears anything.
 Until this is deployed: snoozed tasks may still appear in task history, the login ping is a
 no-op (harmless, it is caught), and interval tasks with a week/month/year unit advance
 server-side as if the unit were days.
