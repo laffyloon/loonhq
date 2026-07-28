@@ -737,6 +737,21 @@ runAsync('refreshData keeps cached data on a server error instead of falling bac
 });
 run('showToast does not throw', ()=>{ showToast('Test message'); });
 
+runAsync('failed batch snooze schedules a reconcile (partial success can diverge)', async ()=>{
+  const a={task_id:'bs-a',name:'A',type:'one_off',due_date:plus(5),status:'active',scope:'household'};
+  const b={task_id:'bs-b',name:'B',type:'one_off',due_date:plus(5),status:'active',scope:'household'};
+  state.tasks=[a,b]; _taskById={'bs-a':a,'bs-b':b};
+  selectedTaskIds=new Set(['bs-a','bs-b']); selectMode=true;
+  pendingBatchSnooze={kind:'days',value:3};
+  _bgSyncTimer=null;
+  __failNext=true;          // first of the two snooze calls fails, second succeeds
+  confirmBatchSnooze();
+  await tick();
+  if(state.tasks[1].due_date===plus(5) && _bgSyncTimer===null)
+    throw new Error('rolled back locally but scheduled no reconcile: state can disagree with the server');
+  state.tasks=[]; _taskById={}; selectedTaskIds=new Set(); selectMode=false; pendingBatchSnooze=null;
+});
+
 // ---- report ----
 asyncChain.then(function(){
 let fails = 0;

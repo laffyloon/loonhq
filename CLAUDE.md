@@ -18,7 +18,7 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 ## Repo structure
 - index.html — the entire app (built output, source of truth for deployment)
 - build_v4.py — Python build script that generates index.html
-- qa_harness.js — Node.js DOM mock + 194 runtime checks
+- qa_harness.js — Node.js DOM mock + 195 runtime checks
 - LoonHQ_AppScript_v8.6.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
 
@@ -151,6 +151,9 @@ Tags are outlined style (white bg, colored border) not filled
   Errors are tagged err.apiError so refreshData can distinguish "server said no" (keep cached
   data) from "offline" (fall back to STATIC_ASSETS). A window unhandledrejection backstop
   reports any apiPost call site that lacks its own .catch().
+- Every rollback path calls scheduleBgSync(). A local rollback can disagree with the server
+  when a batch partially succeeded (Promise.all rejects after some writes landed) or when an
+  edit added fields the snapshot did not have, so the reconcile is what makes state truthful.
 - KNOWN REMAINING PERF ITEMS (not yet tackled - flag for dedicated session):
   - Event delegation on task cards (8+ listeners per card per render - biggest remaining win)
   - computeNextDue memoization (runs date math per task per render, correctness-sensitive)
