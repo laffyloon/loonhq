@@ -18,7 +18,7 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 ## Repo structure
 - index.html — the entire app (built output, source of truth for deployment)
 - build_v4.py — Python build script that generates index.html
-- qa_harness.js — Node.js DOM mock + 195 runtime checks
+- qa_harness.js — Node.js DOM mock + 202 runtime checks
 - LoonHQ_AppScript_v8.6.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
 
@@ -40,7 +40,7 @@ DO NOT recommend clearing, resetting, or deleting sheet data under any circumsta
 without explicit approval AND a second confirmation from Frankie. This is a hard rule.
 Real user data is live in the sheet.
 
-## Current version: v8.8.2
+## Current version: v8.8.3
 index.html in the repo is the live deployed build. build_v4.py is the source of truth.
 
 ## PENDING: AppScript v8.6 not yet deployed by user
@@ -151,6 +151,18 @@ Tags are outlined style (white bg, colored border) not filled
   Errors are tagged err.apiError so refreshData can distinguish "server said no" (keep cached
   data) from "offline" (fall back to STATIC_ASSETS). A window unhandledrejection backstop
   reports any apiPost call site that lacks its own .catch().
+- Stale-sync guard: apiPost records each in-flight write. refreshData DISCARDS a getAllData
+  payload when a write is still unacknowledged, or when one landed after the fetch was issued
+  (_lastWriteAt > syncStart), and reschedules instead. Without this, a sync already in flight
+  returns pre-mutation server state and resurrects a task the user just deleted. Writes older
+  than 15s stop counting (writesPending) so a hung request cannot block syncing forever.
+- _recentlyCompleted is cleared when a payload is APPLIED, not before the fetch: at that point
+  every write has settled, so server state is authoritative.
+- Temp records (task_id/item_id = tmp_XXX) are NOT removed on success. The refreshData payload
+  replaces state wholesale, so the temp dies exactly when the real record arrives. Removing it
+  early left state and DOM disagreeing for the whole 3s debounce and made the card flicker.
+- rebuildTaskIndex() / actionFailed(msg,render,label) are the shared helpers for optimistic
+  handlers; actionFailed does undo-render + reconcile + toast + sync state.
 - Every rollback path calls scheduleBgSync(). A local rollback can disagree with the server
   when a batch partially succeeded (Promise.all rejects after some writes landed) or when an
   edit added fields the snapshot did not have, so the reconcile is what makes state truthful.

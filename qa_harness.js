@@ -84,7 +84,9 @@ global.fetch = function(url, opts){
     global.__failNext = false;
     return Promise.resolve({ json: function(){ return Promise.resolve({ error: 'boom' }); } });
   }
-  return Promise.resolve({ json: function(){ return Promise.resolve({}); } });
+  // shape the reply like the real endpoint: getSubtasks returns an array, not an object
+  var body = (typeof url === 'string' && url.indexOf('action=getSubtasks') >= 0) ? [] : {};
+  return Promise.resolve({ json: function(){ return Promise.resolve(body); } });
 };
 // don't actually defer in tests, but return a handle so debounce logic is observable
 let __timerSeq = 0;
@@ -752,8 +754,67 @@ runAsync('failed batch snooze schedules a reconcile (partial success can diverge
   state.tasks=[]; _taskById={}; selectedTaskIds=new Set(); selectMode=false; pendingBatchSnooze=null;
 });
 
+// ---- in-flight write / stale sync race (v8.8.3) ----
+runAsync('a clean sync applies the payload (guard does not block normal syncs)', async ()=>{
+  state.tasks=[{task_id:'clean-1',name:'Old',type:'one_off',due_date:plus(1),status:'active',scope:'household'}];
+  rebuildTaskIndex(); _inFlightWrites=[]; _lastWriteAt=0;
+  await refreshData(true);
+  if(state.tasks.length!==0) throw new Error('a sync with no pending writes must apply the server payload');
+});
+runAsync('an unacknowledged write blocks a stale payload from clobbering optimistic state', async ()=>{
+  state.tasks=[{task_id:'race-1',name:'Just deleted locally',type:'one_off',due_date:plus(1),status:'active',scope:'household'}];
+  rebuildTaskIndex(); _lastWriteAt=0;
+  _inFlightWrites=[Date.now()];           // a write the server has not acknowledged yet
+  await refreshData(true);
+  _inFlightWrites=[];
+  if(!state.tasks.find(x=>x.task_id==='race-1')) throw new Error('stale payload clobbered state that a pending write had not reached yet');
+});
+runAsync('a write landing during a sync blocks that payload too', async ()=>{
+  state.tasks=[{task_id:'race-2',name:'Mid-sync',type:'one_off',due_date:plus(1),status:'active',scope:'household'}];
+  rebuildTaskIndex(); _inFlightWrites=[]; _lastWriteAt=0;
+  const sync=refreshData(true);
+  apiPost({action:'noop',data:{}});       // starts and settles while the GET is in flight
+  await sync;
+  if(!state.tasks.find(x=>x.task_id==='race-2')) throw new Error('payload issued before a concurrent write was applied anyway');
+  _inFlightWrites=[]; _lastWriteAt=0;
+});
+runAsync('a successful sync clears _recentlyCompleted', async ()=>{
+  state.tasks=[]; _inFlightWrites=[]; _lastWriteAt=0;
+  _recentlyCompleted.add('stale-id');
+  await refreshData(true);
+  if(_recentlyCompleted.has('stale-id')) throw new Error('_recentlyCompleted should reset once server state is authoritative');
+});
+
+runAsync('a hung write stops blocking syncs after 15s', async ()=>{
+  state.tasks=[{task_id:'hung-1',name:'x',type:'one_off',due_date:plus(1),status:'active',scope:'household'}];
+  rebuildTaskIndex(); _lastWriteAt=0;
+  _inFlightWrites=[Date.now()-20000];   // a write that never settled 20s ago
+  await refreshData(true);
+  if(state.tasks.length!==0) throw new Error('a long-dead write should stop blocking syncs forever');
+});
+
+// ---- temp record lifetime (v8.8.3) ----
+runAsync('a successful add keeps the temp task until the sync replaces it', async ()=>{
+  state.tasks=[]; _taskById={}; editingTask=null; _inFlightWrites=[]; _lastWriteAt=0;
+  el('t-name').value='Keep me'; el('t-type').value='one_off'; el('t-due').value=plus(2);
+  el('t-remind').value=''; el('t-notes').value=''; el('t-proj-link').value=''; el('t-asset-link').value='';
+  submitTask();
+  await tick();
+  const temps=state.tasks.filter(x=>x._temp);
+  if(temps.length!==1) throw new Error('temp task must survive until the sync swaps it for the real one, else the card flickers; got '+temps.length);
+  state.tasks=[]; _taskById={};
+});
+runAsync('a successful grocery add keeps the temp item until the sync replaces it', async ()=>{
+  state.grocery=[]; _inFlightWrites=[]; _lastWriteAt=0;
+  el('g-name').value='Bananas'; el('g-cat').value='Food';
+  submitGrocery();
+  await tick();
+  if(state.grocery.filter(g=>g._temp).length!==1) throw new Error('temp grocery item must survive until the sync replaces it');
+  state.grocery=[];
+});
+
 // ---- report ----
-asyncChain.then(function(){
+asyncChain.then(tick).then(tick).then(function(){
 let fails = 0;
 for (const [s,n] of tests){ if(s==='FAIL'){ console.log('FAIL  '+n); fails++; } }
 console.log('\n'+tests.length+' checks run, '+fails+' failed, '+(tests.length-fails)+' passed');

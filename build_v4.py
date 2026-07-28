@@ -1066,7 +1066,7 @@ var _DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 var _URG_LABELS={this_week:'This week',this_month:'This month',no_rush:'No rush'};
 var _reassignPerson='',_reassignScope='household';
 var _searchTimer=null;
-var _bgSyncTimer=null,_lastFetch=0;
+var _bgSyncTimer=null,_lastFetch=0,_inFlightWrites=[],_lastWriteAt=0;
 var _taskById={},_subtasksByProj={},_tasksByAsset={};
 var snoozingTask=null,editingTask=null,openMenu=null,metricsTab='stats',pendingSnooze=null,editingProject=null,editingSubtask=null;
 var editingAsset=null,openAssetId=null,pickedAssetStatus='green',panelTab='info';
@@ -1129,15 +1129,37 @@ function quickSwitch(name){currentUser=name;localStorage.setItem('loonhq_user',n
 // instead, tagging the error so refreshData can tell it apart from being offline.
 function _apiParse(r){return r.json().then(function(d){if(d&&d.error){var e=new Error(d.error);e.apiError=true;throw e;}return d;});}
 function apiGet(params){var url=API+'?'+Object.entries(params).map(function(p){return p[0]+'='+encodeURIComponent(p[1]);}).join('&');return fetch(url).then(_apiParse);}
-function apiPost(body){return fetch(API,{method:'POST',body:JSON.stringify(body)}).then(_apiParse);}
+// Every POST mutates. Track them so refreshData can tell when a getAllData payload
+// may predate a write that has not been acknowledged yet.
+function apiPost(body){
+  var startedAt=Date.now();_inFlightWrites.push(startedAt);
+  var p=fetch(API,{method:'POST',body:JSON.stringify(body)}).then(_apiParse);
+  var settle=function(){var i=_inFlightWrites.indexOf(startedAt);if(i>=0)_inFlightWrites.splice(i,1);_lastWriteAt=Date.now();};
+  p.then(settle,settle);
+  return p;
+}
+// A request that never settles (hung connection) must not block syncing forever, so
+// writes older than 15s stop counting as pending.
+function writesPending(){var cut=Date.now()-15000;_inFlightWrites=_inFlightWrites.filter(function(t){return t>cut;});return _inFlightWrites.length>0;}
 
 function refreshData(silent){
-  if(!silent){setSyncState('loading','Syncing...');_recentlyCompleted.clear();}
+  if(!silent)setSyncState('loading','Syncing...');
+  var syncStart=Date.now();
   return apiGet({action:'getAllData'}).then(function(data){
+    // A write that is still in flight, or that landed after this fetch was issued, may not be
+    // reflected in this payload. Applying it would resurrect a task the user just deleted or
+    // undo a snooze. Keep the optimistic state and try again once the writes have settled.
+    if(writesPending()||_lastWriteAt>syncStart){
+      document.getElementById('loader').style.display='none';
+      document.getElementById('v-'+currentView).classList.remove('gone');
+      scheduleBgSync();return;
+    }
     _lastFetch=Date.now();
+    // Server state is now authoritative for everything that was pending.
+    _recentlyCompleted.clear();
     state.tasks=data.tasks||[];state.projects=data.projects||[];state.subtasks=data.subtasks||[];
     state.grocery=data.grocery||[];state.task_log=data.task_log||[];
-    _taskById={};(state.tasks||[]).forEach(function(t){_taskById[t.task_id]=t;});
+    rebuildTaskIndex();
     _subtasksByProj={};(state.subtasks||[]).forEach(function(s){var k=String(s.project_id);if(!_subtasksByProj[k])_subtasksByProj[k]=[];_subtasksByProj[k].push(s);});
     _tasksByAsset={};(state.tasks||[]).forEach(function(t){if(t.linked_asset_id){var k=String(t.linked_asset_id);if(!_tasksByAsset[k])_tasksByAsset[k]=[];_tasksByAsset[k].push(t);}});
     state.assets=(data.assets&&data.assets.length)?data.assets:STATIC_ASSETS;
@@ -1156,6 +1178,14 @@ function refreshData(silent){
   });
 }
 function scheduleBgSync(){if(_bgSyncTimer)clearTimeout(_bgSyncTimer);_bgSyncTimer=setTimeout(function(){_bgSyncTimer=null;refreshData(true);},3000);}
+function rebuildTaskIndex(){_taskById={};(state.tasks||[]).forEach(function(t){_taskById[t.task_id]=t;});}
+// Shared tail for every failed optimistic action: undo locally, tell the user, then let the
+// server settle it. The reconcile matters because a local undo can disagree with the server
+// (a batch that partly landed, an edit that added fields the snapshot never had).
+function actionFailed(msg,render,label){
+  if(render)render();
+  scheduleBgSync();showToast(msg);setSyncState('err',label||'Could not save');
+}
 function showToast(msg){var t=document.getElementById('toast-msg');if(!t)return;t.textContent=msg;t.classList.add('on');setTimeout(function(){t.classList.remove('on');},4000);}
 // Backstop: now that apiPost rejects on server errors, any call site without its
 // own .catch() would surface an unhandled rejection. Report it rather than fail silently.
@@ -1622,7 +1652,7 @@ function batchCompleteSelected(){
   if(!picks.length)return;
   picks.forEach(function(p){_recentlyCompleted.add(p.task_id);});
   exitBatch();renderTasks();setSyncState('loading','Completing...');
-  apiPost({action:'batchComplete',data:{tasks:picks,completed_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){picks.forEach(function(p){_recentlyCompleted.delete(p.task_id);});renderTasks();scheduleBgSync();showToast("Couldn't complete tasks");setSyncState('err','Could not complete');});
+  apiPost({action:'batchComplete',data:{tasks:picks,completed_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){picks.forEach(function(p){_recentlyCompleted.delete(p.task_id);});actionFailed("Couldn't complete tasks",renderTasks,'Could not complete');});
 }
 function openBatchSnooze(){
   var n=selectedTaskIds.size;if(!n)return;
@@ -1656,7 +1686,7 @@ function confirmBatchSnooze(){
   var prevDates={};updates.forEach(function(u){prevDates[u.task.task_id]=u.task.due_date;u.task.due_date=u.targetDate;});
   closeModal('modal-batch-snooze');exitBatch();renderTasks();setSyncState('loading','Snoozing...');
   var calls=updates.map(function(u){return apiPost({action:'snoozeTask',data:{task_id:u.task.task_id,until_date:u.targetDate}});});
-  Promise.all(calls).then(function(){scheduleBgSync();}).catch(function(){updates.forEach(function(u){u.task.due_date=prevDates[u.task.task_id];});renderTasks();scheduleBgSync();showToast("Couldn't snooze tasks");setSyncState('err','Could not snooze');});
+  Promise.all(calls).then(function(){scheduleBgSync();}).catch(function(){updates.forEach(function(u){u.task.due_date=prevDates[u.task.task_id];});actionFailed("Couldn't snooze tasks",renderTasks,'Could not snooze');});
 }
 
 // ── COMPLETE / SNOOZE ─────────────────────────────────────
@@ -1667,7 +1697,7 @@ function handleComplete(t){
   var wrap=document.querySelector('.tc-wrap[data-task-id="'+tid+'"]');
   if(wrap){wrap.style.height=wrap.offsetHeight+'px';wrap.style.transition='all .2s';setTimeout(function(){wrap.style.height='0';wrap.style.opacity='0';wrap.style.overflow='hidden';},10);}
   setSyncState('loading','Logging...');
-  apiPost({action:'completeTask',data:{task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_month:t.sched_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,due_date:t.due_date,end_date:t.end_date,completed_by:currentUser,scope:t.scope||'household',notes:''}}).then(function(){if(ttype==='scheduled'||ttype==='interval')_recentlyCompleted.delete(tid);scheduleBgSync();}).catch(function(){_recentlyCompleted.delete(tid);renderTasks();scheduleBgSync();showToast("Couldn't complete, try again");setSyncState('err','Could not complete');});
+  apiPost({action:'completeTask',data:{task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_month:t.sched_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,due_date:t.due_date,end_date:t.end_date,completed_by:currentUser,scope:t.scope||'household',notes:''}}).then(function(){if(ttype==='scheduled'||ttype==='interval')_recentlyCompleted.delete(tid);scheduleBgSync();}).catch(function(){_recentlyCompleted.delete(tid);actionFailed("Couldn't complete, try again",renderTasks,'Could not complete');});
 }
 function snoozeBase(t){
   var today0=new Date();today0.setHours(0,0,0,0);
@@ -1711,7 +1741,7 @@ function confirmSnooze(){
   var taskRef=state.tasks.find(function(x){return x.task_id===tid;});
   if(taskRef)taskRef.due_date=targetDate;
   closeModal('modal-snooze');renderTasks();setSyncState('loading','Snoozing...');
-  apiPost({action:'snoozeTask',data:{task_id:tid,until_date:targetDate,snoozed_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){var t2=state.tasks.find(function(x){return x.task_id===tid;});if(t2)t2.due_date=prevDue;renderTasks();scheduleBgSync();showToast("Couldn't snooze, try again");setSyncState('err','Could not snooze');});
+  apiPost({action:'snoozeTask',data:{task_id:tid,until_date:targetDate,snoozed_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){var t2=state.tasks.find(function(x){return x.task_id===tid;});if(t2)t2.due_date=prevDue;actionFailed("Couldn't snooze, try again",renderTasks,'Could not snooze');});
 }
 
 // ── TASK MENU ─────────────────────────────────────────────
@@ -1728,7 +1758,7 @@ function openTaskMenu(e,t){
     if(a==='edit')openEditTask(t);
     else if(a==='complete')handleComplete(t);
     else if(a==='snooze')openSnooze(t);
-    else if(a==='delete'){if(!confirm('Delete this task?'))return;var dtid=t.task_id;var prevT=state.tasks.slice();state.tasks=state.tasks.filter(function(x){return x.task_id!==dtid;});delete _taskById[dtid];renderTasks();setSyncState('loading','Deleting...');apiPost({action:'deleteTask',data:{task_id:dtid}}).then(function(){scheduleBgSync();}).catch(function(){state.tasks=prevT;_taskById={};state.tasks.forEach(function(x){_taskById[x.task_id]=x;});renderTasks();scheduleBgSync();showToast("Couldn't delete task");setSyncState('err','Could not delete');});}
+    else if(a==='delete'){if(!confirm('Delete this task?'))return;var dtid=t.task_id;var prevT=state.tasks.slice();state.tasks=state.tasks.filter(function(x){return x.task_id!==dtid;});delete _taskById[dtid];renderTasks();setSyncState('loading','Deleting...');apiPost({action:'deleteTask',data:{task_id:dtid}}).then(function(){scheduleBgSync();}).catch(function(){state.tasks=prevT;rebuildTaskIndex();actionFailed("Couldn't delete task",renderTasks,'Could not delete');});}
   });
   openMenu=m;setTimeout(function(){document.addEventListener('click',closeTaskMenuOnce);},10);
 }
@@ -1866,13 +1896,13 @@ function submitTask(){
     var etid=editingTask.task_id;var prevTask=Object.assign({},editingTask);
     var taskRef=state.tasks.find(function(x){return x.task_id===etid;});if(taskRef)Object.assign(taskRef,data);
     if(currentView==='tasks')renderTasks();
-    apiPost({action:'updateTask',data:{task_id:etid,updates:data,updated_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){var t2=state.tasks.find(function(x){return x.task_id===etid;});if(t2)Object.assign(t2,prevTask);renderTasks();scheduleBgSync();showToast("Couldn't save changes");setSyncState('err','Could not save');});
+    apiPost({action:'updateTask',data:{task_id:etid,updates:data,updated_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){var t2=state.tasks.find(function(x){return x.task_id===etid;});if(t2)Object.assign(t2,prevTask);actionFailed("Couldn't save changes",renderTasks);});
   }else{
     var tempId='tmp_'+Date.now();
     var tempTask=Object.assign({},data,{task_id:tempId,_temp:true});
     state.tasks.push(tempTask);_taskById[tempId]=tempTask;
     if(currentView==='tasks')renderTasks();
-    apiPost({action:'addTask',data:data}).then(function(){state.tasks=state.tasks.filter(function(x){return x.task_id!==tempId;});delete _taskById[tempId];scheduleBgSync();}).catch(function(){state.tasks=state.tasks.filter(function(x){return x.task_id!==tempId;});delete _taskById[tempId];renderTasks();scheduleBgSync();showToast("Couldn't save task");setSyncState('err','Could not save');});
+    apiPost({action:'addTask',data:data}).then(function(){scheduleBgSync();}).catch(function(){state.tasks=state.tasks.filter(function(x){return x.task_id!==tempId;});delete _taskById[tempId];renderTasks();scheduleBgSync();showToast("Couldn't save task");setSyncState('err','Could not save');});
   }
 }
 function deleteEditingTask(){
@@ -1880,7 +1910,7 @@ function deleteEditingTask(){
   var dtid=editingTask.task_id;var prevTasks=state.tasks.slice();
   state.tasks=state.tasks.filter(function(x){return x.task_id!==dtid;});delete _taskById[dtid];
   closeModal('modal-task');if(currentView==='tasks')renderTasks();setSyncState('loading','Deleting...');
-  apiPost({action:'deleteTask',data:{task_id:dtid}}).then(function(){scheduleBgSync();}).catch(function(){state.tasks=prevTasks;_taskById={};state.tasks.forEach(function(x){_taskById[x.task_id]=x;});renderTasks();scheduleBgSync();showToast("Couldn't delete task");setSyncState('err','Could not delete');});
+  apiPost({action:'deleteTask',data:{task_id:dtid}}).then(function(){scheduleBgSync();}).catch(function(){state.tasks=prevTasks;rebuildTaskIndex();actionFailed("Couldn't delete task",renderTasks,'Could not delete');});
 }
 
 // ── PROJECTS ──────────────────────────────────────────────
@@ -2429,7 +2459,7 @@ function deleteEditingSubtask(){
   apiPost({action:'deleteSubtask',data:{subtask_id:editingSubtask.subtask_id}}).then(function(){apiGet({action:'getSubtasks'}).then(function(r){state.subtasks=r||[];renderProjects();setSyncState('ok','Deleted');});});
 }
 function openAddGrocery(){document.getElementById('g-name').value='';openModal('modal-grocery');}
-function submitGrocery(){var n=document.getElementById('g-name').value.trim();if(!n)return;closeModal('modal-grocery');setSyncState('loading','Saving...');var tempId='tmp_'+Date.now();var cat=document.getElementById('g-cat').value;var tempItem={item_id:tempId,name:n,category:cat,added_by:currentUser,status:'need',_temp:true};state.grocery.push(tempItem);renderGrocery();apiPost({action:'addGroceryItem',data:{name:n,category:cat,added_by:currentUser}}).then(function(){state.grocery=state.grocery.filter(function(g){return g.item_id!==tempId;});scheduleBgSync();}).catch(function(){state.grocery=state.grocery.filter(function(g){return g.item_id!==tempId;});renderGrocery();scheduleBgSync();showToast("Couldn't add item");setSyncState('err','Could not save');});}
+function submitGrocery(){var n=document.getElementById('g-name').value.trim();if(!n)return;closeModal('modal-grocery');setSyncState('loading','Saving...');var tempId='tmp_'+Date.now();var cat=document.getElementById('g-cat').value;var tempItem={item_id:tempId,name:n,category:cat,added_by:currentUser,status:'need',_temp:true};state.grocery.push(tempItem);renderGrocery();apiPost({action:'addGroceryItem',data:{name:n,category:cat,added_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){state.grocery=state.grocery.filter(function(g){return g.item_id!==tempId;});renderGrocery();scheduleBgSync();showToast("Couldn't add item");setSyncState('err','Could not save');});}
 
 // ── UTILS ─────────────────────────────────────────────────
 function esc(s){if(s===null||s===undefined)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
