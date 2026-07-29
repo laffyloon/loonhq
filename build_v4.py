@@ -207,6 +207,8 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .who-m{background:var(--yellow-light);color:var(--yellow)}
 .who-either{background:var(--terra-light);color:var(--terra)}
 .who-either::before{content:'F\\00B7M';font-size:8px;font-weight:700;letter-spacing:-0.5px}
+.who-both{background:linear-gradient(135deg,var(--purple-light) 50%,var(--yellow-light) 50%);color:var(--text2)}
+.who-both::before{content:'F\\0026M';font-size:8px;font-weight:700;letter-spacing:-0.5px}
 .task-menu-btn{background:none;border:none;color:var(--text3);font-size:18px;padding:0 2px;cursor:pointer;line-height:1;align-self:center;flex-shrink:0}
 .task-menu-btn:hover{color:var(--text)}
 
@@ -352,6 +354,7 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
 .log-item:last-child{border-bottom:none}
 .ldot{width:8px;height:8px;border-radius:50%;background:var(--green);margin-top:5px;flex-shrink:0}
 .ldot.b{background:var(--blue)}.ldot.n{background:var(--border2)}
+.ldot.both{background:linear-gradient(135deg,var(--green) 50%,var(--blue) 50%)}
 .lt{font-size:12.5px;word-break:break-word}
 .lm{font-size:11px;color:var(--text3);margin-top:2px}
 .flag-box{background:var(--amber-light);border:1px solid #F0C86A;border-radius:var(--radius-sm);padding:9px 11px;font-size:12px;color:var(--amber);display:flex;gap:7px}
@@ -641,8 +644,9 @@ def HTML_BODY(logo, icon):
     <!-- ACTIVITY (two tabs) -->
     <div id="v-metrics" class="view gone">
       <div class="tab-bar" id="metrics-tab-bar">
-        <button class="tab-btn on" onclick="setMetricsTab('stats')">Stats</button>
-        <button class="tab-btn" onclick="setMetricsTab('history')">Task History</button>
+        <button class="tab-btn on" data-mtab="stats" onclick="setMetricsTab('stats')">Stats</button>
+        <button class="tab-btn" data-mtab="household" onclick="setMetricsTab('household')">Household History</button>
+        <button class="tab-btn" data-mtab="personal" onclick="setMetricsTab('personal')">Personal History</button>
       </div>
       <div id="metrics-stats-panel" class="scroll">
         <div class="stats-scope-bar">
@@ -1004,6 +1008,7 @@ def HTML_BODY(logo, icon):
       <div class="qs-btns">
         <button class="qs-btn f" id="reassign-btn-f" onclick="pickReassignPerson('Frankie')"><div class="qa">F</div><div class="qn">Frankie</div></button>
         <button class="qs-btn m" id="reassign-btn-m" onclick="pickReassignPerson('Meredith')"><div class="qa">M</div><div class="qn">Meredith</div></button>
+        <button class="qs-btn" id="reassign-btn-both" onclick="pickReassignPerson('Frankie,Meredith')"><div class="qa">F&amp;M</div><div class="qn">Both</div></button>
       </div>
     </div>
     <div>
@@ -1066,6 +1071,7 @@ var statsDays=30,statsScope='household';
 var _REMINDER_DAYS={same_day:0,'1_day':1,'2_days':2,'3_days':3,'1_week':7};
 var _DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 var _URG_LABELS={this_week:'This week',this_month:'This month',no_rush:'No rush'};
+var _PEOPLE=['Frankie','Meredith'];
 var _reassignPerson='',_reassignScope='household';
 var _searchTimer=null;
 var _bgSyncTimer=null,_lastFetch=0,_inFlightWrites=[],_lastWriteAt=0;
@@ -1211,7 +1217,7 @@ function renderAll(){
   else if(currentView==='projects')renderProjects();
   else if(currentView==='grocery')renderGrocery();
   else if(currentView==='assets')renderAssets();
-  else if(currentView==='metrics'){if(metricsTab==='history')renderHistory();else renderStats();}
+  else if(currentView==='metrics'){if(metricsTab==='stats')renderStats();else renderHistory();}
 }
 
 // ── NAV ───────────────────────────────────────────────────
@@ -1231,7 +1237,7 @@ function go(name){
   var mb=document.getElementById('mob-more-btn');if(mb)mb.style.display=name==='tasks'?'flex':'none';
   var sb=document.getElementById('select-btn');if(sb)sb.style.display=(name==='tasks'&&taskTab!=='history')?'':'none';
   closePanel();
-  if(name==='metrics'){if(metricsTab==='history')renderHistory();else renderStats();}
+  if(name==='metrics'){if(metricsTab==='stats')renderStats();else renderHistory();}
   else if(name==='projects')renderProjects();
   else if(name==='grocery')renderGrocery();
   else if(name==='assets')renderAssets();
@@ -1361,7 +1367,7 @@ function renderTasks(){
     if((t.status==='done'||t.status==='ended')&&t.type!=='scheduled'&&t.type!=='interval')return false;
     if(t.status==='ended')return false;
     var sc=t.scope||'household';
-    if(sc==='personal'&&t.owner&&t.owner!==currentUser)return false;
+    if(sc==='personal'&&t.owner&&!hasPerson(t.owner,currentUser))return false;
     if(taskSearch){var q=taskSearch.toLowerCase();if(!(t.name||'').toLowerCase().includes(q)&&!(t.notes||'').toLowerCase().includes(q))return false;}
     return true;
   });
@@ -1448,6 +1454,15 @@ function renderTasks(){
 // keys cells by header text, so those values collapse under the '' key and the NAMED fields
 // come back undefined. Reading only l.log_type / l.details therefore sees a clean row and
 // counts every snooze as a completion. Probe the overflow key as well.
+// owner and completed_by hold '' (either of us), one name, or both names comma joined.
+// One task, one log row: a joint task credits both without duplicating either.
+function peopleOf(v){var s=String(v||'');return s?s.split(','):[];}
+function hasPerson(v,name){return String(v||'').indexOf(name)>=0;}
+function peopleLabel(v){var p=peopleOf(v);return p.length?p.join(' & '):'Unknown';}
+function personDot(v){var f=hasPerson(v,'Frankie'),m=hasPerson(v,'Meredith');return f&&m?'both':f?'':m?'b':'n';}
+// A task owned by both credits both, whoever actually ticks it off.
+function creditFor(t){var o=String(t.owner||'');return o.indexOf(',')>=0?o:currentUser;}
+
 function isNonCompletionMark(v){
   if(v===null||v===undefined)return false;
   v=String(v);
@@ -1466,7 +1481,7 @@ function renderTaskHistory(){
   var search=((document.getElementById('task-hist-search')||{}).value||'').toLowerCase();
   var log=(state.task_log||[]).filter(function(l){
     if(!isCompletionLog(l))return false;
-    if(l.scope==='personal'&&l.completed_by!==currentUser)return false;
+    if(l.scope==='personal'&&!hasPerson(l.completed_by,currentUser))return false;
     if(search&&!((l.task_name||'').toLowerCase().includes(search)||(l.completed_by||'').toLowerCase().includes(search)))return false;
     return true;
   }).slice().sort(function(a,b){return new Date(b.completed_at)-new Date(a.completed_at);});
@@ -1475,8 +1490,8 @@ function renderTaskHistory(){
     var d=document.createElement('div');d.className='history-item';
     var mb=document.createElement('button');mb.className='history-menu-btn';mb.innerHTML='<i class="ti ti-dots-vertical"></i>';
     mb.addEventListener('click',function(e){e.stopPropagation();openHistoryActionMenu(e,l);});
-    var who=l.completed_by||'Unknown';
-    var dotCls=l.completed_by==='Frankie'?'':l.completed_by==='Meredith'?'b':'n';
+    var who=peopleLabel(l.completed_by);
+    var dotCls=personDot(l.completed_by);
     d.innerHTML='<div class="ldot '+dotCls+'"></div><div style="flex:1;min-width:0"><div class="lt">'+esc(l.task_name)+'</div><div class="lm">'+esc(who)+' · '+fmtTimestamp(l.completed_at)+'</div></div>';
     d.appendChild(mb);el.appendChild(d);
   });
@@ -1579,8 +1594,10 @@ function makeTaskCard(t){
   // Owner dot
   var ow=document.createElement('div');ow.className='owners';
   var who=document.createElement('div');
-  if(t.owner==='Frankie'){who.className='who who-f';who.textContent='F';}
-  else if(t.owner==='Meredith'){who.className='who who-m';who.textContent='M';}
+  var own=peopleOf(t.owner);
+  if(own.length>1){who.className='who who-both';who.title='Both of us';}
+  else if(own[0]==='Frankie'){who.className='who who-f';who.textContent='F';}
+  else if(own[0]==='Meredith'){who.className='who who-m';who.textContent='M';}
   else{who.className='who who-either';who.title='Either of us';}
   ow.appendChild(who);div.appendChild(ow);
 
@@ -1673,7 +1690,7 @@ function toggleSelect(id){
 function updateBatchCount(){document.getElementById('batch-count').textContent=selectedTaskIds.size+' selected';}
 function batchCompleteSelected(){
   var picks=[];
-  selectedTaskIds.forEach(function(id){var t=state.tasks.find(function(x){return x.task_id===id;});if(t)picks.push({task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,sched_month:t.sched_month,due_date:t.due_date,end_date:t.end_date,scope:t.scope});});
+  selectedTaskIds.forEach(function(id){var t=state.tasks.find(function(x){return x.task_id===id;});if(t)picks.push({task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,sched_month:t.sched_month,due_date:t.due_date,end_date:t.end_date,scope:t.scope,completed_by:creditFor(t)});});
   if(!picks.length)return;
   exitBatch();
   function attempt(){
@@ -1735,7 +1752,7 @@ function handleComplete(t){
     var wrap=document.querySelector('.tc-wrap[data-task-id="'+tid+'"]');
     if(wrap){wrap.style.height=wrap.offsetHeight+'px';wrap.style.transition='all .2s';setTimeout(function(){wrap.style.height='0';wrap.style.opacity='0';wrap.style.overflow='hidden';},10);}
     setSyncState('loading','Logging...');
-    apiPost({action:'completeTask',data:{task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_month:t.sched_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,due_date:t.due_date,end_date:t.end_date,completed_by:currentUser,scope:t.scope||'household',notes:''}}).then(function(){if(ttype==='scheduled'||ttype==='interval')_recentlyCompleted.delete(tid);scheduleBgSync();}).catch(function(){_recentlyCompleted.delete(tid);actionFailed("Couldn't complete",renderTasks,'Could not complete',attempt);});
+    apiPost({action:'completeTask',data:{task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_month:t.sched_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,due_date:t.due_date,end_date:t.end_date,completed_by:creditFor(t),scope:t.scope||'household',notes:''}}).then(function(){if(ttype==='scheduled'||ttype==='interval')_recentlyCompleted.delete(tid);scheduleBgSync();}).catch(function(){_recentlyCompleted.delete(tid);actionFailed("Couldn't complete",renderTasks,'Could not complete',attempt);});
   }
   attempt();
 }
@@ -1841,9 +1858,7 @@ function openEditTask(t){
   document.getElementById('t-notes').value=t.notes||'';
   var asel=document.getElementById('t-asset-link');if(asel)asel.value=t.linked_asset_id||'';
   var psel=document.getElementById('t-proj-link');if(psel)psel.value=t.linked_project_id||'';
-  document.getElementById('owner-either').className='who-opt'+(pickedOwner===''?' sel-either':'');
-  document.getElementById('owner-f').className='who-opt'+(pickedOwner==='Frankie'?' sel-f':'');
-  document.getElementById('owner-m').className='who-opt'+(pickedOwner==='Meredith'?' sel-m':'');
+  syncOwnerBtns();
   if(t.type==='one_off'){document.getElementById('t-due').value=dval(t.due_date);document.getElementById('t-remind').value=t.reminder_offset||'';}
   else if(t.type==='floating'){pickUrgency(t.urgency_window||'this_week');}
   else if(t.type==='scheduled'){
@@ -1870,14 +1885,18 @@ function clearTaskForm(){
   document.getElementById('t-sched-interval').value='1';
   document.getElementById('t-sched-monthday').value='1';document.getElementById('t-sched-yearmonth').value='1';document.getElementById('t-sched-yearday').value='1';
   var psel=document.getElementById('t-proj-link');if(psel)psel.value='';
-  document.getElementById('owner-either').className='who-opt sel-either';
-  document.getElementById('owner-f').className='who-opt';document.getElementById('owner-m').className='who-opt';
+  syncOwnerBtns();
   document.getElementById('scope-opt-house').className='scope-opt sel-house';
   document.getElementById('scope-opt-pers').className='scope-opt';
   document.getElementById('urg-week').className='urg-opt sel';
   document.getElementById('urg-month').className='urg-opt';document.getElementById('urg-norush').className='urg-opt';
   document.getElementById('t-owner-row').style.display='flex';
   updateTaskTypeFields();
+}
+function syncOwnerBtns(){
+  document.getElementById('owner-either').className='who-opt'+(pickedOwner===''?' sel-either':'');
+  document.getElementById('owner-f').className='who-opt'+(hasPerson(pickedOwner,'Frankie')?' sel-f':'');
+  document.getElementById('owner-m').className='who-opt'+(hasPerson(pickedOwner,'Meredith')?' sel-m':'');
 }
 function pickScope(s){
   pickedScope=s;
@@ -1888,10 +1907,14 @@ function pickScope(s){
   var note=document.getElementById('t-personal-note');if(note)note.classList.toggle('gone',!isP);
 }
 function pickOwner(val){
-  pickedOwner=val;
-  document.getElementById('owner-either').className='who-opt'+(val===''?' sel-either':'');
-  document.getElementById('owner-f').className='who-opt'+(val==='Frankie'?' sel-f':'');
-  document.getElementById('owner-m').className='who-opt'+(val==='Meredith'?' sel-m':'');
+  if(val===''){pickedOwner='';}
+  else{
+    var sel=peopleOf(pickedOwner),i=sel.indexOf(val);
+    if(i>=0)sel.splice(i,1);else sel.push(val);
+    // canonical order, and dropping the last name falls back to "either of us"
+    pickedOwner=_PEOPLE.filter(function(n){return sel.indexOf(n)>=0;}).join(',');
+  }
+  syncOwnerBtns();
 }
 function pickUrgency(u){
   pickedUrgency=u;
@@ -2298,10 +2321,11 @@ function populateProjectDropdown(){
 // ── ACTIVITY TABS ─────────────────────────────────────────
 function setMetricsTab(tab){
   metricsTab=tab;
-  document.getElementById('metrics-stats-panel').classList.toggle('gone',tab!=='stats');
-  document.getElementById('metrics-history-panel').classList.toggle('gone',tab!=='history');
-  document.querySelectorAll('#metrics-tab-bar .tab-btn').forEach(function(b,i){b.classList.toggle('on',(i===0&&tab==='stats')||(i===1&&tab==='history'));});
-  if(tab==='history')renderHistory();else renderStats();
+  var isStats=tab==='stats';
+  document.getElementById('metrics-stats-panel').classList.toggle('gone',!isStats);
+  document.getElementById('metrics-history-panel').classList.toggle('gone',isStats);
+  document.querySelectorAll('#metrics-tab-bar .tab-btn').forEach(function(b){b.classList.toggle('on',b.dataset.mtab===tab);});
+  if(isStats)renderStats();else renderHistory();
 }
 function setStatsRange(d){
   statsDays=d;
@@ -2319,8 +2343,12 @@ function renderStats(){
   var cutoff=new Date();cutoff.setDate(cutoff.getDate()-days);
   var filtered=log.filter(function(l){return new Date(l.completed_at)>=cutoff;});
   _drillAll=filtered;
-  _drillF=filtered.filter(function(l){return l.completed_by==='Frankie';});
-  _drillM=filtered.filter(function(l){return l.completed_by==='Meredith';});
+  // one pass instead of two, and a jointly credited completion lands in both buckets
+  _drillF=[];_drillM=[];
+  filtered.forEach(function(l){
+    if(hasPerson(l.completed_by,'Frankie'))_drillF.push(l);
+    if(hasPerson(l.completed_by,'Meredith'))_drillM.push(l);
+  });
   var nums=document.getElementById('metrics-nums');
   if(nums)nums.innerHTML=metCard(_drillAll.length,'Total completed',0)+metCard(_drillF.length,'By Frankie',1)+metCard(_drillM.length,'By Meredith',2);
   var maxBar=Math.max(_drillF.length,_drillM.length,1);
@@ -2349,7 +2377,7 @@ function renderTrendChart(){
   var weeks=[];var d=new Date(cutoff);
   while(d<=now){weeks.push({start:new Date(d),f:0,m:0});d=new Date(d);d.setDate(d.getDate()+7);}
   if(!weeks.length){wrapEl.innerHTML='';return;}
-  log.forEach(function(l){var dt=new Date(l.completed_at);if(dt<cutoff)return;var wi=Math.floor((dt-cutoff)/604800000);if(wi>=weeks.length)wi=weeks.length-1;if(wi<0)wi=0;if(l.completed_by==='Frankie')weeks[wi].f++;else if(l.completed_by==='Meredith')weeks[wi].m++;});
+  log.forEach(function(l){var dt=new Date(l.completed_at);if(dt<cutoff)return;var wi=Math.floor((dt-cutoff)/604800000);if(wi>=weeks.length)wi=weeks.length-1;if(wi<0)wi=0;if(hasPerson(l.completed_by,'Frankie'))weeks[wi].f++;if(hasPerson(l.completed_by,'Meredith'))weeks[wi].m++;});
   var maxV=Math.max.apply(null,weeks.map(function(w){return Math.max(w.f,w.m);}));if(!maxV)maxV=1;
   var W=280,H=100,px=28,py=12,n=weeks.length;
   function pts(key){return weeks.map(function(w,i){var x=px+Math.round(i/(n-1||1)*(W-px-14));var y=H-py-Math.round(w[key]/maxV*(H-py*2));return x+','+y;}).join(' ');}
@@ -2363,10 +2391,12 @@ function renderTrendChart(){
   wrapEl.innerHTML='<div class="trend-title">Completions over time</div><svg width="100%" viewBox="0 0 '+W+' '+H+'" style="overflow:visible">'+yLines+'<polyline points="'+fPts+'" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><polyline points="'+mPts+'" fill="none" stroke="var(--yellow)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'+xLabels+'</svg><div class="trend-legend"><span><span class="trend-legend-dot" style="background:var(--purple)"></span>Frankie</span><span><span class="trend-legend-dot" style="background:var(--yellow)"></span>Meredith</span></div>';
 }
 function renderHistory(){
+  var scope=metricsTab==='personal'?'personal':'household';
   var search=((document.getElementById('history-search')||{}).value||'').toLowerCase();
   var log=(state.task_log||[]).filter(function(l){
     if(!isCompletionLog(l))return false;
-    if(l.scope==='personal'&&l.completed_by!==currentUser)return false;
+    if((l.scope||'household')!==scope)return false;
+    if(scope==='personal'&&!hasPerson(l.completed_by,currentUser))return false;
     if(search&&!((l.task_name||'').toLowerCase().includes(search)||(l.completed_by||'').toLowerCase().includes(search)))return false;
     return true;
   }).slice().sort(function(a,b){return new Date(b.completed_at)-new Date(a.completed_at);});
@@ -2376,8 +2406,8 @@ function renderHistory(){
     var d=document.createElement('div');d.className='history-item';
     var mb=document.createElement('button');mb.className='history-menu-btn';mb.innerHTML='<i class="ti ti-dots-vertical"></i>';
     mb.addEventListener('click',function(e){e.stopPropagation();openHistoryActionMenu(e,l);});
-    var who=l.completed_by||'Unknown';
-    var dotCls=l.completed_by==='Frankie'?'':l.completed_by==='Meredith'?'b':'n';
+    var who=peopleLabel(l.completed_by);
+    var dotCls=personDot(l.completed_by);
     d.innerHTML='<div class="ldot '+dotCls+'"></div><div style="flex:1;min-width:0"><div class="lt">'+esc(l.task_name)+'</div><div class="lm">'+esc(who)+' - '+fmtTimestamp(l.completed_at)+'</div></div>';
     d.appendChild(mb);
     listEl.appendChild(d);
@@ -2439,9 +2469,8 @@ function openReassignMenu(){
 }
 function pickReassignPerson(p){
   _reassignPerson=p;
-  var bf=document.getElementById('reassign-btn-f');var bm=document.getElementById('reassign-btn-m');
-  if(bf)bf.classList.toggle('dimmed',p!=='Frankie');
-  if(bm)bm.classList.toggle('dimmed',p!=='Meredith');
+  [['reassign-btn-f','Frankie'],['reassign-btn-m','Meredith'],['reassign-btn-both','Frankie,Meredith']]
+    .forEach(function(pair){var el=document.getElementById(pair[0]);if(el)el.classList.toggle('dimmed',p!==pair[1]);});
 }
 function pickReassignScope(s){
   _reassignScope=s;

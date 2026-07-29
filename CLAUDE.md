@@ -18,7 +18,7 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 ## Repo structure
 - index.html — the entire app (built output, source of truth for deployment)
 - build_v4.py — Python build script that generates index.html
-- qa_harness.js — Node.js DOM mock + 224 runtime checks
+- qa_harness.js — Node.js DOM mock + 237 runtime checks
 - LoonHQ_AppScript_v8.8.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
 
@@ -40,7 +40,7 @@ DO NOT recommend clearing, resetting, or deleting sheet data under any circumsta
 without explicit approval AND a second confirmation from Frankie. This is a hard rule.
 Real user data is live in the sheet.
 
-## Current version: v8.9
+## Current version: v8.10
 index.html in the repo is the live deployed build. build_v4.py is the source of truth.
 
 ## AppScript deploy state
@@ -102,6 +102,22 @@ assets tab exists in schema but assets are currently HARDCODED in JS — not yet
 - All date parsing must use: new Date(String(d).split('T')[0] + 'T12:00:00')
 - Never concatenate a raw date field + 'T12:00:00' without stripping first
 
+## Ownership and credit (joint tasks)
+- owner and completed_by hold '' (either of us), one name, or BOTH comma joined: 'Frankie,Meredith'.
+  Canonical order is _PEOPLE order, so the joint value is always 'Frankie,Meredith'.
+- Model: ONE task, ONE log row. A joint completion is a single row credited to both.
+  Rejected alternatives: duplicating the task (two things to tick off) and duplicating the
+  log row (the completion would appear twice in History, the exact duplication bug we just fixed).
+- Helpers: peopleOf / hasPerson / peopleLabel ('Frankie & Meredith') / personDot / creditFor.
+- creditFor(t): a task owned by both credits both no matter who ticks it off; otherwise the
+  completer gets the credit (so 'either of us' and single-owner behaviour are unchanged).
+- Stats: "Total completed" counts TASKS, per-person bars count CREDIT, so the two per-person
+  numbers can legitimately sum to more than the total. renderStats does one pass, not two.
+- AppScript needs NO change for this: batchComplete does Object.assign({completed_by:...}, t)
+  so a per-task completed_by wins, and completeTask/addTask pass the string straight through.
+- Owner picker: "Either of us" is exclusive; the two names toggle independently; deselecting
+  the last name falls back to "Either of us". syncOwnerBtns() is the single source of button state.
+
 ## Task scope rules
 - scope='household': visible to both users always
 - scope='personal': visible only to the owner (filtered by owner === currentUser in renderTasks)
@@ -109,6 +125,12 @@ assets tab exists in schema but assets are currently HARDCODED in JS — not yet
 - Personal tasks shown with a lock badge on the card
 - Analytics has a Household / Personal / All scope filter (statsScope global)
 - Personal tasks visible to both in analytics (intentional — metrics should be complete)
+
+## Views — Activity section
+Tabs: Stats | Household History | Personal History (metricsTab = stats|household|personal)
+- Both history tabs show COMPLETED tasks only (isCompletionLog) and split on l.scope.
+- Personal History shows only YOUR OWN personal completions (hasPerson(l.completed_by,currentUser)).
+- Both history tabs share one panel and one renderer; renderHistory() reads metricsTab for scope.
 
 ## Views — Tasks section
 Tab order: Today (default) | Upcoming | Recurring | All | History

@@ -263,7 +263,8 @@ run('setTaskTab history', ()=>setTaskTab('history'));
 run('renderTaskHistory', ()=>renderTaskHistory());
 run('setTaskTab all', ()=>setTaskTab('all'));
 run('setMetricsTab stats', ()=>setMetricsTab('stats'));
-run('setMetricsTab history', ()=>setMetricsTab('history'));
+run('setMetricsTab household history', ()=>setMetricsTab('household'));
+run('setMetricsTab personal history', ()=>setMetricsTab('personal'));
 run('toggleLegend', ()=>toggleLegend());
 
 // complete / snooze / batch (network stubbed)
@@ -979,6 +980,113 @@ run('per-person credit is unchanged for genuine completions', ()=>{
   const kept=log.filter(isCompletionLog);
   const byPerson={};kept.forEach(l=>{byPerson[l.completed_by]=(byPerson[l.completed_by]||0)+1;});
   if(byPerson.Frankie!==2||byPerson.Meredith!==1) throw new Error('credit changed: '+JSON.stringify(byPerson));
+});
+
+// ---- joint ownership and shared credit (v8.10) ----
+run('owner picker: Either is exclusive, names toggle, both can be selected', ()=>{
+  pickedOwner='';
+  pickOwner('Frankie');
+  if(pickedOwner!=='Frankie') throw new Error('picking a name should replace Either, got '+pickedOwner);
+  pickOwner('Meredith');
+  if(pickedOwner!=='Frankie,Meredith') throw new Error('second name should join, got '+pickedOwner);
+  pickOwner('');                                  // Either clears both
+  if(pickedOwner!=='') throw new Error('Either of us must clear the names, got '+pickedOwner);
+});
+run('owner picker: canonical order regardless of click order', ()=>{
+  pickedOwner=''; pickOwner('Meredith'); pickOwner('Frankie');
+  if(pickedOwner!=='Frankie,Meredith') throw new Error('expected canonical Frankie,Meredith got '+pickedOwner);
+});
+run('owner picker: deselecting the last name falls back to Either', ()=>{
+  pickedOwner=''; pickOwner('Frankie'); pickOwner('Frankie');
+  if(pickedOwner!=='') throw new Error('should fall back to Either, got '+pickedOwner);
+});
+run('owner picker: toggling one name off leaves the other', ()=>{
+  pickedOwner=''; pickOwner('Frankie'); pickOwner('Meredith'); pickOwner('Frankie');
+  if(pickedOwner!=='Meredith') throw new Error('expected Meredith, got '+pickedOwner);
+});
+run('creditFor: joint task credits both, whoever completes it', ()=>{
+  currentUser='Frankie';
+  if(creditFor({owner:'Frankie,Meredith'})!=='Frankie,Meredith') throw new Error('joint task must credit both');
+  currentUser='Meredith';
+  if(creditFor({owner:'Frankie,Meredith'})!=='Frankie,Meredith') throw new Error('joint credit must not depend on who clicks');
+  currentUser='Frankie';
+});
+run('creditFor: single-owner and either-of-us credit whoever completed it', ()=>{
+  currentUser='Meredith';
+  if(creditFor({owner:''})!=='Meredith') throw new Error('either-of-us should credit the completer');
+  if(creditFor({owner:'Frankie'})!=='Meredith') throw new Error('a single-owner task credits whoever actually did it');
+  currentUser='Frankie';
+});
+run('submitTask sends a joint owner', ()=>{
+  __posts.length=0; editingTask=null; pickedScope='household'; pickedOwner='';
+  pickOwner('Frankie'); pickOwner('Meredith');
+  el('t-name').value='Pick shower tile'; el('t-type').value='one_off'; el('t-due').value=plus(3);
+  el('t-remind').value=''; el('t-notes').value=''; el('t-proj-link').value=''; el('t-asset-link').value='';
+  submitTask();
+  if(__posts[__posts.length-1].data.owner!=='Frankie,Meredith') throw new Error('owner not joint: '+__posts[__posts.length-1].data.owner);
+  pickedOwner='';
+});
+run('stats credit a joint completion to both, but count the task once', ()=>{
+  const sv=state.task_log; const svScope=statsScope; statsScope='household';
+  const now=new Date().toISOString();
+  state.task_log=[
+    {log_id:'j1',task_id:'t1',task_name:'Pick shower tile',completed_by:'Frankie,Meredith',completed_at:now,scope:'household',log_type:'completion',details:''},
+    {log_id:'j2',task_id:'t2',task_name:'Solo task',completed_by:'Frankie',completed_at:now,scope:'household',log_type:'completion',details:''},
+  ];
+  renderStats();
+  if(_drillAll.length!==2) throw new Error('total completed should be 2 tasks, got '+_drillAll.length);
+  if(_drillF.length!==2) throw new Error('Frankie should be credited on both, got '+_drillF.length);
+  if(_drillM.length!==1) throw new Error('Meredith should be credited once, got '+_drillM.length);
+  state.task_log=sv; statsScope=svScope;
+});
+run('peopleLabel and personDot render a joint credit', ()=>{
+  if(peopleLabel('Frankie,Meredith')!=='Frankie & Meredith') throw new Error('bad label: '+peopleLabel('Frankie,Meredith'));
+  if(peopleLabel('')!=='Unknown') throw new Error('blank should read Unknown');
+  if(personDot('Frankie,Meredith')!=='both') throw new Error('joint dot class wrong');
+  if(personDot('Frankie')!=='') throw new Error('Frankie dot class wrong');
+  if(personDot('Meredith')!=='b') throw new Error('Meredith dot class wrong');
+  if(personDot('')!=='n') throw new Error('unknown dot class wrong');
+});
+
+// ---- Activity history tabs (v8.10) ----
+run('Household History shows only household completions', ()=>{
+  const sv=state.task_log; const now=new Date().toISOString();
+  state.task_log=[
+    {log_id:'h1',task_id:'t1',task_name:'Bins',completed_by:'Frankie',completed_at:now,scope:'household',log_type:'completion',details:''},
+    {log_id:'p1',task_id:'t2',task_name:'My thing',completed_by:'Frankie',completed_at:now,scope:'personal',log_type:'completion',details:''},
+  ];
+  el('history-search').value='';
+  setMetricsTab('household');
+  const html=el('history-list').innerHTML||'';
+  const kids=el('history-list').children.length;
+  if(kids!==1) throw new Error('expected 1 household row, got '+kids);
+  state.task_log=sv;
+});
+run('Personal History shows only your own personal completions', ()=>{
+  const sv=state.task_log; const svUser=currentUser; currentUser='Frankie';
+  const now=new Date().toISOString();
+  state.task_log=[
+    {log_id:'h1',task_id:'t1',task_name:'Bins',completed_by:'Frankie',completed_at:now,scope:'household',log_type:'completion',details:''},
+    {log_id:'p1',task_id:'t2',task_name:'Frankie private',completed_by:'Frankie',completed_at:now,scope:'personal',log_type:'completion',details:''},
+    {log_id:'p2',task_id:'t3',task_name:'Meredith private',completed_by:'Meredith',completed_at:now,scope:'personal',log_type:'completion',details:''},
+  ];
+  el('history-search').value='';
+  setMetricsTab('personal');
+  const kids=el('history-list').children.length;
+  if(kids!==1) throw new Error('expected only own personal row, got '+kids);
+  state.task_log=sv; currentUser=svUser; setMetricsTab('stats');
+});
+run('history tabs still exclude snoozes', ()=>{
+  const sv=state.task_log; const now=new Date().toISOString();
+  const BASE7=['log_id','task_id','task_name','completed_by','completed_at','scope','notes'];
+  const V85=BASE7.concat(['log_type','details']); const hdr=BASE7.concat(['','']);
+  const write=(o)=>{const row=V85.map(h=>o[h]!==undefined?o[h]:'');const obj={};
+    hdr.map(String).forEach((h,i)=>{obj[h]=row[i]===undefined?'':row[i];});return obj;};
+  state.task_log=[write({log_id:'s1',task_id:'t1',task_name:'Snoozed',completed_by:'Frankie',completed_at:now,scope:'household',log_type:'snooze',details:JSON.stringify({until_date:'2026-08-05'})})];
+  el('history-search').value='';
+  setMetricsTab('household');
+  if(el('history-list').children.length!==0) throw new Error('snooze leaked into Household History');
+  state.task_log=sv; setMetricsTab('stats');
 });
 
 // ---- report ----
