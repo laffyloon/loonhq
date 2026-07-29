@@ -18,7 +18,7 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 ## Repo structure
 - index.html — the entire app (built output, source of truth for deployment)
 - build_v4.py — Python build script that generates index.html
-- qa_harness.js — Node.js DOM mock + 209 runtime checks
+- qa_harness.js — Node.js DOM mock + 221 runtime checks
 - LoonHQ_AppScript_v8.8.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
 
@@ -40,7 +40,7 @@ DO NOT recommend clearing, resetting, or deleting sheet data under any circumsta
 without explicit approval AND a second confirmation from Frankie. This is a hard rule.
 Real user data is live in the sheet.
 
-## Current version: v8.8.4
+## Current version: v8.9
 index.html in the repo is the live deployed build. build_v4.py is the source of truth.
 
 ## PENDING: AppScript v8.8 not yet deployed by user
@@ -126,10 +126,18 @@ Stripe colors: r=red, o=amber, g=green, b=blue, p=purple, n=neutral
 Tags are outlined style (white bg, colored border) not filled
 
 ## Task log / history rules
-- isCompletionLog(l): shared helper used by ALL log rendering and analytics. Three-layer snooze defense:
-  1. log_type !== 'completion' (catches correct schema)
-  2. details === 'snooze'|'edit'|'manual_note' (catches old AppScript schema mismatch)
-  3. details.includes('until_date') (catches snooze JSON in wrong column)
+- ROOT CAUSE of the long-running "snoozes counted as completions" bug (fixed v8.9):
+  v8.5 snoozeTask appended log_type/details to task_log, but setupHeaders was never run, so
+  those columns had NO header text. sheetToObjects keys cells by header, so both values
+  collapsed under the '' key and l.log_type / l.details came back UNDEFINED. Every filter that
+  read the named fields saw a clean row and counted the snooze as a completion, credited to
+  whoever snoozed. Three earlier "fixes" all read named fields, which is why none of them worked.
+- isCompletionLog(l): shared helper used by ALL log rendering and analytics. It checks
+  log_type, details, AND l[''] (the unlabelled-column overflow). Never drop the l[''] probe.
+  It deliberately does NOT scan task_name/notes, so a task called "snooze" is not swept up.
+- AppScript mirrors this in logRowIsCompletion_(headers,row), which inspects raw cells so it
+  works no matter which columns the sheet has labelled. getAllData uses completionLogs_().
+- qa_harness covers all 5 sheet-layout permutations (7/8/9 labelled columns x both write orders).
 - AppScript getAllData filters task_log to log_type='' or 'completion' before returning (server-side defense)
 - AppScript snoozeTask no longer writes to task_log (no new snooze entries will ever appear)
 - completed_by shows 'Unknown' when empty; uses neutral grey dot instead of Meredith-blue

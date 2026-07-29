@@ -132,6 +132,87 @@ function newId(prefix) {
   return prefix + '-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
 }
 
+// ── TASK LOG READING / CLEANUP ─────────────────────────────────────────────────
+// Why this reads raw cells instead of using sheetToObjects: v8.5-era snoozeTask appended
+// log_type and details into task_log columns that the sheet's header row never labelled
+// (setupHeaders was never run for them). sheetToObjects keys cells by header text, so those
+// markers collapse under the '' key and l.log_type / l.details come back undefined. Filtering
+// on the named fields therefore lets every snooze through as a completion.
+// Only the marker columns and unlabelled overflow are inspected, never task_name or notes,
+// so a task genuinely called "snooze" is not swept up.
+function logRowIsCompletion_(headers, row) {
+  for (var i = 0; i < row.length; i++) {
+    var h = String(headers[i] === undefined ? '' : headers[i]);
+    if (h !== '' && h !== 'log_type' && h !== 'details') continue;
+    var v = row[i];
+    if (v === null || v === undefined) continue;
+    v = String(v);
+    if (v === 'snooze' || v === 'edit' || v === 'manual_note') return false;
+    if (v.indexOf('until_date') >= 0) return false;
+  }
+  return true;
+}
+
+function completionLogs_() {
+  var data = getSheet('task_log').getDataRange().getValues();
+  if (data.length < 2) return [];
+  var headers = data[0].map(String);
+  var out = [];
+  for (var r = 1; r < data.length; r++) {
+    if (!logRowIsCompletion_(headers, data[r])) continue;
+    var o = {};
+    for (var c = 0; c < headers.length; c++) o[headers[c]] = data[r][c] === undefined ? '' : data[r][c];
+    out.push(o);
+  }
+  return out;
+}
+
+function findSnoozeLogRows_() {
+  var data = getSheet('task_log').getDataRange().getValues();
+  if (data.length < 2) return { headers: [], rows: [], total: 0 };
+  var headers = data[0].map(String);
+  var rows = [];
+  for (var r = 1; r < data.length; r++) {
+    if (!logRowIsCompletion_(headers, data[r])) rows.push({ rowNumber: r + 1, values: data[r] });
+  }
+  return { headers: headers, rows: rows, total: data.length - 1 };
+}
+
+// SAFE: reports only, changes nothing. Run this first and read the log output.
+function previewSnoozeLogCleanup() {
+  var res = findSnoozeLogRows_();
+  Logger.log('task_log rows (excluding header): ' + res.total);
+  Logger.log('Non-completion rows found (snooze/edit): ' + res.rows.length);
+  Logger.log('Genuine completions that will remain: ' + (res.total - res.rows.length));
+  var byPerson = {};
+  res.rows.forEach(function(r) {
+    var who = String(r.values[3] || '(blank)');
+    byPerson[who] = (byPerson[who] || 0) + 1;
+  });
+  Logger.log('Bogus rows by completed_by: ' + JSON.stringify(byPerson));
+  res.rows.slice(0, 10).forEach(function(r) {
+    Logger.log('  row ' + r.rowNumber + ': ' + JSON.stringify(r.values));
+  });
+  if (res.rows.length > 10) Logger.log('  ... and ' + (res.rows.length - 10) + ' more');
+  return { total: res.total, toRemove: res.rows.length, remaining: res.total - res.rows.length, byPerson: byPerson };
+}
+
+// DESTRUCTIVE. Only run after reviewing previewSnoozeLogCleanup().
+// Rows are COPIED to a task_log_archive tab before being removed, so this is reversible.
+function purgeSnoozeLogs_CONFIRMED() {
+  var res = findSnoozeLogRows_();
+  if (!res.rows.length) { Logger.log('Nothing to clean up.'); return { ok: true, moved: 0 }; }
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var archive = ss.getSheetByName('task_log_archive');
+  if (!archive) { archive = ss.insertSheet('task_log_archive'); archive.appendRow(res.headers); }
+  res.rows.forEach(function(r) { archive.appendRow(r.values); });
+  var src = getSheet('task_log');
+  for (var i = res.rows.length - 1; i >= 0; i--) src.deleteRow(res.rows[i].rowNumber);
+  Logger.log('Archived and removed ' + res.rows.length + ' non-completion rows.');
+  Logger.log('They are recoverable from the task_log_archive tab.');
+  return { ok: true, moved: res.rows.length, archivedTo: 'task_log_archive' };
+}
+
 // ── doGet / doPost ─────────────────────────────────────────────────────────────
 function doGet(e) {
   var action = e.parameter.action;
@@ -190,10 +271,7 @@ function getAllData() {
   var projects = sheetToObjects(getSheet('projects')).filter(function(p) { return p.status !== 'deleted'; });
   var subtasks = sheetToObjects(getSheet('subtasks'));
   var grocery  = sheetToObjects(getSheet('grocery')).filter(function(g) { return g.status !== 'deleted'; });
-  var task_log = sheetToObjects(getSheet('task_log')).filter(function(l) {
-    var lt = (l.log_type || '').toString();
-    return lt === '' || lt === 'completion';
-  });
+  var task_log = completionLogs_();
 
   // Seed assets on first load
   var assetSheet = getSheet('assets');

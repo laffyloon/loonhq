@@ -897,6 +897,50 @@ runAsync('batch snooze retry applies to current tasks, not stale object referenc
   state.tasks=[]; _taskById={}; selectedTaskIds=new Set(); selectMode=false; pendingBatchSnooze=null; hideToast();
 });
 
+// ---- snooze rows must never count as completions, whatever the sheet layout (v8.9) ----
+// Reproduces how appendRow + sheetToObjects interact for each header-row state the live
+// sheet could be in. The v8.5 backend wrote log_type/details into columns that may or may
+// not have been labelled, which decides where the markers actually land.
+const V85_ORDER  = ['log_id','task_id','task_name','completed_by','completed_at','scope','notes','log_type','details'];
+const V871_ORDER = ['log_id','task_id','task_name','completed_by','completed_at','scope','notes','details','log_type'];
+const SNOOZE = {log_id:'l9',task_id:'t1',task_name:'Water plants',completed_by:'Frankie',
+  completed_at:'2026-07-29T10:00:00Z',scope:'household',notes:'',log_type:'snooze',
+  details:JSON.stringify({until_date:'2026-08-05'})};
+const DONE = {log_id:'l8',task_id:'t2',task_name:'Take out bins',completed_by:'Meredith',
+  completed_at:'2026-07-29T09:00:00Z',scope:'household',notes:'',log_type:'completion',details:''};
+function writeRow(order,obj){ return order.map(h=>obj[h]!==undefined?obj[h]:''); }
+function readBack(sheetHeader,row){
+  const headers=sheetHeader.map(String); const o={};
+  headers.forEach((h,i)=>{o[h]=row[i]===undefined?'':row[i];});
+  return o;
+}
+const BASE7=['log_id','task_id','task_name','completed_by','completed_at','scope','notes'];
+const LAYOUTS=[
+  ['7 labelled cols, v8.5 write order',      BASE7.concat(['','']),          V85_ORDER],
+  ['7 labelled cols, v8.7.1 write order',    BASE7.concat(['','']),          V871_ORDER],
+  ['8 labelled cols, v8.5 write order',      BASE7.concat(['details','']),   V85_ORDER],
+  ['8 labelled cols, v8.7.1 write order',    BASE7.concat(['details','']),   V871_ORDER],
+  ['9 labelled cols, fully migrated',        BASE7.concat(['details','log_type']), V871_ORDER],
+];
+for (const [label, sheetHeader, order] of LAYOUTS) {
+  run('snooze row is excluded: '+label, ()=>{
+    const l=readBack(sheetHeader, writeRow(order, SNOOZE));
+    if(isCompletionLog(l)) throw new Error('snooze counted as a completion; row read back as '+JSON.stringify(l));
+  });
+  run('real completion still counts: '+label, ()=>{
+    const l=readBack(sheetHeader, writeRow(order, DONE));
+    if(!isCompletionLog(l)) throw new Error('genuine completion was filtered out; read back as '+JSON.stringify(l));
+  });
+}
+run('a task legitimately named like a marker is not filtered', ()=>{
+  if(!isCompletionLog({log_id:'l1',task_id:'t3',task_name:'Snooze the alarm',completed_by:'Frankie',completed_at:'2026-07-29T10:00:00Z',notes:'until_date discussion',details:''}))
+    throw new Error('name/notes must not trigger the snooze filter');
+});
+run('legacy row with no markers at all still counts as a completion', ()=>{
+  if(!isCompletionLog({log_id:'l1',task_id:'t4',task_name:'Old row',completed_by:'Frankie',completed_at:'2026-01-01T10:00:00Z'}))
+    throw new Error('pre-log_type completions must keep counting');
+});
+
 // ---- report ----
 asyncChain.then(tick).then(tick).then(function(){
 let fails = 0;

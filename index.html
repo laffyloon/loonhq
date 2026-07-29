@@ -1443,12 +1443,23 @@ function renderTasks(){
   else if(taskTab==='recurring'){var rec=all.filter(function(t){return t.type==='scheduled'||t.type==='interval';});stripe('All recurring',rec,[],'g');}
   if(!el.children.length)el.innerHTML='<div style="font-size:13.5px;color:var(--text3);padding:30px 0;text-align:center">No tasks here. Nice work!</div>';
 }
+// A log row counts as a completion only if nothing on it marks it as something else.
+// The subtle part: v8.5-era snoozeTask wrote log_type/details into task_log columns that
+// the sheet's header row never labelled (setupHeaders was never run for them). sheetToObjects
+// keys cells by header text, so those values collapse under the '' key and the NAMED fields
+// come back undefined. Reading only l.log_type / l.details therefore sees a clean row and
+// counts every snooze as a completion. Probe the overflow key as well.
+function isNonCompletionMark(v){
+  if(v===null||v===undefined)return false;
+  v=String(v);
+  if(v==='snooze'||v==='edit'||v==='manual_note')return true;
+  return v.indexOf('until_date')>=0;
+}
 function isCompletionLog(l){
-  var lt=l.log_type||'completion';
-  if(lt!=='completion')return false;
-  var det=l.details||'';
-  if(det==='snooze'||det==='edit'||det==='manual_note')return false;
-  if(typeof det==='string'&&det.includes('until_date'))return false;
+  if(!l)return false;
+  if(String(l.log_type||'completion')!=='completion')return false;
+  if(isNonCompletionMark(l.details))return false;
+  if(isNonCompletionMark(l['']))return false;   // unlabelled-column overflow
   return true;
 }
 function renderTaskHistory(){
