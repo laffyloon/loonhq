@@ -181,6 +181,12 @@ function findSnoozeLogRows_() {
 // SAFE: reports only, changes nothing. Run this first and read the log output.
 function previewSnoozeLogCleanup() {
   var res = findSnoozeLogRows_();
+  var sheet = getSheet('task_log');
+  Logger.log('--- task_log header row as it actually is ---');
+  Logger.log('  columns with data: ' + sheet.getLastColumn());
+  Logger.log('  header cells: ' + JSON.stringify(res.headers));
+  Logger.log('  (an empty string means that column has data but no header, which is the bug)');
+  Logger.log('');
   Logger.log('task_log rows (excluding header): ' + res.total);
   Logger.log('Non-completion rows found (snooze/edit): ' + res.rows.length);
   Logger.log('Genuine completions that will remain: ' + (res.total - res.rows.length));

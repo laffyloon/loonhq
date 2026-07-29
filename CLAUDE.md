@@ -18,7 +18,7 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 ## Repo structure
 - index.html — the entire app (built output, source of truth for deployment)
 - build_v4.py — Python build script that generates index.html
-- qa_harness.js — Node.js DOM mock + 221 runtime checks
+- qa_harness.js — Node.js DOM mock + 224 runtime checks
 - LoonHQ_AppScript_v8.8.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
 
@@ -43,24 +43,25 @@ Real user data is live in the sheet.
 ## Current version: v8.9
 index.html in the repo is the live deployed build. build_v4.py is the source of truth.
 
-## PENDING: AppScript v8.8 not yet deployed by user
-FOUR separate changes have accumulated in LoonHQ_AppScript_v8.8.js, none of them deployed:
-- log_type moved to the END of HEADERS.task_log (v8.7.1). Load-bearing: appendRow writes in
-  HEADERS order and setupHeaders appends missing columns at the far right, so the array order
-  must match. Deploy the code BEFORE running setupHeaders, never the other way round.
-- snoozeTask no longer writes to task_log, and getAllData filters it server-side (v8.7.5).
-- ping action for cold-start warm-up (v8.8).
-- Interval recurrence units via sched_freq, with month/year clamping (v8.8.1, fixed v8.8.2).
+## AppScript deploy state
+v8.8 (snooze log fix, ping, interval units) WAS deployed by the user on 2026-07-29.
+v8.9 added task_log reading/cleanup and is NOT yet deployed:
+- logRowIsCompletion_ / completionLogs_ : getAllData now filters on RAW cells, so it works
+  regardless of which task_log columns the sheet has labelled.
+- previewSnoozeLogCleanup() : read-only diagnostic, dumps the real header row + bogus row count.
+- purgeSnoozeLogs_CONFIRMED() : archives bogus rows to a task_log_archive tab, then removes them.
 
-Deploy steps (in this order):
-1. Copy LoonHQ_AppScript_v8.8.js → paste into script.google.com → Save
-2. Deploy → Manage deployments → pencil on EXISTING deployment → New version → Deploy
-   Version description: "v8.8.4 - snooze log fix, ping, interval units"
-3. Run setupHeaders() once from the editor (Apps Script editor → Run → Run function → setupHeaders)
-   Appends the log_type column to task_log. Append-only, never reorders or clears anything.
-Until this is deployed: snoozed tasks may still appear in task history, the login ping is a
-no-op (harmless, it is caught), and interval tasks with a week/month/year unit advance
-server-side as if the unit were days.
+Note on running vs deploying: functions run from the Apps Script EDITOR only need Save.
+A new deployment version is only required to change what the web app endpoint (doGet/doPost)
+serves, i.e. the getAllData filter.
+
+## setupHeaders CAVEAT (important)
+setupHeaders appends at getLastColumn()+1, and getLastColumn() reflects DATA extent, not the
+header row. task_log data rows already reach column 9 while the header row may only label 7,
+so setupHeaders can place 'details'/'log_type' at columns 10/11 and leave the real marker data
+in unlabelled columns 8/9. This does not break anything (isCompletionLog probes the ''
+overflow key) but it means the sheet can have labelled-but-empty columns. Run
+previewSnoozeLogCleanup() to see the actual header row before assuming a layout.
 
 ## Apps Script schema (tasks tab columns in order)
 task_id, name, type, weekday, day_of_month, recurrence_days, due_date, end_date,

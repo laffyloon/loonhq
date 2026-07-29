@@ -941,6 +941,46 @@ run('legacy row with no markers at all still counts as a completion', ()=>{
     throw new Error('pre-log_type completions must keep counting');
 });
 
+// ---- a task snoozed repeatedly then completed keeps exactly one credited completion ----
+run('snoozed 3x by Frankie then completed by Meredith = 1 completion, credited Meredith', ()=>{
+  const BASE7=['log_id','task_id','task_name','completed_by','completed_at','scope','notes'];
+  const V85=BASE7.concat(['log_type','details']);
+  const sheetHeader=BASE7.concat(['','']);            // the unlabelled state that caused the bug
+  const write=(o)=>{const row=V85.map(h=>o[h]!==undefined?o[h]:'');const obj={};
+    sheetHeader.map(String).forEach((h,i)=>{obj[h]=row[i]===undefined?'':row[i];});return obj;};
+  const log=[
+    write({log_id:'l1',task_id:'t1',task_name:'Water plants',completed_by:'Frankie',completed_at:'2026-07-20T10:00:00Z',scope:'household',log_type:'snooze',details:JSON.stringify({until_date:'2026-07-22'})}),
+    write({log_id:'l2',task_id:'t1',task_name:'Water plants',completed_by:'Frankie',completed_at:'2026-07-22T10:00:00Z',scope:'household',log_type:'snooze',details:JSON.stringify({until_date:'2026-07-24'})}),
+    write({log_id:'l3',task_id:'t1',task_name:'Water plants',completed_by:'Frankie',completed_at:'2026-07-24T10:00:00Z',scope:'household',log_type:'snooze',details:JSON.stringify({until_date:'2026-07-26'})}),
+    write({log_id:'l4',task_id:'t1',task_name:'Water plants',completed_by:'Meredith',completed_at:'2026-07-26T18:00:00Z',scope:'household',log_type:'completion',details:''}),
+  ];
+  const kept=log.filter(isCompletionLog);
+  if(kept.length!==1) throw new Error('expected exactly 1 surviving completion, got '+kept.length);
+  if(kept[0].log_id!=='l4') throw new Error('wrong row survived: '+kept[0].log_id);
+  if(kept[0].completed_by!=='Meredith') throw new Error('credit went to the wrong person: '+kept[0].completed_by);
+  // and the task must still be present in history at all
+  if(kept[0].task_name!=='Water plants') throw new Error('task vanished from history');
+});
+run('a task only ever snoozed, never completed, contributes 0 completions', ()=>{
+  const BASE7=['log_id','task_id','task_name','completed_by','completed_at','scope','notes'];
+  const V85=BASE7.concat(['log_type','details']);
+  const sheetHeader=BASE7.concat(['','']);
+  const write=(o)=>{const row=V85.map(h=>o[h]!==undefined?o[h]:'');const obj={};
+    sheetHeader.map(String).forEach((h,i)=>{obj[h]=row[i]===undefined?'':row[i];});return obj;};
+  const log=[write({log_id:'s1',task_id:'t9',task_name:'Never done',completed_by:'Frankie',completed_at:'2026-07-20T10:00:00Z',log_type:'snooze',details:JSON.stringify({until_date:'2026-07-22'})})];
+  if(log.filter(isCompletionLog).length!==0) throw new Error('snooze-only task should contribute nothing');
+});
+run('per-person credit is unchanged for genuine completions', ()=>{
+  const log=[
+    {log_id:'a',task_id:'t1',task_name:'A',completed_by:'Frankie',completed_at:'2026-07-26T10:00:00Z',log_type:'completion',details:''},
+    {log_id:'b',task_id:'t2',task_name:'B',completed_by:'Meredith',completed_at:'2026-07-26T11:00:00Z',log_type:'completion',details:''},
+    {log_id:'c',task_id:'t3',task_name:'C',completed_by:'Frankie',completed_at:'2026-07-26T12:00:00Z',log_type:'completion',details:''},
+  ];
+  const kept=log.filter(isCompletionLog);
+  const byPerson={};kept.forEach(l=>{byPerson[l.completed_by]=(byPerson[l.completed_by]||0)+1;});
+  if(byPerson.Frankie!==2||byPerson.Meredith!==1) throw new Error('credit changed: '+JSON.stringify(byPerson));
+});
+
 // ---- report ----
 asyncChain.then(tick).then(tick).then(function(){
 let fails = 0;
