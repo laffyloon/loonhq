@@ -409,14 +409,15 @@ after this list was written. Ordered by how much they hurt.
    - Proper fix: commit the logo into the repo and stop reading an uncommitted path. Any build
      run anywhere else will keep silently dropping it otherwise.
 
-5. STILL OWED: clear out the 101 bogus task_log rows.
-   - Frankie APPROVED this on 2026-07-30. The data-safety rule still requires a second
-     confirmation before running it, so ASK, then give him the clicks.
-   - purgeSnoozeLogs_CONFIRMED archives every row to a task_log_archive tab before removing it,
-     so it is reversible. 101 rows out, 207 completions remain.
-   - Verified nothing reads snooze/edit rows: every task_log consumer filters through
-     isCompletionLog first, and getAllData no longer sends them.
-   - Do this AFTER item 1, so a 20-second write is not mistaken for a purge problem.
+5. DONE 2026-07-30: the 101 bogus task_log rows were archived and removed.
+   - purgeSnoozeLogs_CONFIRMED ran in 4 seconds. 307 rows in, 101 archived, 206 completions
+     left. Breakdown of the removed rows: 16 Frankie, 82 Meredith, 3 blank author.
+   - They are all preserved on the task_log_archive tab, so this is reversible.
+   - Only run it again if new non-completion rows somehow appear. snoozeTask no longer writes
+     to task_log, so the count should stay at zero. previewSnoozeLogCleanup is the read-only
+     way to check.
+   - NOTE the row count was 307 not 308: deleting a test task also removes its completion
+     rows, which is the cascade in deleteTask working as intended.
 
 ## Pending backlog
 ARCHITECTURE (big, suggest tackling in Claude Code):
