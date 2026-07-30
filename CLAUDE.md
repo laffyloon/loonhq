@@ -279,10 +279,20 @@ NEVER create a new deployment. Always update the existing one.
 3. The URL must never change — it is hardcoded in build_v4.py and the frontend
 4. If setupHeaders() is needed (schema changes), tell the user to run it manually from the editor
 5. Always tell the user which of these steps they need to do — don't assume they remember
+6. ALWAYS supply a 10-20 word Version description to paste into the Description field.
+   Apps Script assigns the version NUMBER itself; the description is the only free text, and
+   it is the deployment history the user reads later. Rules for it:
+   - Lead with the version: "v8.10 - ..."
+   - Describe what changed SERVER-SIDE only. Frontend work does not belong in it.
+   - Scope it to what the user has not yet deployed, not just the newest commit. Check with
+     git what their last deployed content actually was; they may be several versions behind.
+   - Keep the file's own line-1 header comment (// LoonHQ Apps Script vX.Y) in sync too.
 
 ## HTML deploy instructions
 GitHub Pages deploys automatically when index.html is pushed to main.
-Claude Code handles this directly — no manual steps needed from the user.
+IMPORTANT: pushing to a feature branch does NOT deploy. Pages serves main only. Work pushed
+to claude/* is invisible to the live app until it reaches main, so never tell the user a
+frontend fix is live without confirming it is on origin/main.
 
 ## What to tell the user after each session
 Always end a session with a clear summary of:
