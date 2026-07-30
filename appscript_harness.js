@@ -292,6 +292,86 @@ run('purge then getAllData leaves only genuine completions', () => {
   if (d.task_log.length !== 2) throw new Error('expected 2 completions after purge, got ' + d.task_log.length);
 });
 
+// ---- the REAL sheet layout from Frankie's live task_log -------------------
+// header row verbatim from previewSnoozeLogCleanup on 2026-07-30, and rows in the exact
+// shapes it printed. Columns 6 and 7 are labelled notes,scope but hold scope,notes.
+const REAL_HDR = ['log_id','task_id','task_name','completed_by','completed_at','notes','scope','','','details','log_type'];
+function realLogSheet() {
+  return new Sheet('task_log', [
+    REAL_HDR.slice(),
+    ['l-1783970272199-454','t-1783206076526-991','Floor choices','Frankie','2026-07-13T19:17:52.199Z','household','','snooze','{"until_date":"2026-07-16"}','',''],
+    ['l-1784069737808-592','t-1783447527334-33','Call USAA','Meredith','2026-07-14T22:55:37.808Z','personal','','edit','','',''],
+    ['l-comp-1','t-9','Take out bins','Frankie','2026-07-27T09:00:00Z','household','','','completion'],
+    ['l-comp-2','t-4','My private thing','Meredith','2026-07-26T09:00:00Z','personal','','','completion'],
+  ]);
+}
+run('REAL LAYOUT the server filter catches both snooze AND edit rows', () => {
+  freshBook({ task_log: realLogSheet() });
+  const out = completionLogs_();
+  if (out.length !== 2) throw new Error('expected 2 completions, got ' + out.length + ' -> ' + JSON.stringify(out.map(o => o.log_id)));
+});
+run('REAL LAYOUT an edit row is the one the frontend probe cannot see', () => {
+  // both markers land in unlabelled columns, so an object keyed by header collapses them and
+  // the LAST one wins. For an edit row that is the empty details cell, so only the server,
+  // which reads raw cells, can reject it. This is why deploying is required.
+  freshBook({ task_log: realLogSheet() });
+  const rows = book.getSheetByName('task_log').data;
+  const obj = {}; REAL_HDR.forEach((h, i) => { obj[h] = rows[2][i] === undefined ? '' : rows[2][i]; });
+  if (obj[''] !== '') throw new Error("expected the '' overflow to collapse to empty, got " + JSON.stringify(obj['']));
+  if (logRowIsCompletion_(REAL_HDR, rows[2])) throw new Error('server filter failed to reject the edit row');
+});
+run('REAL LAYOUT scope is unreadable before the label fix', () => {
+  freshBook({ task_log: realLogSheet() });
+  const o = completionLogs_().find(x => x.log_id === 'l-comp-2');
+  if (o.scope !== '') throw new Error('expected scope to be blank pre-fix, got ' + JSON.stringify(o.scope));
+  if (o.notes !== 'personal') throw new Error('expected the scope value to be stuck in notes, got ' + JSON.stringify(o.notes));
+});
+run('fixTaskLogHeaderLabels swaps the labels and leaves every data cell alone', () => {
+  const sheets = freshBook({ task_log: realLogSheet() });
+  const dataBefore = JSON.stringify(sheets.task_log.data.slice(1));
+  const r = fixTaskLogHeaderLabels();
+  if (!r.ok || !r.changed) throw new Error('did not report a change: ' + JSON.stringify(r));
+  const hdr = sheets.task_log.data[0];
+  if (hdr[5] !== 'scope' || hdr[6] !== 'notes') throw new Error('labels not swapped: ' + JSON.stringify(hdr));
+  if (JSON.stringify(sheets.task_log.data.slice(1)) !== dataBefore) throw new Error('a DATA cell changed');
+});
+run('after the label fix scope reads correctly for household and personal', () => {
+  freshBook({ task_log: realLogSheet() });
+  fixTaskLogHeaderLabels();
+  const out = completionLogs_();
+  const hh = out.find(x => x.log_id === 'l-comp-1'), pers = out.find(x => x.log_id === 'l-comp-2');
+  if (hh.scope !== 'household') throw new Error('household scope wrong: ' + JSON.stringify(hh.scope));
+  if (pers.scope !== 'personal') throw new Error('personal scope wrong: ' + JSON.stringify(pers.scope));
+  if (out.length !== 2) throw new Error('the fix changed which rows survive: ' + out.length);
+});
+run('fixTaskLogHeaderLabels is idempotent', () => {
+  freshBook({ task_log: realLogSheet() });
+  fixTaskLogHeaderLabels();
+  const second = fixTaskLogHeaderLabels();
+  if (second.changed !== false) throw new Error('second run reported a change');
+});
+run('fixTaskLogHeaderLabels REFUSES an unexpected layout', () => {
+  const odd = new Sheet('task_log', [['log_id','task_id','task_name','completed_by','completed_at','scope_x','notes_y'], ['a','b','c','d','e','f','g']]);
+  freshBook({ task_log: odd });
+  const r = fixTaskLogHeaderLabels();
+  if (!r.error) throw new Error('should have refused, returned ' + JSON.stringify(r));
+  if (odd.data[0][5] !== 'scope_x') throw new Error('it modified the sheet anyway');
+});
+run('the label fix does not disturb the completion filter', () => {
+  freshBook({ task_log: realLogSheet() });
+  const before = completionLogs_().map(o => o.log_id).join(',');
+  fixTaskLogHeaderLabels();
+  const after = completionLogs_().map(o => o.log_id).join(',');
+  if (before !== after) throw new Error('filter changed: ' + before + ' -> ' + after);
+});
+run('purge still works on the real layout, and keeps both completions', () => {
+  const sheets = freshBook({ task_log: realLogSheet() });
+  const r = purgeSnoozeLogs_CONFIRMED();
+  if (r.moved !== 2) throw new Error('expected 2 bogus rows moved, got ' + r.moved);
+  const left = sheets.task_log.data.slice(1).map(x => x[0]).join(',');
+  if (left !== 'l-comp-1,l-comp-2') throw new Error('wrong survivors: ' + left);
+});
+
 // ---- endpoint plumbing ---------------------------------------------------
 run('doGet ping responds ok', () => {
   freshBook();

@@ -19,7 +19,7 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 - index.html — the entire app (built output, source of truth for deployment)
 - build_v4.py — Python build script that generates index.html
 - qa_harness.js — Node.js DOM mock + 237 frontend runtime checks
-- appscript_harness.js — SpreadsheetApp mock + 27 server-side checks (correctness AND API cost)
+- appscript_harness.js — SpreadsheetApp mock + 36 server-side checks (correctness AND API cost)
 - e2e_harness.js — Playwright/Chromium checks + 28 real-browser checks (CSS, events, layout)
 - LoonHQ_AppScript_v8.10.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
@@ -85,6 +85,23 @@ serves, i.e. the getAllData filter.
 - findRow reads only the id column via getRange, not getDataRange over every column.
 - appscript_harness.js counts API calls and FAILS if any of these regress, so the cost
   guarantees are enforced rather than assumed.
+
+## task_log column labels are SWAPPED on the live sheet (found 2026-07-30)
+previewSnoozeLogCleanup on Frankie's real sheet returned:
+  ["log_id","task_id","task_name","completed_by","completed_at","notes","scope","","","details","log_type"]
+Columns 6 and 7 are labelled notes,scope but every row ever written holds scope,notes:
+HEADERS.task_log has had scope BEFORE notes since v8.1, and appendRow writes by the code's
+HEADERS order, not by the sheet's actual header row. Consequences before the fix:
+- sheetToObjects returns scope:'' for every log row, so (l.scope||'household') sent EVERYTHING
+  to household. Personal History was empty and personal completions were counted as household.
+- fixTaskLogHeaderLabels() swaps the two LABELS only, touches no data cell, is guarded against
+  any other layout, and is idempotent. Run once from the editor.
+Second, separate consequence of the same sheet: snooze markers sit in UNLABELLED columns 8/9
+while 'details'/'log_type' were appended at 10/11 (the setupHeaders caveat below). Because both
+markers collapse under the '' key and the LAST one wins, an EDIT row collapses to '' and the
+frontend probe cannot see it. Only the server, which reads raw cells, can reject it. So edit
+rows counted as completions until the v8.9+ getAllData filter is actually DEPLOYED. 101 of 308
+rows were non-completions: 16 Frankie, 82 Meredith, 3 blank.
 
 ## setupHeaders CAVEAT (important)
 setupHeaders appends at getLastColumn()+1, and getLastColumn() reflects DATA extent, not the

@@ -690,6 +690,39 @@ function reassignCompletion(data) {
   return { ok: true };
 }
 
+// The task_log header row labels column 6 'notes' and column 7 'scope', but appendRow has
+// ALWAYS written scope into 6 and notes into 7 (HEADERS.task_log has had scope first since
+// v8.1). So the two labels are simply swapped relative to every row ever written, which makes
+// sheetToObjects hand back scope:'' for every log row. Effect in the app: Personal History is
+// empty and personal completions are counted as household.
+//
+// This swaps the two LABELS only. It does not touch a single data cell. It is guarded, so it
+// refuses to run unless the sheet is in the exact known-bad state, and it is a no-op once
+// fixed. Run it from the editor, then reload the app.
+function fixTaskLogHeaderLabels() {
+  var sheet = getSheet('task_log');
+  if (!sheet) { Logger.log('no task_log tab'); return { error: 'no task_log tab' }; }
+  var lastCol = sheet.getLastColumn();
+  var row = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(String);
+  Logger.log('before: ' + JSON.stringify(row));
+  if (row[5] === 'scope' && row[6] === 'notes') {
+    Logger.log('already correct, nothing to do');
+    return { ok: true, changed: false };
+  }
+  if (row[5] !== 'notes' || row[6] !== 'scope') {
+    Logger.log('UNEXPECTED layout at columns 6 and 7, refusing to touch it.');
+    Logger.log('  column 6 = ' + JSON.stringify(row[5]) + ', column 7 = ' + JSON.stringify(row[6]));
+    return { error: 'unexpected header layout', col6: row[5], col7: row[6] };
+  }
+  sheet.getRange(1, 6).setValue('scope');
+  sheet.getRange(1, 7).setValue('notes');
+  resetSheetCache_();
+  var after = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(String);
+  Logger.log('after:  ' + JSON.stringify(after));
+  Logger.log('swapped the two labels. No data cells were touched.');
+  return { ok: true, changed: true };
+}
+
 // ── MIGRATION UTILITIES ───────────────────────────────────────────────────────
 // Run manually from the Apps Script editor ONCE after deploying v8.2.
 // Safe to run: only creates rows in tasks, never deletes data.
