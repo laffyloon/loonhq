@@ -326,6 +326,20 @@ FEATURES:
 - Packing list templates / trip checklists
 - Vacation planning (future)
 
+## Response format — Frankie is NOT a developer (added 2026-07-30 at his request)
+This is the most important style rule. He asked for it directly after several responses
+buried the takeaway in technical prose.
+- START with what changed, in plain language, 1-3 sentences.
+- END with a clearly headed list of HIS action items, or "Nothing to do" when there are none.
+- Version bumps: always say WHY the number changed. Do not let a new version number appear
+  for the first time inside a paragraph about something else.
+- Technical detail is opt-in. Keep root-cause explanations to one short line, or leave them
+  out and offer them. Do not explain the diagnosis unless he asked or it changes his actions.
+- Never make him hunt for whether he needs to do something. If a fix is already live and
+  needs nothing from him, say exactly that up front.
+- Test counts, file names, commit hashes, CSS class names and function names are noise to him
+  unless he needs to type them. Cut them.
+
 ## Style rules — always follow
 - No em dashes. Use hyphens or reword.
 - No filler openers (Great!, Sure!, Let me..., Here's what I found...)
