@@ -242,7 +242,13 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .batch-bar{position:absolute;bottom:0;left:0;right:0;background:var(--text);color:#fff;padding:10px 14px;display:flex;flex-direction:column;align-items:stretch;gap:9px;z-index:35;padding-bottom:calc(10px + var(--safe-bottom));transform:translateY(100%);transition:transform .25s}
 .batch-top{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
 .batch-top-actions{display:flex;gap:8px;flex-shrink:0}
+/* The bar floats over the list, so without this the LAST card sits underneath it and
+   cannot be tapped: you can drag it into view but it springs back on release. The scroller
+   reserves exactly the bar's height while batch mode is on, so every card can be reached.
+   --batch-h is measured from the real bar in enterBatch, because its height depends on the
+   safe-area inset and on how the two rows wrap. */
 .batch-bar.on{transform:translateY(0)}
+.scroll.batch-open{padding-bottom:calc(var(--batch-h, 132px) + 14px);scroll-padding-bottom:calc(var(--batch-h, 132px) + 14px)}
 .batch-count{font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .batch-actions{display:flex;gap:8px}
 .batch-actions .batch-btn{flex:1 1 0;justify-content:center;min-width:0}
@@ -1702,8 +1708,34 @@ function attachLongPress(cardEl,task){
   cardEl.addEventListener('touchend',function(){clearTimeout(longPressTimer);});
   cardEl.addEventListener('contextmenu',function(e){e.preventDefault();if(!selectMode)enterBatch();toggleSelect(task.task_id);});
 }
-function enterBatch(){selectMode=true;selectedTaskIds.clear();document.getElementById('batch-bar').classList.add('on');updateBatchCount();}
-function exitBatch(){selectMode=false;selectedTaskIds.clear();document.getElementById('batch-bar').classList.remove('on');}
+function enterBatch(){
+  selectMode=true;selectedTaskIds.clear();
+  var bar=document.getElementById('batch-bar');
+  bar.classList.add('on');
+  applyBatchInset();
+  updateBatchCount();
+}
+// Measure the bar and hand its height to the scroller. Called on enter and on resize, since
+// rotating the phone changes how the two rows lay out.
+function applyBatchInset(){
+  var bar=document.getElementById('batch-bar'),sc=document.getElementById('task-scroll');
+  if(!bar||!sc)return;
+  var h=bar.offsetHeight||132;
+  sc.style.setProperty('--batch-h',h+'px');
+  sc.classList.add('batch-open');
+}
+function clearBatchInset(){
+  var sc=document.getElementById('task-scroll');
+  if(!sc)return;
+  sc.classList.remove('batch-open');
+  sc.style.removeProperty('--batch-h');
+}
+function exitBatch(){
+  selectMode=false;selectedTaskIds.clear();
+  document.getElementById('batch-bar').classList.remove('on');
+  clearBatchInset();
+}
+if(typeof window!=='undefined'&&window.addEventListener)window.addEventListener('resize',function(){if(selectMode)applyBatchInset();});
 function selectAll(){
   if(!selectMode)enterBatch();
   document.querySelectorAll('.tc-wrap[data-task-id]').forEach(function(wrap){

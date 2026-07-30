@@ -354,6 +354,60 @@ const ok = (n, cond, detail) => results.push([cond ? 'PASS' : 'FAIL', n + (cond 
   ok('neither row inside the bar overflows', fit.rows.every(r => r.sw <= r.cw + 1), JSON.stringify(fit.rows));
   ok('the batch bar does not push the page sideways', fit.docScroll <= fit.docClient + 1, 'doc ' + fit.docScroll + ' vs ' + fit.docClient);
 
+  // ---- the LAST card must be reachable, not hidden under the bar --------------
+  // Frankie could see the last task by dragging, but it sprang back on release and could
+  // never be tapped. The bar floats over the scroller, so the scroller has to reserve room.
+  await page.evaluate(() => exitBatch());
+  await page.waitForTimeout(SETTLE);
+  // give the list enough cards to actually scroll
+  await page.evaluate(() => {
+    const t = new Date().toISOString().split('T')[0];
+    for (let i = 0; i < 14; i++) state.tasks.push({ task_id: 'pad' + i, name: 'Padding task ' + i, type: 'one_off', due_date: t, owner: '', scope: 'household', status: 'active' });
+    rebuildTaskIndex(); renderTasks();
+  });
+  await page.evaluate(() => enterBatch());
+  await page.waitForTimeout(SETTLE + 150);
+  await page.evaluate(() => { const sc = document.getElementById('task-scroll'); sc.scrollTop = sc.scrollHeight; });
+  await page.waitForTimeout(SETTLE);
+
+  const reach = await page.evaluate(() => {
+    const sc = document.getElementById('task-scroll');
+    const cards = [...document.querySelectorAll('#task-list .tc')];
+    const last = cards[cards.length - 1];
+    const lr = last.getBoundingClientRect();
+    const br = document.getElementById('batch-bar').getBoundingClientRect();
+    const mid = { x: Math.round(lr.left + lr.width / 2), y: Math.round(lr.top + lr.height / 2) };
+    const hit = document.elementFromPoint(mid.x, mid.y);
+    return {
+      cards: cards.length,
+      lastBottom: Math.round(lr.bottom), barTop: Math.round(br.top),
+      atBottom: sc.scrollTop >= sc.scrollHeight - sc.clientHeight - 2,
+      hitIsInsideLastCard: !!(hit && last.contains(hit)),
+      hitIsBar: !!(hit && hit.closest('#batch-bar')),
+      hitTag: hit ? (hit.className || hit.tagName) : null,
+    };
+  });
+  ok('the list scrolled all the way down', reach.atBottom, JSON.stringify(reach));
+  ok('the last card clears the batch bar', reach.lastBottom <= reach.barTop + 1,
+     'last card bottom ' + reach.lastBottom + ' vs bar top ' + reach.barTop);
+  ok('tapping the middle of the last card hits the CARD, not the bar', reach.hitIsInsideLastCard && !reach.hitIsBar, JSON.stringify(reach));
+
+  // and it must actually select when tapped
+  const selectedLast = await page.evaluate(async () => {
+    const cards = [...document.querySelectorAll('#task-list .tc')];
+    const last = cards[cards.length - 1];
+    const r = last.getBoundingClientRect();
+    const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2));
+    if (!hit) return { ok: false, why: 'nothing at that point' };
+    hit.click();
+    await new Promise(res => setTimeout(res, 120));
+    return { ok: selectedTaskIds.size === 1, size: selectedTaskIds.size };
+  });
+  ok('the last card can actually be selected', selectedLast.ok, JSON.stringify(selectedLast));
+  await page.screenshot({ path: OUT + '/09-batch-last-card.png' });
+  await page.evaluate(() => { selectedTaskIds.clear(); updateBatchCount(); selectAll(); });
+  await page.waitForTimeout(SETTLE);
+
   const labels = await page.locator('#batch-bar .batch-btn').allInnerTexts();
   ok('batch mode offers Delete', labels.some(t => /delete/i.test(t)), labels.join(' | '));
   ok('batch mode still offers Snooze, Complete and Select all', 

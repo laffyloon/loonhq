@@ -6,7 +6,14 @@ const fs = require('fs');
 function FakeEl(tag) {
   this.tagName = (tag || 'div').toUpperCase();
   this._classes = new Set();
-  this.style = {};
+  // real CSSStyleDeclaration supports custom properties; the app uses them for the
+  // batch-bar inset, so the mock needs them too
+  this.style = {
+    _custom: {},
+    setProperty: function(k, v){ this._custom[k] = v; },
+    removeProperty: function(k){ delete this._custom[k]; },
+    getPropertyValue: function(k){ return this._custom[k] !== undefined ? this._custom[k] : ''; },
+  };
   this.children = [];
   this.dataset = {};
   this._attrs = {};

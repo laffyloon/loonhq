@@ -20,7 +20,7 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 - build_v4.py — Python build script that generates index.html
 - qa_harness.js — Node.js DOM mock + 237 frontend runtime checks
 - appscript_harness.js — SpreadsheetApp mock + 54 server-side checks (correctness, API cost, container reuse)
-- e2e_harness.js — Playwright/Chromium checks + 57 real-browser checks (CSS, events, layout)
+- e2e_harness.js — Playwright/Chromium checks + 61 real-browser checks (CSS, events, layout)
 - LoonHQ_AppScript_v8.12.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
 
@@ -342,6 +342,12 @@ its own unfiltered feed. Do not "fix" it by loosening isCompletionLog.
   at 430 the old bar fitted and the test proved nothing.
 - MASS DELETE added, with a server-side batchDelete action so the whole selection is one
   request and rows come out in blocks.
+- THE BATCH BAR COVERED THE LAST TASK. It is position:absolute over #task-scroll, so the
+  final card sat underneath it: visible if you dragged, but it sprang back and could never be
+  tapped. enterBatch now measures the bar and sets --batch-h on the scroller, and
+  .scroll.batch-open reserves that height as padding-bottom (plus scroll-padding-bottom).
+  exitBatch clears it, and a resize listener re-measures. Do NOT hardcode the height: it
+  depends on the safe-area inset and on how the two rows wrap.
 - LOGO restored. It had been building as src="" since 2026-07-13 because build_v4.py read the
   data URI from /home/claude/logo_uri.txt, outside the repo. Recovered the real 256x256 WebP
   from commit 240e11e, committed it as logo_uri.txt, and the build now ABORTS rather than
