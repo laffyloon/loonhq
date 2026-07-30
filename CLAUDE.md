@@ -19,7 +19,7 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 - index.html — the entire app (built output, source of truth for deployment)
 - build_v4.py — Python build script that generates index.html
 - qa_harness.js — Node.js DOM mock + 237 runtime checks
-- LoonHQ_AppScript_v8.8.js — current Apps Script source (deploy separately to script.google.com)
+- LoonHQ_AppScript_v8.10.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
 
 ## Build workflow
@@ -44,8 +44,9 @@ Real user data is live in the sheet.
 index.html in the repo is the live deployed build. build_v4.py is the source of truth.
 
 ## AppScript deploy state
-v8.8 (snooze log fix, ping, interval units) WAS deployed by the user on 2026-07-29.
-v8.9 added task_log reading/cleanup and is NOT yet deployed:
+The repo file is LoonHQ_AppScript_v8.10.js (name tracks the app's major.minor, not the
+AppScript's own history). Deployed by the user up to the v8.8 content on 2026-07-29.
+Still NOT in the user's editor (added in v8.9):
 - logRowIsCompletion_ / completionLogs_ : getAllData now filters on RAW cells, so it works
   regardless of which task_log columns the sheet has labelled.
 - previewSnoozeLogCleanup() : read-only diagnostic, dumps the real header row + bogus row count.
