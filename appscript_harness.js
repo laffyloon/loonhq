@@ -504,6 +504,64 @@ run('COST the purge of 101 rows does not cost 101 calls', () => {
   if (log.data.length - 1 !== 150 - expected) throw new Error('wrong number of completions left');
 });
 
+// ---- batchDelete -----------------------------------------------------------
+run('batchDelete removes every requested task and all their log rows', () => {
+  const log = new Sheet('task_log', [HEADERS.task_log.slice(),
+    ['l1','t1','A','F','x','household','','','completion'],
+    ['l2','t2','B','F','x','household','','','completion'],
+    ['l3','t1','A','F','x','household','','','completion'],
+    ['l4','t9','Keep','F','x','household','','','completion']]);
+  const sheets = freshBook({ task_log: log });
+  const r = batchDelete({ task_ids: ['t1', 't2'] });
+  if (!r.ok) throw new Error('failed: ' + JSON.stringify(r));
+  if (r.deleted !== 2) throw new Error('reported ' + r.deleted + ' deleted, expected 2');
+  const tasksLeft = sheets.tasks.data.slice(1).map(x => x[0]);
+  if (tasksLeft.length) throw new Error('tasks survived: ' + tasksLeft);
+  const logsLeft = log.data.slice(1).map(x => x[0]);
+  if (logsLeft.join(',') !== 'l4') throw new Error('wrong log rows left: ' + logsLeft);
+});
+run('batchDelete leaves unrelated tasks and logs alone', () => {
+  const sheets = freshBook();
+  const r = batchDelete({ task_ids: ['t1'] });
+  if (r.deleted !== 1) throw new Error('deleted ' + r.deleted);
+  const left = sheets.tasks.data.slice(1).map(x => x[0]);
+  if (left.join(',') !== 't2') throw new Error('expected only t2 to remain, got ' + left);
+});
+run('batchDelete with an empty or unknown list is a safe no-op', () => {
+  const sheets = freshBook();
+  const before = sheets.tasks.data.length;
+  if (batchDelete({ task_ids: [] }).deleted !== 0) throw new Error('empty list deleted something');
+  if (batchDelete({}).deleted !== 0) throw new Error('missing list deleted something');
+  if (batchDelete({ task_ids: ['nope'] }).deleted !== 0) throw new Error('unknown id deleted something');
+  if (sheets.tasks.data.length !== before) throw new Error('sheet changed');
+});
+run('COST batchDelete of 20 tasks is a handful of calls, not one per task', () => {
+  const rows = [TASK_HDR.slice()];
+  const ids = [];
+  for (let i = 0; i < 40; i++) { const id = 'x' + i; ids.push(id); rows.push(taskRow({ task_id: id, name: 'T' + i, type: 'one_off', due_date: '2026-08-01', status: 'active' })); }
+  const tasks = new Sheet('tasks', rows);
+  freshBook({ tasks: tasks });
+  const half = ids.filter((_, i) => i < 20);          // a contiguous block of 20
+  resetOps();
+  batchDelete({ task_ids: half });
+  const calls = ops.deleteRow + ops.deleteRows;
+  if (calls > 3) throw new Error(calls + ' delete calls for 20 contiguous tasks');
+  if (tasks.data.length - 1 !== 20) throw new Error('wrong survivors: ' + (tasks.data.length - 1));
+});
+run('batchDelete is reachable through doPost', () => {
+  const sheets = freshBook();
+  const out = JSON.parse(doPost({ postData: { contents: JSON.stringify({ action: 'batchDelete', data: { task_ids: ['t1'] } }) } }));
+  if (out.error) throw new Error('doPost rejected it: ' + out.error);
+  if (out.deleted !== 1) throw new Error('deleted ' + out.deleted);
+});
+run('batchDelete works on a REUSED container', () => {
+  freshBook();
+  doPost({ postData: { contents: JSON.stringify({ action: 'batchDelete', data: { task_ids: ['t1'] } }) } });
+  newExecution();
+  const out = JSON.parse(doPost({ postData: { contents: JSON.stringify({ action: 'batchDelete', data: { task_ids: ['t2'] } }) } }));
+  if (out.error) throw new Error('second call failed: ' + out.error);
+});
+
 // ---- container reuse: THE v8.11 REGRESSION ---------------------------------
 // This is the bug that made task creation fail for Frankie on 2026-07-30. The item-7
 // caching stored Spreadsheet/Sheet handles in globals, and nothing cleared them when a new

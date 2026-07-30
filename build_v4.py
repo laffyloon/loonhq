@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
-"""LoonHQ v8.11 build. Source of truth for index.html: edit this file, then run
+"""LoonHQ v8.12 build. Source of truth for index.html: edit this file, then run
    python3 build_v4.py. Never edit index.html directly."""
 
 API = "https://script.google.com/macros/s/AKfycbzL362NjJliCBSbR9uIo1lacPEk5uYw1C-SO8OvlLQ2QMCVC3lFh7y8Gs8z0Gn0lVSK/exec"
 
-with open("/home/claude/logo_uri.txt") as f: LOGO = f.read().strip()
+# The logo lives IN the repo. It used to be read from /home/claude/logo_uri.txt, a path
+# outside the repo; on any other machine that file is missing or empty, so every build there
+# silently emitted src="" and the logo vanished. It was lost that way on 2026-07-13 and
+# recovered from commit 240e11e on 2026-07-30. Fail loudly rather than ship a blank logo.
+import os as _os
+_LOGO_PATH = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "logo_uri.txt")
+with open(_LOGO_PATH) as f: LOGO = f.read().strip()
+if not LOGO.startswith("data:image/"):
+    raise SystemExit("build aborted: %s is missing or not a data URI (logo would render blank)" % _LOGO_PATH)
 with open("/home/claude/icon_uri.txt") as f: ICON = f.read().strip()
 
 # ─── CSS ──────────────────────────────────────────────────────────────────────
@@ -233,13 +241,20 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .past-proj-toggle{background:none;border:none;font-size:12.5px;color:var(--text3);cursor:pointer;padding:8px 0;display:flex;align-items:center;gap:4px;font-family:inherit}
 .past-proj-toggle:hover{color:var(--text2)}
 /* BATCH BAR */
-.batch-bar{position:absolute;bottom:0;left:0;right:0;background:var(--text);color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;z-index:35;padding-bottom:calc(12px + var(--safe-bottom));transform:translateY(100%);transition:transform .25s}
+/* Two rows. It used to be one non-wrapping row holding count + Select all + Cancel +
+   Snooze + Complete all, which overflowed at phone width, and Delete makes six. */
+.batch-bar{position:absolute;bottom:0;left:0;right:0;background:var(--text);color:#fff;padding:10px 14px;display:flex;flex-direction:column;align-items:stretch;gap:9px;z-index:35;padding-bottom:calc(10px + var(--safe-bottom));transform:translateY(100%);transition:transform .25s}
+.batch-top{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
+.batch-top-actions{display:flex;gap:8px;flex-shrink:0}
 .batch-bar.on{transform:translateY(0)}
-.batch-count{font-size:13.5px;font-weight:500}
+.batch-count{font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .batch-actions{display:flex;gap:8px}
-.batch-btn{background:rgba(255,255,255,.15);border:none;color:#fff;padding:7px 12px;border-radius:6px;font-size:12.5px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:4px}
+.batch-actions .batch-btn{flex:1 1 0;justify-content:center;min-width:0}
+.batch-btn{background:rgba(255,255,255,.15);border:none;color:#fff;padding:7px 10px;border-radius:6px;font-size:12.5px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:4px;white-space:nowrap}
 .batch-btn:hover{background:rgba(255,255,255,.25)}
 .batch-btn.g{background:var(--green)}
+.batch-btn.r{background:var(--red)}
+.batch-btn.ghost{background:transparent;border:1px solid rgba(255,255,255,.3)}
 
 /* MODALS */
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;display:flex;align-items:flex-end;justify-content:center}
@@ -592,14 +607,17 @@ def HTML_BODY(logo, icon):
         <div id="task-list"></div>
       </div>
       <div class="batch-bar" id="batch-bar">
-        <div style="display:flex;align-items:center;gap:10px">
+        <div class="batch-top">
           <div class="batch-count" id="batch-count">0 selected</div>
-          <button class="batch-btn" onclick="selectAll()" style="font-size:12px;padding:4px 8px"><i class="ti ti-select-all"></i> Select all</button>
+          <div class="batch-top-actions">
+            <button class="batch-btn ghost" onclick="selectAll()"><i class="ti ti-select-all"></i> Select all</button>
+            <button class="batch-btn ghost" onclick="exitBatch()">Cancel</button>
+          </div>
         </div>
         <div class="batch-actions">
-          <button class="batch-btn" onclick="exitBatch()">Cancel</button>
           <button class="batch-btn" onclick="openBatchSnooze()"><i class="ti ti-clock"></i> Snooze</button>
-          <button class="batch-btn g" onclick="batchCompleteSelected()"><i class="ti ti-check"></i> Complete all</button>
+          <button class="batch-btn r" id="batch-del-btn" onclick="batchDeleteSelected()"><i class="ti ti-trash"></i> Delete</button>
+          <button class="batch-btn g" onclick="batchCompleteSelected()"><i class="ti ti-check"></i> Complete</button>
         </div>
       </div>
     </div>
@@ -1724,6 +1742,26 @@ function batchCompleteSelected(){
     picks.forEach(function(p){_recentlyCompleted.add(p.task_id);});
     renderTasks();setSyncState('loading','Completing...');
     apiPost({action:'batchComplete',data:{tasks:picks,completed_by:currentUser}}).then(function(){scheduleBgSync(SYNC_FAST);}).catch(function(){picks.forEach(function(p){_recentlyCompleted.delete(p.task_id);});actionFailed("Couldn't complete tasks",renderTasks,'Could not complete',attempt);});
+  }
+  attempt();
+}
+// Mass delete. One request for the whole selection, and the server removes the task rows
+// and their log rows in blocks. Optimistic like every other action, with a working retry.
+function batchDeleteSelected(){
+  var ids=[];selectedTaskIds.forEach(function(id){ids.push(id);});
+  if(!ids.length)return;
+  var n=ids.length;
+  if(!confirm('Delete '+n+' task'+(n>1?'s':'')+'? This cannot be undone.'))return;
+  exitBatch();
+  function attempt(){
+    var prevTasks=state.tasks.slice();
+    state.tasks=state.tasks.filter(function(t){return ids.indexOf(t.task_id)<0;});
+    rebuildTaskIndex();
+    if(currentView==='tasks')renderTasks();
+    setSyncState('loading','Deleting...');
+    apiPost({action:'batchDelete',data:{task_ids:ids}}).then(function(){scheduleBgSync(SYNC_FAST);})
+      .catch(function(){state.tasks=prevTasks;rebuildTaskIndex();
+        actionFailed("Couldn't delete "+n+' task'+(n>1?'s':''),renderTasks,'Could not delete',attempt);});
   }
   attempt();
 }

@@ -1,4 +1,4 @@
-// LoonHQ Apps Script v8.11
+// LoonHQ Apps Script v8.12
 //
 // DEPLOY: paste over everything in script.google.com -> Save -> Deploy ->
 //         Manage deployments -> pencil on the EXISTING deployment -> New version.
@@ -345,6 +345,7 @@ function doPost(e) {
     else if (action === 'deleteTask') result = deleteTask(data);
     else if (action === 'completeTask') result = completeTask(data);
     else if (action === 'batchComplete') result = batchComplete(data);
+    else if (action === 'batchDelete') result = batchDelete(data);
     else if (action === 'snoozeTask') result = snoozeTask(data);
     else if (action === 'addProject') result = addProject(data);
     else if (action === 'updateProject') result = updateProject(data);
@@ -542,6 +543,41 @@ function completeTask(data) {
   return { ok: true };
 }
 
+// One request instead of one per task. Both the task rows and every matching log row are
+// removed in blocks, so deleting 20 tasks costs a handful of API calls, not hundreds.
+function batchDelete(data) {
+  var ids = (data.task_ids || []).map(String);
+  if (!ids.length) return { ok: true, deleted: 0 };
+  var wanted = {};
+  ids.forEach(function(id) { wanted[id] = true; });
+
+  var taskSheet = getSheet('tasks');
+  var tIdx = headersOf_(taskSheet).indexOf('task_id');
+  var deleted = 0;
+  if (tIdx >= 0) {
+    var lastT = taskSheet.getLastRow();
+    if (lastT >= 2) {
+      var tCol = taskSheet.getRange(2, tIdx + 1, lastT - 1, 1).getValues();
+      var tRows = [];
+      for (var i = 0; i < tCol.length; i++) if (wanted[String(tCol[i][0])]) tRows.push(i + 2);
+      deleted = tRows.length;
+      deleteRowsBatched_(taskSheet, tRows);
+    }
+  }
+
+  var logSheet = getSheet('task_log');
+  var lIdx = headersOf_(logSheet).indexOf('task_id');
+  if (lIdx >= 0) {
+    var lastL = logSheet.getLastRow();
+    if (lastL >= 2) {
+      var lCol = logSheet.getRange(2, lIdx + 1, lastL - 1, 1).getValues();
+      var lRows = [];
+      for (var j = 0; j < lCol.length; j++) if (wanted[String(lCol[j][0])]) lRows.push(j + 2);
+      deleteRowsBatched_(logSheet, lRows);
+    }
+  }
+  return { ok: true, deleted: deleted };
+}
 function batchComplete(data) {
   (data.tasks || []).forEach(function(t) { completeTask(Object.assign({ completed_by: data.completed_by }, t)); });
   return { ok: true };

@@ -292,6 +292,103 @@ const ok = (n, cond, detail) => results.push([cond ? 'PASS' : 'FAIL', n + (cond 
   ok('a successful write schedules a fast reconcile', fast.f > 0 && fast.f <= 1000, JSON.stringify(fast));
   ok('rollbacks still back off', fast.s >= 3000, JSON.stringify(fast));
 
+  // ---- the logo must actually render -----------------------------------------
+  // It built as src="" for two weeks because build_v4.py read it from a path outside the
+  // repo. It is committed now, so assert it is present AND that the browser decoded it.
+  const logo = await page.evaluate(async () => {
+    const el = document.querySelector('.sb-logo-icon');
+    if (!el) return { found: false };
+    const src = el.getAttribute('src') || '';
+    let loaded = el.complete && el.naturalWidth > 0;
+    if (!loaded && src) {
+      loaded = await new Promise(res => { const i = new Image(); i.onload = () => res(true); i.onerror = () => res(false); i.src = src; });
+    }
+    return { found: true, empty: src === '', isData: src.startsWith('data:image/'), len: src.length, loaded,
+             w: el.naturalWidth, h: el.naturalHeight };
+  });
+  ok('the logo element exists', logo.found, 'no .sb-logo-icon');
+  ok('the logo src is not empty', logo.found && !logo.empty, JSON.stringify(logo));
+  ok('the logo is a self-contained data URI, not a remote URL', logo.isData, JSON.stringify(logo));
+  ok('the browser actually decoded the logo image', logo.loaded && logo.w > 0, JSON.stringify(logo));
+
+  // ---- batch mode: the bar must FIT, and mass delete must exist -------------
+  // 360px, not the 430 used above. The old one-row bar fitted at 430 and only clipped
+  // "Complete all" at 360 and below, so testing at 430 proved nothing.
+  await page.setViewportSize({ width: 360, height: 850 });
+  await page.unroute('**script.google.com**');
+  let batchDeletePayload = null;
+  await page.route('**script.google.com**', async route => {
+    const req = route.request();
+    if (req.method() === 'POST') {
+      try { const b = JSON.parse(req.postData() || '{}'); if (b.action === 'batchDelete') batchDeletePayload = b.data; } catch (e) {}
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(FIXTURE) });
+  });
+  await page.evaluate(() => { window.confirm = () => true; });
+  await page.reload();
+  await page.waitForFunction(() => document.querySelectorAll('.tc').length > 0, { timeout: 8000 });
+  await page.evaluate(() => { window.confirm = () => true; });
+  await page.click('[data-view="tasks"]:visible');
+  await page.waitForTimeout(200);
+
+  await page.evaluate(() => enterBatch());
+  await page.waitForTimeout(SETTLE + 150);
+  ok('batch bar opens', await page.locator('#batch-bar.on').count() === 1, 'bar not shown');
+
+  await page.evaluate(() => selectAll());
+  await page.waitForTimeout(SETTLE);
+  const fit = await page.evaluate(() => {
+    const bar = document.getElementById('batch-bar');
+    const kids = [...bar.querySelectorAll('.batch-top, .batch-actions')];
+    return {
+      barW: Math.round(bar.getBoundingClientRect().width),
+      scrollW: bar.scrollWidth,
+      clientW: bar.clientWidth,
+      rows: kids.map(k => ({ sw: k.scrollWidth, cw: k.clientWidth })),
+      docScroll: document.documentElement.scrollWidth,
+      docClient: document.documentElement.clientWidth,
+    };
+  });
+  ok('the batch bar does not overflow its own width', fit.scrollW <= fit.clientW + 1, JSON.stringify(fit));
+  ok('neither row inside the bar overflows', fit.rows.every(r => r.sw <= r.cw + 1), JSON.stringify(fit.rows));
+  ok('the batch bar does not push the page sideways', fit.docScroll <= fit.docClient + 1, 'doc ' + fit.docScroll + ' vs ' + fit.docClient);
+
+  const labels = await page.locator('#batch-bar .batch-btn').allInnerTexts();
+  ok('batch mode offers Delete', labels.some(t => /delete/i.test(t)), labels.join(' | '));
+  ok('batch mode still offers Snooze, Complete and Select all', 
+     labels.some(t => /snooze/i.test(t)) && labels.some(t => /complete/i.test(t)) && labels.some(t => /select all/i.test(t)),
+     labels.join(' | '));
+
+  // every button must be fully inside the bar, not clipped at either edge
+  const clipped = await page.evaluate(() => {
+    const bar = document.getElementById('batch-bar').getBoundingClientRect();
+    return [...document.querySelectorAll('#batch-bar .batch-btn, #batch-bar .batch-count')]
+      .filter(el => { const r = el.getBoundingClientRect(); return r.left < bar.left - 1 || r.right > bar.right + 1; })
+      .map(el => el.textContent.trim() + ' @' + Math.round(el.getBoundingClientRect().right));
+  });
+  ok('no batch control is clipped by the bar edges', clipped.length === 0, clipped.join(', '));
+
+  // and the text must not be visually truncated inside its own button
+  const truncated = await page.evaluate(() => [...document.querySelectorAll('#batch-bar .batch-btn')]
+    .filter(b => b.scrollWidth > b.clientWidth + 1).map(b => b.textContent.trim()));
+  ok('no batch button text is cut off', truncated.length === 0, truncated.join(', '));
+
+  const selCount = await page.locator('#batch-count').innerText();
+  ok('select all reports a count', /\d+ selected/.test(selCount), 'count=' + selCount);
+  // Today shows Overdue + Today only, so select-all covers exactly the visible cards
+  const visibleBefore = await page.locator('.tc').count();
+  ok('select all selects every visible card', parseInt(selCount) === visibleBefore,
+     'count says ' + selCount + ' but ' + visibleBefore + ' cards are shown');
+
+  await page.click('#batch-del-btn');
+  await page.waitForTimeout(500);
+  ok('mass delete sends ONE request for the whole selection', batchDeletePayload !== null, 'no batchDelete call');
+  ok('mass delete sends every selected id, and no others',
+     batchDeletePayload && batchDeletePayload.task_ids.length === visibleBefore,
+     'sent ' + JSON.stringify(batchDeletePayload) + ' for ' + visibleBefore + ' selected');
+  ok('the deleted cards disappear immediately', await page.locator('.tc').count() === 0, 'cards remained');
+
   ok('no uncaught page errors', errors.length === 0, errors.slice(0, 5).join(' ~ '));
 
   await browser.close();
@@ -300,4 +397,12 @@ const ok = (n, cond, detail) => results.push([cond ? 'PASS' : 'FAIL', n + (cond 
   for (const [s, n] of results) { console.log((s === 'FAIL' ? 'FAIL  ' : 'pass  ') + n); if (s === 'FAIL') fails++; }
   console.log('\n' + results.length + ' browser checks, ' + fails + ' failed, ' + (results.length - fails) + ' passed');
   process.exit(fails ? 1 : 0);
-})().catch(e => { console.error('HARNESS ERROR: ' + e.message); process.exit(2); });
+})().catch(e => {
+  // Print whatever ran before the abort. Losing every result because one late step threw
+  // made it impossible to tell whether the earlier assertions had actually caught anything.
+  let fails = 0;
+  for (const [st, n] of results) { console.log((st === 'FAIL' ? 'FAIL  ' : 'pass  ') + n); if (st === 'FAIL') fails++; }
+  console.log('\n' + results.length + ' browser checks ran before the abort, ' + fails + ' failed');
+  console.error('HARNESS ERROR: ' + e.message);
+  process.exit(2);
+});

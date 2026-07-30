@@ -19,9 +19,9 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 - index.html — the entire app (built output, source of truth for deployment)
 - build_v4.py — Python build script that generates index.html
 - qa_harness.js — Node.js DOM mock + 237 frontend runtime checks
-- appscript_harness.js — SpreadsheetApp mock + 41 server-side checks (correctness, API cost, container reuse)
-- e2e_harness.js — Playwright/Chromium checks + 40 real-browser checks (CSS, events, layout)
-- LoonHQ_AppScript_v8.11.js — current Apps Script source (deploy separately to script.google.com)
+- appscript_harness.js — SpreadsheetApp mock + 54 server-side checks (correctness, API cost, container reuse)
+- e2e_harness.js — Playwright/Chromium checks + 57 real-browser checks (CSS, events, layout)
+- LoonHQ_AppScript_v8.12.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
 
 ## Build workflow
@@ -60,11 +60,11 @@ DO NOT recommend clearing, resetting, or deleting sheet data under any circumsta
 without explicit approval AND a second confirmation from Frankie. This is a hard rule.
 Real user data is live in the sheet.
 
-## Current version: v8.11
+## Current version: v8.12
 index.html in the repo is the live deployed build. build_v4.py is the source of truth.
 
 ## AppScript deploy state
-The repo file is LoonHQ_AppScript_v8.11.js (name tracks the app's major.minor, not the
+The repo file is LoonHQ_AppScript_v8.12.js (name tracks the app's major.minor, not the
 AppScript's own history). Deployed by the user up to the v8.8 content on 2026-07-29.
 Still NOT in the user's editor (added in v8.9):
 - logRowIsCompletion_ / completionLogs_ : getAllData now filters on RAW cells, so it works
@@ -322,7 +322,40 @@ its own unfiltered feed. Do not "fix" it by loosening isCompletionLog.
 - build_v4.py is the source of truth — edit it, then run python3 build_v4.py to regenerate index.html
 - Never edit index.html directly
 
-## NEXT SESSION — open bugs from Frankie's 2026-07-30 testing (START HERE)
+## v8.12 fixes (2026-07-30, second session)
+- NO-DUE-DATE TASKS LANDED ON TOMORROW. submitTask defaulted a blank due date with
+  new Date().toISOString().split('T')[0], which is the UTC date. Bucketing uses LOCAL midnight
+  (setHours(0,0,0,0)). Frankie is in Denver (UTC-6) and tests in the evening, so after 6pm
+  local the default was already tomorrow: the task saved fine but appeared under Tomorrow, not
+  Today, and looked like it had never been created. todayStr() now returns the local calendar
+  date and is used everywhere. qa_harness covers it under TZ=America/Denver.
+- DELETING A TASK TOOK 20-30 SECONDS. deleteTask read the whole task_log and then called
+  deleteRow once per matching row, each its own API round trip. deleteRowsBatched_ collapses
+  row numbers into descending contiguous runs and issues one deleteRows per run;
+  matchingRowNumbers_ reads only the id column. Same fix applied to clearChecked.
+- THE PURGE rewrites instead of deleting. 101 scattered rows would still be ~101 calls even
+  when batched, so purgeSnoozeLogs_CONFIRMED now archives in one setValues, writes the
+  survivors back in one setValues, and drops the tail with one deleteRows.
+- BATCH BAR OVERFLOWED at 360px and below, clipping "Complete all". It was one non-wrapping
+  row of five controls. Now two rows: count + Select all/Cancel on top, Snooze/Delete/Complete
+  below as equal-width buttons. Verified 320-430px. e2e runs the batch section at 360, NOT 430:
+  at 430 the old bar fitted and the test proved nothing.
+- MASS DELETE added, with a server-side batchDelete action so the whole selection is one
+  request and rows come out in blocks.
+- LOGO restored. It had been building as src="" since 2026-07-13 because build_v4.py read the
+  data URI from /home/claude/logo_uri.txt, outside the repo. Recovered the real 256x256 WebP
+  from commit 240e11e, committed it as logo_uri.txt, and the build now ABORTS rather than
+  shipping a blank logo. Never point this at a path outside the repo again.
+
+## STILL OPEN after v8.12
+- On a TIMEOUT the client still rolls back and says "Couldn't save", but a timeout means the
+  outcome is UNKNOWN and the write often landed. Preferred design: keep the optimistic state,
+  say "still saving", force a reconcile. err.timedOut is already set by _fetchTimeout, so the
+  handlers can distinguish; the work is threading it through ~14 catch sites.
+- Apps Script SERIALISES executions per user. SYNC_FAST (700ms) may make a getAllData collide
+  with the next write. Measure real timings before tuning further.
+
+## PREVIOUS SESSION notes (2026-07-30 first session) — mostly resolved above
 All reported against v8.11 with the container-reuse fix deployed. No code changes were made
 after this list was written. Ordered by how much they hurt.
 
