@@ -83,7 +83,7 @@ var SEED_ASSETS = [
 
 // ── SETUP ──────────────────────────────────────────────────────────────────────
 function setupHeaders() {
-  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var ss = spreadsheet_();
   Object.entries(HEADERS).forEach(function([tabName, cols]) {
     var sheet = ss.getSheetByName(tabName);
     if (!sheet) { sheet = ss.insertSheet(tabName); }
@@ -95,11 +95,31 @@ function setupHeaders() {
       }
     });
   });
+  resetSheetCache_();   // the header row just changed
 }
 
 // ── HELPERS ────────────────────────────────────────────────────────────────────
+// An execution is short lived, so opening the spreadsheet once and caching the sheet and
+// header lookups is safe and removes a pile of redundant API round trips. getAllData alone
+// used to re-open the spreadsheet six times.
+var _ss = null, _sheetCache = {}, _headerCache = {};
+function spreadsheet_() {
+  if (!_ss) _ss = SpreadsheetApp.openById(SHEET_ID);
+  return _ss;
+}
 function getSheet(name) {
-  return SpreadsheetApp.openById(SHEET_ID).getSheetByName(name);
+  if (!_sheetCache[name]) _sheetCache[name] = spreadsheet_().getSheetByName(name);
+  return _sheetCache[name];
+}
+// Invalidate after anything that changes the header row (setupHeaders) or adds a tab.
+function resetSheetCache_() { _sheetCache = {}; _headerCache = {}; }
+function headersOf_(sheet) {
+  var key = sheet.getName();
+  if (!_headerCache[key]) {
+    var lastCol = sheet.getLastColumn();
+    _headerCache[key] = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(String) : [];
+  }
+  return _headerCache[key];
 }
 
 function sheetToObjects(sheet) {
@@ -115,22 +135,32 @@ function sheetToObjects(sheet) {
 }
 
 function findRow(sheet, idCol, idVal) {
-  var data = sheet.getDataRange().getValues();
-  var headers = data[0].map(String);
-  var colIdx = headers.indexOf(idCol);
+  var colIdx = headersOf_(sheet).indexOf(idCol);
   if (colIdx < 0) return -1;
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][colIdx]) === String(idVal)) return i + 1;
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return -1;
+  // only the id column, not every column of every row
+  var col = sheet.getRange(2, colIdx + 1, lastRow - 1, 1).getValues();
+  var target = String(idVal);
+  for (var i = 0; i < col.length; i++) {
+    if (String(col[i][0]) === target) return i + 2;
   }
   return -1;
 }
 
 function updateRow(sheet, rowNum, updates) {
-  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
-  Object.entries(updates).forEach(function([key, val]) {
+  var headers = headersOf_(sheet);
+  if (!headers.length) return;
+  // one read plus one write, regardless of how many fields changed. The old version did a
+  // separate setValue per field, so a full task edit cost a dozen API round trips.
+  var range = sheet.getRange(rowNum, 1, 1, headers.length);
+  var row = range.getValues()[0];
+  var dirty = false;
+  Object.keys(updates).forEach(function(key) {
     var colIdx = headers.indexOf(key);
-    if (colIdx >= 0) sheet.getRange(rowNum, colIdx + 1).setValue(val);
+    if (colIdx >= 0) { row[colIdx] = updates[key]; dirty = true; }
   });
+  if (dirty) range.setValues([row]);
 }
 
 function appendRow(sheet, headers, obj) {
@@ -218,7 +248,7 @@ function previewSnoozeLogCleanup() {
 function purgeSnoozeLogs_CONFIRMED() {
   var res = findSnoozeLogRows_();
   if (!res.rows.length) { Logger.log('Nothing to clean up.'); return { ok: true, moved: 0 }; }
-  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var ss = spreadsheet_();
   var archive = ss.getSheetByName('task_log_archive');
   if (!archive) { archive = ss.insertSheet('task_log_archive'); archive.appendRow(res.headers); }
   res.rows.forEach(function(r) { archive.appendRow(r.values); });
@@ -664,7 +694,7 @@ function reassignCompletion(data) {
 // Run manually from the Apps Script editor ONCE after deploying v8.2.
 // Safe to run: only creates rows in tasks, never deletes data.
 function migrateSubtasks() {
-  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var ss = spreadsheet_();
   var subSheet = ss.getSheetByName('subtasks');
   if (!subSheet) { Logger.log('No subtasks tab found'); return; }
   var subs = sheetToObjects(subSheet);

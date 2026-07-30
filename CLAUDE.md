@@ -18,7 +18,8 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 ## Repo structure
 - index.html — the entire app (built output, source of truth for deployment)
 - build_v4.py — Python build script that generates index.html
-- qa_harness.js — Node.js DOM mock + 237 runtime checks
+- qa_harness.js — Node.js DOM mock + 237 frontend runtime checks
+- appscript_harness.js — SpreadsheetApp mock + 27 server-side checks (correctness AND API cost)
 - LoonHQ_AppScript_v8.10.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
 
@@ -29,6 +30,7 @@ Then copy output and extract (QA harness reads from /home/claude/extracted.js):
   python3 -c "import re; html=open('index.html').read(); scripts=re.findall(r'<script>(.*?)</script>',html,re.DOTALL); open('/home/claude/extracted.js','w').write(max(scripts,key=len))"
   node --check /home/claude/extracted.js
   node qa_harness.js
+Apps Script changes: node appscript_harness.js (reads LoonHQ_AppScript_*.js from the repo root)
 
 ## Deploy
 - HTML: commit and push index.html → GitHub Pages auto-deploys in ~60 sec
@@ -55,6 +57,16 @@ Still NOT in the user's editor (added in v8.9):
 Note on running vs deploying: functions run from the Apps Script EDITOR only need Save.
 A new deployment version is only required to change what the web app endpoint (doGet/doPost)
 serves, i.e. the getAllData filter.
+
+## AppScript performance (v8.10, closes the last item of the v8.8 request)
+- The spreadsheet is opened ONCE per execution and sheet + header lookups are cached
+  (spreadsheet_ / getSheet / headersOf_). getAllData used to call openById six times.
+  resetSheetCache_() must be called after anything that changes the header row.
+- updateRow does one getValues + one setValues for the whole row, not a setValue per field.
+  A full task edit went from about a dozen API round trips to two.
+- findRow reads only the id column via getRange, not getDataRange over every column.
+- appscript_harness.js counts API calls and FAILS if any of these regress, so the cost
+  guarantees are enforced rather than assumed.
 
 ## setupHeaders CAVEAT (important)
 setupHeaders appends at getLastColumn()+1, and getLastColumn() reflects DATA extent, not the
