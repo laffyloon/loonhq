@@ -20,6 +20,7 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 - build_v4.py — Python build script that generates index.html
 - qa_harness.js — Node.js DOM mock + 237 frontend runtime checks
 - appscript_harness.js — SpreadsheetApp mock + 27 server-side checks (correctness AND API cost)
+- e2e_harness.js — Playwright/Chromium checks + 28 real-browser checks (CSS, events, layout)
 - LoonHQ_AppScript_v8.10.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
 
@@ -31,6 +32,23 @@ Then copy output and extract (QA harness reads from /home/claude/extracted.js):
   node --check /home/claude/extracted.js
   node qa_harness.js
 Apps Script changes: node appscript_harness.js (reads LoonHQ_AppScript_*.js from the repo root)
+Real-browser pass (optional, needs global playwright + /opt/pw-browsers/chromium):
+  npx --yes http-server . -p 8099 -s &
+  NODE_PATH=$(npm root -g) node e2e_harness.js
+It intercepts the Apps Script endpoint, so it never touches the live sheet.
+
+## Testing layers (what each one can and cannot see)
+- qa_harness.js: pure logic + render paths against a DOM mock. FAST, but querySelector returns
+  a throwaway element, so it cannot see real CSS, real layout, or real event dispatch.
+- appscript_harness.js: the server file against an in-memory SpreadsheetApp. Also counts API
+  calls and fails on a cost regression. Not Google's runtime, so it proves logic, not behaviour.
+- e2e_harness.js: the built index.html in Chromium at phone width. The only layer that catches
+  CSS and layout problems.
+- ALWAYS wait ~250ms before asserting on computed styles or taking a screenshot: .who-opt and
+  similar transition for .15s, and a mid-animation reading looks like a bug that is not there.
+- A test that passes is worth nothing until you have seen it FAIL against the unfixed code.
+  Revert the fix, confirm the specific test breaks, restore. Several tests written this way
+  turned out to be vacuous and were only caught by doing this.
 
 ## Deploy
 - HTML: commit and push index.html → GitHub Pages auto-deploys in ~60 sec
