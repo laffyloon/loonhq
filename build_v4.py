@@ -1964,7 +1964,7 @@ function submitTask(){
   var name=document.getElementById('t-name').value.trim();if(!name){alert('Task name required');return;}
   var type=document.getElementById('t-type').value;
   var data={name:name,type:type,scope:pickedScope,owner:pickedScope==='personal'?currentUser:pickedOwner,notes:document.getElementById('t-notes').value.trim(),status:'active'};
-  if(type==='one_off'){var due=document.getElementById('t-due').value||'';var projSel2=document.getElementById('t-proj-link');var hasProj=projSel2&&projSel2.value;if(!due&&!editingTask&&!hasProj){due=new Date().toISOString().split('T')[0];}data.due_date=due;data.reminder_offset=document.getElementById('t-remind').value||'';}
+  if(type==='one_off'){var due=document.getElementById('t-due').value||'';var projSel2=document.getElementById('t-proj-link');var hasProj=projSel2&&projSel2.value;if(!due&&!editingTask&&!hasProj){due=todayStr();}data.due_date=due;data.reminder_offset=document.getElementById('t-remind').value||'';}
   else if(type==='floating'){data.urgency_window=pickedUrgency;}
   else if(type==='scheduled'){
     var f=document.getElementById('t-sched-freq').value;
@@ -2322,12 +2322,12 @@ var _maintNoteAssetId=null;
 function openAddMaintenanceNote(){
   _maintNoteAssetId=openAssetId;
   document.getElementById('mn-note').value='';
-  document.getElementById('mn-date').value=new Date().toISOString().split('T')[0];
+  document.getElementById('mn-date').value=todayStr();
   openModal('modal-maint-note');
 }
 function submitMaintenanceNote(){
   var note=document.getElementById('mn-note').value.trim();if(!note){alert('Note required');return;}
-  var date=document.getElementById('mn-date').value||new Date().toISOString().split('T')[0];
+  var date=document.getElementById('mn-date').value||todayStr();
   closeModal('modal-maint-note');setSyncState('loading','Saving...');
   var aid=_maintNoteAssetId;
   apiPost({action:'addMaintenanceNote',data:{asset_id:aid,date:date,note:note}}).then(function(){refreshData(true).then(function(){if(aid){openAssetId=aid;openAssetPanel(aid);}});});
@@ -2580,6 +2580,11 @@ function esc(s){if(s===null||s===undefined)return'';return String(s).replace(/&/
 function fmtDate(d){if(!d)return'';try{var ds=String(d).split('T')[0];var dt=new Date(ds+'T12:00:00');if(isNaN(dt))return String(d);return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return String(d);}}
 function fmtTimestamp(d){if(!d)return'';try{var s=String(d);var dt=s.includes('T')?new Date(s):new Date(s+'T12:00:00');if(isNaN(dt))return fmtDate(d);return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return fmtDate(d);}}
 function dval(d){return d?String(d).split('T')[0]:'';}
+// LOCAL calendar date, not UTC. new Date().toISOString() is a UTC timestamp, so in Denver
+// (UTC-6) anything after 6pm local already reports TOMORROW. Task bucketing uses local
+// midnight (setHours(0,0,0,0)), so a task defaulted to the UTC date landed in the Tomorrow
+// bucket and looked like it had never been created. This is the fix for that.
+function todayStr(){var d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().split('T')[0];}
 function fmtDateShort(d){if(!d)return'';try{var ds=String(d).split('T')[0];var dt=new Date(ds+'T12:00:00');if(isNaN(dt))return String(d);var DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];return DOW[dt.getDay()]+' '+(dt.getMonth()+1)+'/'+dt.getDate();}catch(e){return String(d);}}
 </script>
 """

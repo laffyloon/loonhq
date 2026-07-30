@@ -1089,6 +1089,59 @@ run('history tabs still exclude snoozes', ()=>{
   state.task_log=sv; setMetricsTab('stats');
 });
 
+// ── todayStr: LOCAL calendar date, not UTC ───────────────────────────────────
+// Frankie is in Denver and tests in the evening. new Date().toISOString() is a UTC
+// timestamp, so after 6pm local it already reports TOMORROW. Bucketing uses local midnight,
+// so a task defaulted to the UTC date landed in the Tomorrow bucket and looked like it was
+// never created. These only assert under TZ=America/Denver.
+const _RealDate = Date;
+function _freezeClock(iso){
+  const fixed = new _RealDate(iso);
+  const F = function(){ return arguments.length ? new _RealDate(...arguments) : fixed; };
+  F.prototype = _RealDate.prototype; F.now = () => fixed.getTime(); F.parse = _RealDate.parse;
+  global.Date = F;
+}
+function _unfreezeClock(){ global.Date = _RealDate; }
+const _denver = () => process.env.TZ === 'America/Denver';
+
+run('todayStr gives the LOCAL date at 10pm Denver, not the UTC one', ()=>{
+  if(!_denver()) return;
+  const utc = new _RealDate('2026-07-29T22:05:00-06:00').toISOString().split('T')[0];
+  if(utc !== '2026-07-30') throw new Error('fixture bad, UTC should have rolled over: '+utc);
+  _freezeClock('2026-07-29T22:05:00-06:00');
+  let got; try { got = todayStr(); } finally { _unfreezeClock(); }
+  if(got !== '2026-07-29') throw new Error('expected 2026-07-29, got '+got+' (UTC gives '+utc+')');
+});
+run('todayStr matches the local midnight the buckets use', ()=>{
+  if(!_denver()) return;
+  _freezeClock('2026-07-29T23:59:00-06:00');
+  let got, midStr;
+  try {
+    got = todayStr();
+    const mid = new _RealDate('2026-07-29T23:59:00-06:00'); mid.setHours(0,0,0,0);
+    midStr = mid.getFullYear()+'-'+String(mid.getMonth()+1).padStart(2,'0')+'-'+String(mid.getDate()).padStart(2,'0');
+  } finally { _unfreezeClock(); }
+  if(got !== midStr) throw new Error('todayStr='+got+' but bucketing uses '+midStr);
+});
+run('todayStr still correct at midday, when UTC and local agree', ()=>{
+  if(!_denver()) return;
+  _freezeClock('2026-07-29T12:00:00-06:00');
+  let got; try { got = todayStr(); } finally { _unfreezeClock(); }
+  if(got !== '2026-07-29') throw new Error('expected 2026-07-29, got '+got);
+});
+run('a no-date one-off created at 10pm Denver lands in TODAY, not Tomorrow', ()=>{
+  if(!_denver()) return;
+  _freezeClock('2026-07-29T22:05:00-06:00');
+  let due, todayMid, isToday;
+  try {
+    due = todayStr();                       // what submitTask assigns when the field is blank
+    const now = new Date(); todayMid = new _RealDate(now.getTime()); todayMid.setHours(0,0,0,0);
+    const d = new _RealDate(due+'T12:00:00');
+    isToday = d.getFullYear()===todayMid.getFullYear() && d.getMonth()===todayMid.getMonth() && d.getDate()===todayMid.getDate();
+  } finally { _unfreezeClock(); }
+  if(!isToday) throw new Error('task dated '+due+' would not bucket as today');
+});
+
 // ---- report ----
 asyncChain.then(tick).then(tick).then(function(){
 let fails = 0;
@@ -1096,3 +1149,4 @@ for (const [s,n] of tests){ if(s==='FAIL'){ console.log('FAIL  '+n); fails++; } 
 console.log('\n'+tests.length+' checks run, '+fails+' failed, '+(tests.length-fails)+' passed');
 process.exit(fails? 1:0);
 });
+

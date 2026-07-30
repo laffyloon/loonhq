@@ -169,6 +169,34 @@ function updateRow(sheet, rowNum, updates) {
   if (dirty) range.setValues([row]);
 }
 
+// Deleting N rows used to cost N API round trips, which is why deleting one task with a
+// long history took 20-30 seconds and blew past the client timeout. Collapse the row numbers
+// into descending contiguous runs and issue one deleteRows call per run.
+function deleteRowsBatched_(sheet, rowNumbers) {
+  if (!rowNumbers || !rowNumbers.length) return 0;
+  var rows = rowNumbers.slice().sort(function(a, b) { return a - b; });
+  var calls = 0, end = rows.length - 1;
+  while (end >= 0) {
+    var start = end;
+    while (start > 0 && rows[start - 1] === rows[start] - 1) start--;
+    sheet.deleteRows(rows[start], end - start + 1);   // bottom-up, so earlier rows stay valid
+    calls++;
+    end = start - 1;
+  }
+  return calls;
+}
+// Row numbers (1-based, header excluded) whose column `colName` equals `value`.
+// Reads ONLY that column, not the whole sheet.
+function matchingRowNumbers_(sheet, colName, value) {
+  var idx = headersOf_(sheet).indexOf(colName);
+  if (idx < 0) return [];
+  var last = sheet.getLastRow();
+  if (last < 2) return [];
+  var col = sheet.getRange(2, idx + 1, last - 1, 1).getValues();
+  var target = String(value), out = [];
+  for (var i = 0; i < col.length; i++) if (String(col[i][0]) === target) out.push(i + 2);
+  return out;
+}
 function appendRow(sheet, headers, obj) {
   var row = headers.map(function(h) { return obj[h] !== undefined ? obj[h] : ''; });
   sheet.appendRow(row);
@@ -254,15 +282,39 @@ function previewSnoozeLogCleanup() {
 function purgeSnoozeLogs_CONFIRMED() {
   var res = findSnoozeLogRows_();
   if (!res.rows.length) { Logger.log('Nothing to clean up.'); return { ok: true, moved: 0 }; }
+  var src = getSheet('task_log');
+  var data = src.getDataRange().getValues();
+  var width = data[0].length;
+  var header = data[0];
+  var keep = [], drop = [];
+  for (var r = 1; r < data.length; r++) {
+    (logRowIsCompletion_(header, data[r]) ? keep : drop).push(data[r]);
+  }
+  if (!drop.length) { Logger.log('Nothing to clean up.'); return { ok: true, moved: 0 }; }
+
+  // Archive first, in ONE write. The rows are scattered through the sheet, so deleting them
+  // individually would cost one API call each; rewriting the survivors costs a handful total.
   var ss = spreadsheet_();
   var archive = ss.getSheetByName('task_log_archive');
-  if (!archive) { archive = ss.insertSheet('task_log_archive'); archive.appendRow(res.headers); }
-  res.rows.forEach(function(r) { archive.appendRow(r.values); });
-  var src = getSheet('task_log');
-  for (var i = res.rows.length - 1; i >= 0; i--) src.deleteRow(res.rows[i].rowNumber);
-  Logger.log('Archived and removed ' + res.rows.length + ' non-completion rows.');
-  Logger.log('They are recoverable from the task_log_archive tab.');
-  return { ok: true, moved: res.rows.length, archivedTo: 'task_log_archive' };
+  if (!archive) { archive = ss.insertSheet('task_log_archive'); archive.appendRow(header); }
+  var padded = drop.map(function(row) {
+    var out = row.slice(0, width);
+    while (out.length < width) out.push('');
+    return out;
+  });
+  archive.getRange(archive.getLastRow() + 1, 1, padded.length, width).setValues(padded);
+
+  // Then rewrite task_log as header + survivors, and drop the now-stale tail.
+  if (keep.length) src.getRange(2, 1, keep.length, width).setValues(keep);
+  var firstStale = 2 + keep.length;
+  var staleCount = (data.length - 1) - keep.length;
+  if (staleCount > 0) src.deleteRows(firstStale, staleCount);
+  resetSheetCache_();
+
+  Logger.log('Archived and removed ' + drop.length + ' non-completion rows.');
+  Logger.log(keep.length + ' completions remain.');
+  Logger.log('The removed rows are recoverable from the task_log_archive tab.');
+  return { ok: true, moved: drop.length, remaining: keep.length, archivedTo: 'task_log_archive' };
 }
 
 // ── doGet / doPost ─────────────────────────────────────────────────────────────
@@ -456,15 +508,9 @@ function deleteTask(data) {
   var rowNum = findRow(sheet, 'task_id', data.task_id);
   if (rowNum < 0) return { error: 'Task not found' };
   sheet.deleteRow(rowNum);
-  // Cascade: delete all task_log entries for this task
+  // Cascade: drop this task's log rows. Reads one column and deletes in blocks.
   var logSheet = getSheet('task_log');
-  var logData = logSheet.getDataRange().getValues();
-  var taskIdIdx = logData[0].map(String).indexOf('task_id');
-  if (taskIdIdx >= 0) {
-    for (var i = logData.length - 1; i >= 1; i--) {
-      if (String(logData[i][taskIdIdx]) === String(data.task_id)) logSheet.deleteRow(i + 1);
-    }
-  }
+  deleteRowsBatched_(logSheet, matchingRowNumbers_(logSheet, 'task_id', data.task_id));
   return { ok: true };
 }
 
@@ -582,13 +628,9 @@ function deleteGrocery(data) {
 
 function clearChecked() {
   var sheet = getSheet('grocery');
-  var data = sheet.getDataRange().getValues();
-  var headers = data[0].map(String);
-  var statusIdx = headers.indexOf('status');
-  for (var i = data.length - 1; i >= 1; i--) {
-    if (String(data[i][statusIdx]) === 'got') sheet.deleteRow(i + 1);
-  }
-  return { ok: true };
+  var rows = matchingRowNumbers_(sheet, 'status', 'got');
+  deleteRowsBatched_(sheet, rows);
+  return { ok: true, removed: rows.length };
 }
 
 function reorderGrocery(data) {

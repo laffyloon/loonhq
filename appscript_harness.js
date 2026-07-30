@@ -8,7 +8,7 @@ const fs = require('fs');
 
 // ---- op counters -----------------------------------------------------------
 let ops;
-function resetOps() { ops = { openById: 0, getValues: 0, setValues: 0, setValue: 0, cellsRead: 0, cellsWritten: 0, deleteRow: 0, appendRow: 0 }; }
+function resetOps() { ops = { openById: 0, getValues: 0, setValues: 0, setValue: 0, cellsRead: 0, cellsWritten: 0, deleteRow: 0, deleteRows: 0, appendRow: 0 }; }
 resetOps();
 
 // ---- fake Range ------------------------------------------------------------
@@ -52,6 +52,7 @@ Sheet.prototype.getRange = function (r, c, nr, nc) { return new Range(this, r, c
 Sheet.prototype.getDataRange = function () { return new Range(this, 1, 1, this.getLastRow(), this.getLastColumn()); };
 Sheet.prototype.appendRow = function (row) { ops.appendRow++; ops.cellsWritten += row.length; this.data.push(row.slice()); };
 Sheet.prototype.deleteRow = function (n) { ops.deleteRow++; this.data.splice(n - 1, 1); };
+Sheet.prototype.deleteRows = function (n, howMany) { ops.deleteRows++; this.data.splice(n - 1, howMany); };
 
 // ---- container-reuse simulation --------------------------------------------
 // Apps Script reuses its V8 container between requests. A Spreadsheet or Sheet handle held
@@ -61,7 +62,7 @@ let GEN = 1;
 function newExecution() { GEN++; }
 const STALE = m => new Error('Unexpected error while getting the method or property ' + m + ' on object SpreadsheetApp.Sheet');
 function SheetHandle(sheet, gen) { this._s = sheet; this._gen = gen; }
-['getName','getLastRow','getLastColumn','getRange','getDataRange','appendRow','deleteRow'].forEach(function (m) {
+['getName','getLastRow','getLastColumn','getRange','getDataRange','appendRow','deleteRow','deleteRows'].forEach(function (m) {
   SheetHandle.prototype[m] = function () {
     if (this._gen !== GEN) throw STALE(m);
     return this._s[m].apply(this._s, arguments);
@@ -414,6 +415,93 @@ run('setupHeaders only appends and never removes a header', () => {
   const after = sheets.task_log.data[0];
   before.forEach((h, i) => { if (h && String(after[i]) !== String(h)) throw new Error('header ' + h + ' was altered'); });
   if (sheets.task_log.data.length !== 5) throw new Error('setupHeaders touched data rows');
+});
+
+// ---- batched deletes: the 20-30 second delete Frankie hit ------------------
+function logSheetWith(n, taskId) {
+  const rows = [HEADERS.task_log.slice()];
+  for (let i = 0; i < n; i++) {
+    rows.push(['l' + i, (i % 3 === 0) ? taskId : 'other', 'T' + i, 'Frankie', '2026-07-0' + ((i % 9) + 1) + 'T10:00:00Z', 'household', '', '', 'completion']);
+  }
+  return new Sheet('task_log', rows);
+}
+run('deleteTask still removes the task and ALL of its log rows', () => {
+  const log = logSheetWith(30, 't2');
+  const sheets = freshBook({ task_log: log });
+  const before = log.data.length - 1;
+  const expected = log.data.slice(1).filter(r => r[1] === 't2').length;
+  const r = deleteTask({ task_id: 't2' });
+  if (!r.ok) throw new Error('delete failed: ' + JSON.stringify(r));
+  const left = log.data.slice(1);
+  if (left.some(x => x[1] === 't2')) throw new Error('log rows for the task survived');
+  if (left.length !== before - expected) throw new Error('removed ' + (before - left.length) + ', expected ' + expected);
+  if (sheets.tasks.data.slice(1).some(x => x[0] === 't2')) throw new Error('the task row itself survived');
+});
+run('COST deleting a task with 10 log rows costs a handful of calls, not one per row', () => {
+  const log = logSheetWith(30, 't2');   // 10 of the 30 belong to t2, deliberately non-contiguous
+  freshBook({ task_log: log });
+  resetOps();
+  deleteTask({ task_id: 't2' });
+  const deleteCalls = ops.deleteRow + ops.deleteRows;
+  if (deleteCalls > 12) throw new Error('cost ' + deleteCalls + ' delete calls for 10 scattered rows + 1 task row');
+  if (ops.deleteRow > 1) throw new Error('should use deleteRows for the cascade, saw ' + ops.deleteRow + ' single deletes');
+});
+run('COST a contiguous block collapses into ONE deleteRows call', () => {
+  const rows = [HEADERS.task_log.slice()];
+  for (let i = 0; i < 12; i++) rows.push(['l' + i, i >= 3 && i <= 8 ? 'tX' : 'other', 'T', 'F', 'x', 'household', '', '', 'completion']);
+  const log = new Sheet('task_log', rows);
+  freshBook({ task_log: log });
+  resetOps();
+  deleteRowsBatched_(log, matchingRowNumbers_(log, 'task_id', 'tX'));
+  if (ops.deleteRows !== 1) throw new Error('6 contiguous rows took ' + ops.deleteRows + ' calls, expected 1');
+  if (log.data.slice(1).some(r => r[1] === 'tX')) throw new Error('rows survived');
+});
+run('COST deleteTask reads one column, not the whole log', () => {
+  const log = logSheetWith(200, 't2');
+  freshBook({ task_log: log });
+  resetOps();
+  deleteTask({ task_id: 't2' });
+  if (ops.cellsRead > 200 * 3) throw new Error('read ' + ops.cellsRead + ' cells; a full scan of 200x9 is 1800');
+});
+run('deleteRowsBatched_ handles scattered, unsorted and empty input', () => {
+  const mk = () => new Sheet('s', [['id'], ['a'], ['b'], ['c'], ['d'], ['e']]);
+  let sh = mk(); deleteRowsBatched_(sh, []);
+  if (sh.data.length !== 6) throw new Error('empty input changed the sheet');
+  sh = mk(); deleteRowsBatched_(sh, [6, 2, 4]);      // unsorted, scattered
+  if (sh.data.slice(1).map(r => r[0]).join(',') !== 'b,d') throw new Error('wrong survivors: ' + sh.data.slice(1).map(r => r[0]));
+  sh = mk(); deleteRowsBatched_(sh, [2, 3, 4, 5, 6]);
+  if (sh.data.length !== 1) throw new Error('should have left only the header');
+});
+run('clearChecked removes every got item in blocks', () => {
+  const g = new Sheet('grocery', [HEADERS.grocery.slice(),
+    ['g1', 'Milk', 'dairy', 'got', 'F', 'x', 1], ['g2', 'Eggs', 'dairy', 'need', 'F', 'x', 2],
+    ['g3', 'Bread', 'bakery', 'got', 'F', 'x', 3], ['g4', 'Jam', 'bakery', 'got', 'F', 'x', 4]]);
+  freshBook({ grocery: g });
+  resetOps();
+  const r = clearChecked();
+  if (r.removed !== 3) throw new Error('reported ' + r.removed + ' removed, expected 3');
+  const left = g.data.slice(1).map(x => x[0]).join(',');
+  if (left !== 'g2') throw new Error('wrong survivors: ' + left);
+  if (ops.deleteRow > 0) throw new Error('used single-row deletes');
+});
+run('COST the purge of 101 rows does not cost 101 calls', () => {
+  const rows = [HEADERS.task_log.slice()];
+  for (let i = 0; i < 150; i++) {
+    const bogus = i % 3 === 0;
+    rows.push(['l' + i, 't1', 'T', 'Frankie', 'x', 'household', '', bogus ? '{"until_date":"2026-08-01"}' : '', bogus ? 'snooze' : 'completion']);
+  }
+  const log = new Sheet('task_log', rows);
+  freshBook({ task_log: log });
+  const expected = rows.slice(1).filter(r => r[8] === 'snooze').length;
+  resetOps();
+  const r = purgeSnoozeLogs_CONFIRMED();
+  if (r.moved !== expected) throw new Error('moved ' + r.moved + ', expected ' + expected);
+  // the bogus rows are deliberately scattered, so block-deleting cannot help. The purge
+  // rewrites the survivors instead, which is a fixed handful of calls at any row count.
+  const calls = ops.deleteRow + ops.deleteRows + ops.setValues + ops.appendRow;
+  if (calls > 6) throw new Error(calls + ' API calls to purge ' + expected + ' scattered rows');
+  if (log.data.slice(1).some(x => x[8] === 'snooze')) throw new Error('bogus rows survived');
+  if (log.data.length - 1 !== 150 - expected) throw new Error('wrong number of completions left');
 });
 
 // ---- container reuse: THE v8.11 REGRESSION ---------------------------------
