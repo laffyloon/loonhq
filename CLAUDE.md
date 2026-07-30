@@ -20,8 +20,8 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 - build_v4.py — Python build script that generates index.html
 - qa_harness.js — Node.js DOM mock + 237 frontend runtime checks
 - appscript_harness.js — SpreadsheetApp mock + 36 server-side checks (correctness AND API cost)
-- e2e_harness.js — Playwright/Chromium checks + 28 real-browser checks (CSS, events, layout)
-- LoonHQ_AppScript_v8.10.js — current Apps Script source (deploy separately to script.google.com)
+- e2e_harness.js — Playwright/Chromium checks + 40 real-browser checks (CSS, events, layout)
+- LoonHQ_AppScript_v8.11.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
 
 ## Build workflow
@@ -60,11 +60,11 @@ DO NOT recommend clearing, resetting, or deleting sheet data under any circumsta
 without explicit approval AND a second confirmation from Frankie. This is a hard rule.
 Real user data is live in the sheet.
 
-## Current version: v8.10
+## Current version: v8.11
 index.html in the repo is the live deployed build. build_v4.py is the source of truth.
 
 ## AppScript deploy state
-The repo file is LoonHQ_AppScript_v8.10.js (name tracks the app's major.minor, not the
+The repo file is LoonHQ_AppScript_v8.11.js (name tracks the app's major.minor, not the
 AppScript's own history). Deployed by the user up to the v8.8 content on 2026-07-29.
 Still NOT in the user's editor (added in v8.9):
 - logRowIsCompletion_ / completionLogs_ : getAllData now filters on RAW cells, so it works
@@ -212,6 +212,30 @@ Tags are outlined style (white bg, colored border) not filled
 - AppScript getAllData filters task_log to log_type='' or 'completion' before returning (server-side defense)
 - AppScript snoozeTask no longer writes to task_log (no new snooze entries will ever appear)
 - completed_by shows 'Unknown' when empty; uses neutral grey dot instead of Meredith-blue
+
+## v8.11 fixes (the three glitches reported after the v8.10 deploy)
+- THE GHOST: .tc.loading ran `pulse 1s infinite`, oscillating opacity 1 -> .3 for as long as
+  the sync took. A pending card looked like it was malfunctioning. Now a static opacity .6
+  plus a ' saving...' ::after on .tn. Never reintroduce an infinite animation here.
+- NO REQUEST TIMEOUT: apiGet/apiPost used bare fetch, so a hung Apps Script call never
+  settled. The pending card stayed forever, no .catch() ran, so no toast and no retry: the
+  user saw a permanent ghost and a dead app. _fetchTimeout wraps both with an AbortController
+  (API_TIMEOUT, 25s) and throws err.timedOut. This is why "tap to retry did nothing".
+- SYNC LATENCY: scheduleBgSync was a flat 3000ms on every path. After a write has already
+  SUCCEEDED the only thing left is to fetch the real row, so success paths now pass SYNC_FAST
+  (700ms); rollback paths keep SYNC_SLOW (3000ms). 14 success call sites were switched.
+- The refreshData discard path returned WITHOUT rendering, so a stale pending card could sit
+  there another full cycle looking stuck. It now calls renderAll() before rescheduling.
+- refreshData fired grocery cleanup deletes INLINE, which stamped _lastWriteAt mid-sync and
+  made the very next sync discard its payload. They are now deferred past the current sync.
+- setSyncState('loading','Saving...') moved INSIDE both attempt closures, so a retry shows it.
+
+## Dead code worth knowing about
+renderTaskHistoryModal (build_v4.py ~2473) has branches for log_type 'snooze' and 'edit',
+with clock/pencil icons and an 'until <date>' detail line. They are UNREACHABLE: the filter
+on the same line is isCompletionLog(l), and getAllData no longer sends non-completions at all.
+If a per-task activity timeline is ever wanted, that rendering is already written, but it needs
+its own unfiltered feed. Do not "fix" it by loosening isCompletionLog.
 
 ## Performance notes
 - Pre-built Maps updated after every refreshData: _taskById, _subtasksByProj, _tasksByAsset

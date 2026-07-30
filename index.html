@@ -86,7 +86,11 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .sync-dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0}
 .sync-dot.err{background:var(--red)}.sync-dot.loading{background:var(--amber);animation:pulse 1s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-.tc.loading{opacity:.55;animation:pulse 1s infinite}
+/* A pending card must read as 'not saved yet', not as a malfunction. It used to run
+   pulse 1s infinite, flashing opacity between 1 and .3 for as long as the sync took,
+   which looked exactly like a ghost fading in and out. Static dim, no animation. */
+.tc.loading{opacity:.6}
+.tc.loading .tn::after{content:' saving...';font-size:11px;color:var(--text3);letter-spacing:.02em}
 .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(12px);background:rgba(30,30,30,.95);color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .22s,transform .22s;z-index:9999;pointer-events:none;white-space:nowrap;max-width:90vw;text-align:center}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.tappable{pointer-events:auto;cursor:pointer;text-decoration:none}
@@ -1138,12 +1142,27 @@ function quickSwitch(name){currentUser=name;localStorage.setItem('loonhq_user',n
 // would resolve on failure and make every .catch() below unreachable. Reject
 // instead, tagging the error so refreshData can tell it apart from being offline.
 function _apiParse(r){return r.json().then(function(d){if(d&&d.error){var e=new Error(d.error);e.apiError=true;throw e;}return d;});}
-function apiGet(params){var url=API+'?'+Object.entries(params).map(function(p){return p[0]+'='+encodeURIComponent(p[1]);}).join('&');return fetch(url).then(_apiParse);}
+// Apps Script can hang: a cold start, a quota hiccup, a dead connection. Without a timeout
+// the promise never settles, so the optimistic card stays pending forever and no .catch()
+// ever runs, which means no toast and no retry. Bound every request.
+var API_TIMEOUT=25000;
+function _fetchTimeout(url,opts){
+  if(typeof AbortController==='undefined')return fetch(url,opts);
+  var ctl=new AbortController(),timer=null;
+  var done=function(){if(timer){clearTimeout(timer);timer=null;}};
+  timer=setTimeout(function(){timer=null;ctl.abort();},API_TIMEOUT);
+  return fetch(url,Object.assign({},opts||{},{signal:ctl.signal})).then(
+    function(r){done();return r;},
+    function(e){done();
+      if(e&&(e.name==='AbortError'||e.code===20)){var te=new Error('Request timed out');te.timedOut=true;throw te;}
+      throw e;});
+}
+function apiGet(params){var url=API+'?'+Object.entries(params).map(function(p){return p[0]+'='+encodeURIComponent(p[1]);}).join('&');return _fetchTimeout(url).then(_apiParse);}
 // Every POST mutates. Track them so refreshData can tell when a getAllData payload
 // may predate a write that has not been acknowledged yet.
 function apiPost(body){
   var startedAt=Date.now();_inFlightWrites.push(startedAt);
-  var p=fetch(API,{method:'POST',body:JSON.stringify(body)}).then(_apiParse);
+  var p=_fetchTimeout(API,{method:'POST',body:JSON.stringify(body)}).then(_apiParse);
   var settle=function(){var i=_inFlightWrites.indexOf(startedAt);if(i>=0)_inFlightWrites.splice(i,1);_lastWriteAt=Date.now();};
   p.then(settle,settle);
   return p;
@@ -1162,7 +1181,7 @@ function refreshData(silent){
     if(writesPending()||_lastWriteAt>syncStart){
       document.getElementById('loader').style.display='none';
       document.getElementById('v-'+currentView).classList.remove('gone');
-      scheduleBgSync();return;
+      renderAll();scheduleBgSync();return;   // keep the UI honest while we wait
     }
     _lastFetch=Date.now();
     // Server state is now authoritative for everything that was pending.
@@ -1175,7 +1194,10 @@ function refreshData(silent){
     state.assets=(data.assets&&data.assets.length)?data.assets:STATIC_ASSETS;
     state.maintenance_logs=data.maintenance_logs||[];
     var now=Date.now();
-    state.grocery.forEach(function(g){if(g.status==='got'&&g.checked_at&&(now-new Date(g.checked_at).getTime())>43200000)apiPost({action:'deleteGrocery',data:{item_id:g.item_id}});});
+    // Deferred: firing these inline stamped _lastWriteAt mid-sync, which made the NEXT
+    // sync discard its payload and wait another cycle.
+    var _staleGrocery=state.grocery.filter(function(g){return g.status==='got'&&g.checked_at&&(now-new Date(g.checked_at).getTime())>43200000;});
+    if(_staleGrocery.length)setTimeout(function(){_staleGrocery.forEach(function(g){apiPost({action:'deleteGrocery',data:{item_id:g.item_id}}).catch(function(){});});},0);
     document.getElementById('loader').style.display='none';
     document.getElementById('v-'+currentView).classList.remove('gone');
     renderAll();setSyncState('ok','Synced '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
@@ -1187,7 +1209,12 @@ function refreshData(silent){
     state.assets=STATIC_ASSETS;state.maintenance_logs=[];renderAll();setSyncState('err','Offline');
   });
 }
-function scheduleBgSync(){if(_bgSyncTimer)clearTimeout(_bgSyncTimer);_bgSyncTimer=setTimeout(function(){_bgSyncTimer=null;refreshData(true);},3000);}
+// Debounced, so a burst of actions still collapses into one sync. The delay is a parameter
+// because the two cases want different things: after a write has SUCCEEDED the pending card
+// is waiting on the real row, so sync fast (SYNC_FAST). After a rollback, or when a payload
+// was discarded, back off (SYNC_SLOW) to let writes settle.
+var SYNC_FAST=700,SYNC_SLOW=3000;
+function scheduleBgSync(delay){if(_bgSyncTimer)clearTimeout(_bgSyncTimer);_bgSyncTimer=setTimeout(function(){_bgSyncTimer=null;refreshData(true);},delay||SYNC_SLOW);}
 function rebuildTaskIndex(){_taskById={};(state.tasks||[]).forEach(function(t){_taskById[t.task_id]=t;});}
 // Shared tail for every failed optimistic action: undo locally, tell the user, then let the
 // server settle it. The reconcile matters because a local undo can disagree with the server
@@ -1697,7 +1724,7 @@ function batchCompleteSelected(){
   function attempt(){
     picks.forEach(function(p){_recentlyCompleted.add(p.task_id);});
     renderTasks();setSyncState('loading','Completing...');
-    apiPost({action:'batchComplete',data:{tasks:picks,completed_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){picks.forEach(function(p){_recentlyCompleted.delete(p.task_id);});actionFailed("Couldn't complete tasks",renderTasks,'Could not complete',attempt);});
+    apiPost({action:'batchComplete',data:{tasks:picks,completed_by:currentUser}}).then(function(){scheduleBgSync(SYNC_FAST);}).catch(function(){picks.forEach(function(p){_recentlyCompleted.delete(p.task_id);});actionFailed("Couldn't complete tasks",renderTasks,'Could not complete',attempt);});
   }
   attempt();
 }
@@ -1738,7 +1765,7 @@ function confirmBatchSnooze(){
     updates.forEach(function(u){var t=_taskById[u.task_id];if(t){prevDates[u.task_id]=t.due_date;t.due_date=u.targetDate;}});
     renderTasks();setSyncState('loading','Snoozing...');
     var calls=updates.map(function(u){return apiPost({action:'snoozeTask',data:{task_id:u.task_id,until_date:u.targetDate}});});
-    Promise.all(calls).then(function(){scheduleBgSync();}).catch(function(){updates.forEach(function(u){var t=_taskById[u.task_id];if(t&&prevDates.hasOwnProperty(u.task_id))t.due_date=prevDates[u.task_id];});actionFailed("Couldn't snooze tasks",renderTasks,'Could not snooze',attempt);});
+    Promise.all(calls).then(function(){scheduleBgSync(SYNC_FAST);}).catch(function(){updates.forEach(function(u){var t=_taskById[u.task_id];if(t&&prevDates.hasOwnProperty(u.task_id))t.due_date=prevDates[u.task_id];});actionFailed("Couldn't snooze tasks",renderTasks,'Could not snooze',attempt);});
   }
   attempt();
 }
@@ -1802,7 +1829,7 @@ function confirmSnooze(){
     var prevDue=taskRef?taskRef.due_date:null;
     if(taskRef)taskRef.due_date=targetDate;
     renderTasks();setSyncState('loading','Snoozing...');
-    apiPost({action:'snoozeTask',data:{task_id:tid,until_date:targetDate,snoozed_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){var t2=state.tasks.find(function(x){return x.task_id===tid;});if(t2)t2.due_date=prevDue;actionFailed("Couldn't snooze",renderTasks,'Could not snooze',attempt);});
+    apiPost({action:'snoozeTask',data:{task_id:tid,until_date:targetDate,snoozed_by:currentUser}}).then(function(){scheduleBgSync(SYNC_FAST);}).catch(function(){var t2=state.tasks.find(function(x){return x.task_id===tid;});if(t2)t2.due_date=prevDue;actionFailed("Couldn't snooze",renderTasks,'Could not snooze',attempt);});
   }
   attempt();
 }
@@ -1821,7 +1848,7 @@ function openTaskMenu(e,t){
     if(a==='edit')openEditTask(t);
     else if(a==='complete')handleComplete(t);
     else if(a==='snooze')openSnooze(t);
-    else if(a==='delete'){if(!confirm('Delete this task?'))return;var dtid=t.task_id;(function delAttempt(){var prevT=state.tasks.slice();state.tasks=state.tasks.filter(function(x){return x.task_id!==dtid;});delete _taskById[dtid];renderTasks();setSyncState('loading','Deleting...');apiPost({action:'deleteTask',data:{task_id:dtid}}).then(function(){scheduleBgSync();}).catch(function(){state.tasks=prevT;rebuildTaskIndex();actionFailed("Couldn't delete task",renderTasks,'Could not delete',delAttempt);});})();}
+    else if(a==='delete'){if(!confirm('Delete this task?'))return;var dtid=t.task_id;(function delAttempt(){var prevT=state.tasks.slice();state.tasks=state.tasks.filter(function(x){return x.task_id!==dtid;});delete _taskById[dtid];renderTasks();setSyncState('loading','Deleting...');apiPost({action:'deleteTask',data:{task_id:dtid}}).then(function(){scheduleBgSync(SYNC_FAST);}).catch(function(){state.tasks=prevT;rebuildTaskIndex();actionFailed("Couldn't delete task",renderTasks,'Could not delete',delAttempt);});})();}
   });
   openMenu=m;setTimeout(function(){document.addEventListener('click',closeTaskMenuOnce);},10);
 }
@@ -1960,23 +1987,25 @@ function submitTask(){
   var projSel=document.getElementById('t-proj-link');
   data.linked_project_id=projSel?projSel.value||'':'';
   if(type==='scheduled'){data.sched_pattern='';}
-  closeModal('modal-task');setSyncState('loading','Saving...');
+  closeModal('modal-task');
   if(editingTask){
     var etid=editingTask.task_id;
     (function editAttempt(){
+      setSyncState('loading','Saving...');   // inside, so a retry shows it again
       var taskRef=state.tasks.find(function(x){return x.task_id===etid;});
       var prevTask=taskRef?Object.assign({},taskRef):null;
       if(taskRef)Object.assign(taskRef,data);
       if(currentView==='tasks')renderTasks();
-      apiPost({action:'updateTask',data:{task_id:etid,updates:data,updated_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){var t2=state.tasks.find(function(x){return x.task_id===etid;});if(t2&&prevTask)Object.assign(t2,prevTask);actionFailed("Couldn't save changes",renderTasks,'Could not save',editAttempt);});
+      apiPost({action:'updateTask',data:{task_id:etid,updates:data,updated_by:currentUser}}).then(function(){scheduleBgSync(SYNC_FAST);}).catch(function(){var t2=state.tasks.find(function(x){return x.task_id===etid;});if(t2&&prevTask)Object.assign(t2,prevTask);actionFailed("Couldn't save changes",renderTasks,'Could not save',editAttempt);});
     })();
   }else{
     (function addAttempt(){
+      setSyncState('loading','Saving...');   // inside, so a retry shows it again
       var tempId='tmp_'+Date.now();
       var tempTask=Object.assign({},data,{task_id:tempId,_temp:true});
       state.tasks.push(tempTask);_taskById[tempId]=tempTask;
       if(currentView==='tasks')renderTasks();
-      apiPost({action:'addTask',data:data}).then(function(){scheduleBgSync();}).catch(function(){state.tasks=state.tasks.filter(function(x){return x.task_id!==tempId;});delete _taskById[tempId];actionFailed("Couldn't save task",renderTasks,'Could not save',addAttempt);});
+      apiPost({action:'addTask',data:data}).then(function(){scheduleBgSync(SYNC_FAST);}).catch(function(){state.tasks=state.tasks.filter(function(x){return x.task_id!==tempId;});delete _taskById[tempId];actionFailed("Couldn't save task",renderTasks,'Could not save',addAttempt);});
     })();
   }
 }
@@ -1988,7 +2017,7 @@ function deleteEditingTask(){
     var prevTasks=state.tasks.slice();
     state.tasks=state.tasks.filter(function(x){return x.task_id!==dtid;});delete _taskById[dtid];
     if(currentView==='tasks')renderTasks();setSyncState('loading','Deleting...');
-    apiPost({action:'deleteTask',data:{task_id:dtid}}).then(function(){scheduleBgSync();}).catch(function(){state.tasks=prevTasks;rebuildTaskIndex();actionFailed("Couldn't delete task",renderTasks,'Could not delete',attempt);});
+    apiPost({action:'deleteTask',data:{task_id:dtid}}).then(function(){scheduleBgSync(SYNC_FAST);}).catch(function(){state.tasks=prevTasks;rebuildTaskIndex();actionFailed("Couldn't delete task",renderTasks,'Could not delete',attempt);});
   }
   attempt();
 }
@@ -2429,13 +2458,13 @@ function markIncomplete(){
   if(!_histMenuLog)return;closeTaskMenu();
   if(!confirm('Resurface "'+_histMenuLog.task_name+'" as an active task?'))return;
   setSyncState('loading','Restoring...');
-  apiPost({action:'uncompleteTask',data:{log_id:_histMenuLog.log_id,task_id:_histMenuLog.task_id}}).then(function(){scheduleBgSync();});
+  apiPost({action:'uncompleteTask',data:{log_id:_histMenuLog.log_id,task_id:_histMenuLog.task_id}}).then(function(){scheduleBgSync(SYNC_FAST);});
 }
 function deleteTaskLogEntry(){
   if(!_histMenuLog)return;closeTaskMenu();
   if(!confirm('Delete this history entry? This cannot be undone.'))return;
   setSyncState('loading','Deleting...');
-  apiPost({action:'deleteTaskLog',data:{log_id:_histMenuLog.log_id}}).then(function(){scheduleBgSync();}).catch(function(){setSyncState('err','Could not delete');scheduleBgSync();showToast("Couldn't delete entry");});
+  apiPost({action:'deleteTaskLog',data:{log_id:_histMenuLog.log_id}}).then(function(){scheduleBgSync(SYNC_FAST);}).catch(function(){setSyncState('err','Could not delete');scheduleBgSync();showToast("Couldn't delete entry");});
 }
 function openTaskHistory(){
   if(!editingTask)return;
@@ -2482,7 +2511,7 @@ function pickReassignScope(s){
 function submitReassign(){
   if(!_histMenuLog)return;
   closeModal('modal-reassign');setSyncState('loading','Updating...');
-  apiPost({action:'reassignCompletion',data:{log_id:_histMenuLog.log_id,task_id:_histMenuLog.task_id,completed_by:_reassignPerson,scope:_reassignScope}}).then(function(){scheduleBgSync();});
+  apiPost({action:'reassignCompletion',data:{log_id:_histMenuLog.log_id,task_id:_histMenuLog.task_id,completed_by:_reassignPerson,scope:_reassignScope}}).then(function(){scheduleBgSync(SYNC_FAST);});
 }
 // ── MODALS ────────────────────────────────────────────────
 function openModal(id){document.getElementById(id).classList.remove('gone');}
@@ -2514,14 +2543,14 @@ function submitProject(){
   var n=document.getElementById('p-name').value.trim();if(!n){alert('Name required');return;}
   var data={name:n,description:document.getElementById('p-desc').value.trim(),status:document.getElementById('p-status').value,target_date:document.getElementById('p-target').value||''};
   closeModal('modal-project');setSyncState('loading','Saving...');
-  if(editingProject){apiPost({action:'updateProject',data:{project_id:editingProject.project_id,updates:data}}).then(function(){scheduleBgSync();});}
-  else{apiPost({action:'addProject',data:data}).then(function(){scheduleBgSync();});}
+  if(editingProject){apiPost({action:'updateProject',data:{project_id:editingProject.project_id,updates:data}}).then(function(){scheduleBgSync(SYNC_FAST);});}
+  else{apiPost({action:'addProject',data:data}).then(function(){scheduleBgSync(SYNC_FAST);});}
 }
 function deleteEditingProject(){
   if(!editingProject)return;
   if(!confirm('Delete this project and all its tasks?'))return;
   closeModal('modal-project');setSyncState('loading','Deleting...');
-  apiPost({action:'deleteProject',data:{project_id:editingProject.project_id}}).then(function(){scheduleBgSync();});
+  apiPost({action:'deleteProject',data:{project_id:editingProject.project_id}}).then(function(){scheduleBgSync(SYNC_FAST);});
 }
 function openEditSubtask(sid){
   var s=state.subtasks.filter(function(x){return String(x.subtask_id)===String(sid);})[0];if(!s)return;
@@ -2545,7 +2574,7 @@ function deleteEditingSubtask(){
   apiPost({action:'deleteSubtask',data:{subtask_id:editingSubtask.subtask_id}}).then(function(){apiGet({action:'getSubtasks'}).then(function(r){state.subtasks=r||[];renderProjects();setSyncState('ok','Deleted');});});
 }
 function openAddGrocery(){document.getElementById('g-name').value='';openModal('modal-grocery');}
-function submitGrocery(){var n=document.getElementById('g-name').value.trim();if(!n)return;closeModal('modal-grocery');setSyncState('loading','Saving...');var tempId='tmp_'+Date.now();var cat=document.getElementById('g-cat').value;(function addAttempt(){var tid2=tempId;var tempItem={item_id:tid2,name:n,category:cat,added_by:currentUser,status:'need',_temp:true};state.grocery.push(tempItem);renderGrocery();apiPost({action:'addGroceryItem',data:{name:n,category:cat,added_by:currentUser}}).then(function(){scheduleBgSync();}).catch(function(){state.grocery=state.grocery.filter(function(g){return g.item_id!==tid2;});actionFailed("Couldn't add item",renderGrocery,'Could not save',addAttempt);});})();}
+function submitGrocery(){var n=document.getElementById('g-name').value.trim();if(!n)return;closeModal('modal-grocery');setSyncState('loading','Saving...');var tempId='tmp_'+Date.now();var cat=document.getElementById('g-cat').value;(function addAttempt(){var tid2=tempId;var tempItem={item_id:tid2,name:n,category:cat,added_by:currentUser,status:'need',_temp:true};state.grocery.push(tempItem);renderGrocery();apiPost({action:'addGroceryItem',data:{name:n,category:cat,added_by:currentUser}}).then(function(){scheduleBgSync(SYNC_FAST);}).catch(function(){state.grocery=state.grocery.filter(function(g){return g.item_id!==tid2;});actionFailed("Couldn't add item",renderGrocery,'Could not save',addAttempt);});})();}
 
 // ── UTILS ─────────────────────────────────────────────────
 function esc(s){if(s===null||s===undefined)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}

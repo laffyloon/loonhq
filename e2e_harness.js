@@ -229,6 +229,69 @@ const ok = (n, cond, detail) => results.push([cond ? 'PASS' : 'FAIL', n + (cond 
     .then(() => ok('the background reconcile removes the completed card', true))
     .catch(() => ok('the background reconcile removes the completed card', false, 'card still in the DOM after the sync'));
 
+  // ---- the three glitches Frankie reported on 2026-07-30 -------------------
+  // a) the pending card must not flash. It used to run pulse 1s infinite, oscillating
+  //    opacity between 1 and .3 for the whole sync, which read as a ghost.
+  await page.click('[data-view="tasks"]:visible');
+  await page.waitForSelector('#v-tasks:not(.gone)');
+  await page.waitForTimeout(200);
+  let held = null;
+  await page.unroute('**script.google.com**');
+  await page.route('**script.google.com**', async route => {
+    const req = route.request();
+    if (req.method() === 'POST') { held = route; return; }          // hang, never fulfil
+    const payload = Object.assign({}, FIXTURE, { tasks: FIXTURE.tasks.filter(t => !serverCompleted.has(t.task_id)) });
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(payload) });
+  });
+  await page.evaluate(() => { window.API_TIMEOUT = 1500; });        // shorten for the test
+  await page.click('#fab');
+  await page.waitForSelector('#modal-task:not(.gone)');
+  await page.fill('#t-name', 'Ghost check');
+  await page.click('#modal-task .btn.primary');
+  await page.waitForSelector('.tc.loading', { timeout: 5000 });
+  ok('a pending card appears immediately', await page.locator('.tc.loading').count() === 1, 'no pending card');
+  const anim = await page.evaluate(() => {
+    const el = document.querySelector('.tc.loading');
+    const s = getComputedStyle(el);
+    return { name: s.animationName, iter: s.animationIterationCount, op: s.opacity };
+  });
+  ok('the pending card does NOT run an infinite animation',
+     anim.name === 'none' && anim.iter !== 'infinite', JSON.stringify(anim));
+  ok('the pending card is dimmed but readable', parseFloat(anim.op) >= 0.4 && parseFloat(anim.op) < 1, 'opacity=' + anim.op);
+  const savingLabel = await page.evaluate(() => {
+    const el = document.querySelector('.tc.loading .tn');
+    return el ? getComputedStyle(el, '::after').content : null;
+  });
+  ok('the pending card says what it is doing', savingLabel && /saving/i.test(savingLabel), 'after-content=' + savingLabel);
+
+  // b) a hung request must time out, surface a toast, and roll the card back
+  await page.waitForSelector('#toast-msg.on', { timeout: 8000 });
+  const hungToast = await page.locator('#toast-msg').innerText();
+  ok('a hung request eventually reports failure', /Couldn't save task/.test(hungToast), 'toast=' + hungToast);
+  ok('the hung-request toast offers a retry', /Tap to retry/.test(hungToast), 'toast=' + hungToast);
+  await page.waitForTimeout(300);
+  ok('the pending card is rolled back after a timeout', await page.locator('.tc.loading').count() === 0, 'pending card survived');
+  ok('no orphaned "Ghost check" card is left behind', await page.locator('.tc-wrap:has-text("Ghost check")').count() === 0, 'orphan card');
+
+  // c) tapping retry after a timeout must actually re-run the add
+  let postsSeen = 0;
+  await page.unroute('**script.google.com**');
+  await page.route('**script.google.com**', async route => {
+    const req = route.request();
+    if (req.method() === 'POST') { postsSeen++; return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' }); }
+    const payload = Object.assign({}, FIXTURE, { tasks: FIXTURE.tasks.filter(t => !serverCompleted.has(t.task_id)) });
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(payload) });
+  });
+  await page.click('#toast-msg');
+  await page.waitForTimeout(600);
+  ok('tapping retry re-sends the add', postsSeen >= 1, 'no POST after retry, saw ' + postsSeen);
+  ok('the retried card reappears', await page.locator('.tc-wrap:has-text("Ghost check")').count() === 1, 'card did not come back');
+
+  // d) after success the real row should arrive fast, not on a flat 3s wait
+  const fast = await page.evaluate(() => ({ f: window.SYNC_FAST, s: window.SYNC_SLOW }));
+  ok('a successful write schedules a fast reconcile', fast.f > 0 && fast.f <= 1000, JSON.stringify(fast));
+  ok('rollbacks still back off', fast.s >= 3000, JSON.stringify(fast));
+
   ok('no uncaught page errors', errors.length === 0, errors.slice(0, 5).join(' ~ '));
 
   await browser.close();

@@ -1,4 +1,4 @@
-// LoonHQ Apps Script v8.10
+// LoonHQ Apps Script v8.11
 //
 // DEPLOY: paste over everything in script.google.com -> Save -> Deploy ->
 //         Manage deployments -> pencil on the EXISTING deployment -> New version.
