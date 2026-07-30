@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""LoonHQ v4 build — task card CSS fix, edit modal, swipe fix, Scheduled type,
-   scope/owner colors, legend text, Activity tabs, Shopping List rename, mobile menu"""
+"""LoonHQ v8.10 build. Source of truth for index.html: edit this file, then run
+   python3 build_v4.py. Never edit index.html directly."""
 
 API = "https://script.google.com/macros/s/AKfycbzL362NjJliCBSbR9uIo1lacPEk5uYw1C-SO8OvlLQ2QMCVC3lFh7y8Gs8z0Gn0lVSK/exec"
 

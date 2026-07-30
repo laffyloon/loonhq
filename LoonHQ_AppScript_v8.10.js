@@ -1,6 +1,16 @@
-// LoonHQ Apps Script v8.6
-// Deploy: paste into script.google.com -> Save -> Deploy -> New version
-// After schema changes: run setupHeaders() once in the editor (safe, appends columns only)
+// LoonHQ Apps Script v8.10
+//
+// DEPLOY: paste over everything in script.google.com -> Save -> Deploy ->
+//         Manage deployments -> pencil on the EXISTING deployment -> New version.
+//         Never create a new deployment: the URL is hardcoded in the frontend.
+//
+// RUNNING a function from the editor (previewSnoozeLogCleanup, migrateSubtasks) only needs
+// Save. A new deployment version is only required to change what doGet/doPost serve.
+//
+// setupHeaders() CAVEAT: it appends at getLastColumn()+1, and getLastColumn() reflects DATA
+// extent, not the header row. If data rows already run past the labelled headers it will
+// label columns BEYOND where that data sits, leaving the real values unlabelled. Run
+// previewSnoozeLogCleanup() first to see the actual header row. Never deletes data.
 
 var SHEET_ID = '1nOj60hRcDAyYsnrkNBA3XzMeEHl5y_IxWhQ5v28uOhA';
 
