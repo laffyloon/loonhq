@@ -322,6 +322,63 @@ its own unfiltered feed. Do not "fix" it by loosening isCompletionLog.
 - build_v4.py is the source of truth — edit it, then run python3 build_v4.py to regenerate index.html
 - Never edit index.html directly
 
+## NEXT SESSION — open bugs from Frankie's 2026-07-30 testing (START HERE)
+All reported against v8.11 with the container-reuse fix deployed. No code changes were made
+after this list was written. Ordered by how much they hurt.
+
+1. WRITES TAKE 20-30 SECONDS AND THEN LIE ABOUT IT. Highest priority, and it explains
+   several of the other reports.
+   - Deleting a task showed "Couldn't delete task" after 20-30s, and then the task deleted
+     anyway. So the write SUCCEEDED server-side and the client had already given up.
+   - API_TIMEOUT (25s) fires, apiPost rejects, the handler rolls back and toasts. The server
+     then finishes, and the next sync brings the change back. A false failure, and the UI
+     briefly disagrees with the sheet.
+   - CONFIRMED CAUSE for delete: deleteTask reads the ENTIRE task_log with getDataRange
+     (308 rows x 11 cols today) and then calls deleteRow ONCE PER MATCHING ROW, each its own
+     API round trip. Fix: collect the row numbers, delete in descending contiguous blocks, or
+     rewrite the sheet once. This was NOT covered by the item-7 cost work.
+   - LEAD for the general slowness: Apps Script SERIALISES executions per user. v8.11 lowered
+     the post-write sync to SYNC_FAST (700ms), so a getAllData that reads 7 tabs can now be
+     in flight when the next write arrives, and the write queues behind it. Faster syncing may
+     have made write latency WORSE. Measure before changing: log timestamps in doPost, or check
+     the Executions panel for queue times.
+   - DESIGN QUESTION worth settling: on timeout, rolling back is wrong when the write may have
+     landed. Prefer leaving the optimistic state and forcing a reconcile, or make the toast say
+     "still saving" rather than reporting failure.
+
+2. CREATING A TASK WITH NO DUE DATE HANGS, then errors at ~20s (the timeout).
+   - Frankie isolated it precisely: creation works for household AND personal IF a due date is
+     picked. With the date left empty it never registers.
+   - A one-off with no date is SUPPOSED to default to today. Grep found NO code doing that, so
+     the default may simply not exist. Check submitTask and openAddTask before blaming the server.
+   - computeFirstDue was ruled out: it contains no loops, and it only runs for interval and
+     scheduled types anyway.
+   - Check the Executions panel for what those hung requests actually did. Given item 1, the
+     task may in fact be landing eventually.
+
+3. BATCH MODE
+   - The select-all bar text does not fit its container. Layout overflow at phone width.
+     e2e_harness.js is the right layer for this; the DOM mock cannot see it.
+   - Mass DELETE is missing. Batch mode can complete but not delete. Frankie wants it.
+
+4. LOGO RENDERS AS src="" (cosmetic)
+   - build_v4.py line 7 reads the data URI from /home/claude/logo_uri.txt, which is OUTSIDE the
+     repo and is 1 byte (just a newline) in the Claude Code container, so every build emits an
+     empty src.
+   - VERIFIED byte-identical to the 554814b build from two weeks ago, so this is NOT a
+     regression from this session's rebuilds. It has been building empty for a while.
+   - Proper fix: commit the logo into the repo and stop reading an uncommitted path. Any build
+     run anywhere else will keep silently dropping it otherwise.
+
+5. STILL OWED: clear out the 101 bogus task_log rows.
+   - Frankie APPROVED this on 2026-07-30. The data-safety rule still requires a second
+     confirmation before running it, so ASK, then give him the clicks.
+   - purgeSnoozeLogs_CONFIRMED archives every row to a task_log_archive tab before removing it,
+     so it is reversible. 101 rows out, 207 completions remain.
+   - Verified nothing reads snooze/edit rows: every task_log consumer filters through
+     isCompletionLog first, and getAllData no longer sends them.
+   - Do this AFTER item 1, so a 20-second write is not mistaken for a purge problem.
+
 ## Pending backlog
 ARCHITECTURE (big, suggest tackling in Claude Code):
 - Assets: migrate from hardcoded JS array to sheet, make editable, allow task-linking from asset page
