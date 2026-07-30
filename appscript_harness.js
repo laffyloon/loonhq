@@ -53,13 +53,35 @@ Sheet.prototype.getDataRange = function () { return new Range(this, 1, 1, this.g
 Sheet.prototype.appendRow = function (row) { ops.appendRow++; ops.cellsWritten += row.length; this.data.push(row.slice()); };
 Sheet.prototype.deleteRow = function (n) { ops.deleteRow++; this.data.splice(n - 1, 1); };
 
-// ---- fake Spreadsheet ------------------------------------------------------
-function Spreadsheet(sheets) { this.sheets = sheets; }
-Spreadsheet.prototype.getSheetByName = function (n) { return this.sheets[n] || null; };
-Spreadsheet.prototype.insertSheet = function (n) { this.sheets[n] = new Sheet(n, []); return this.sheets[n]; };
+// ---- container-reuse simulation --------------------------------------------
+// Apps Script reuses its V8 container between requests. A Spreadsheet or Sheet handle held
+// in a global from a PREVIOUS execution throws as soon as you touch it. GEN models that:
+// newExecution() bumps it, and any handle stamped with an older GEN starts throwing.
+let GEN = 1;
+function newExecution() { GEN++; }
+const STALE = m => new Error('Unexpected error while getting the method or property ' + m + ' on object SpreadsheetApp.Sheet');
+function SheetHandle(sheet, gen) { this._s = sheet; this._gen = gen; }
+['getName','getLastRow','getLastColumn','getRange','getDataRange','appendRow','deleteRow'].forEach(function (m) {
+  SheetHandle.prototype[m] = function () {
+    if (this._gen !== GEN) throw STALE(m);
+    return this._s[m].apply(this._s, arguments);
+  };
+});
+Object.defineProperty(SheetHandle.prototype, 'data', { get: function () { return this._s.data; } });
 
-let book;
-global.SpreadsheetApp = { openById: function () { ops.openById++; return book; } };
+// ---- fake Spreadsheet ------------------------------------------------------
+function Spreadsheet(sheets, gen) { this.sheets = sheets; this._gen = gen; }
+Spreadsheet.prototype.getSheetByName = function (n) {
+  if (this._gen !== GEN) throw new Error('Unexpected error while getting the method or property getSheetByName on object SpreadsheetApp.Spreadsheet');
+  return this.sheets[n] ? new SheetHandle(this.sheets[n], GEN) : null;
+};
+Spreadsheet.prototype.insertSheet = function (n) {
+  if (this._gen !== GEN) throw new Error('stale Spreadsheet handle');
+  this.sheets[n] = new Sheet(n, []); return new SheetHandle(this.sheets[n], GEN);
+};
+
+let SHEETS = {};
+global.SpreadsheetApp = { openById: function () { ops.openById++; return new Spreadsheet(SHEETS, GEN); } };
 global.ContentService = { MimeType: { JSON: 'json' }, createTextOutput: function (t) { return { setMimeType: function () { return t; } }; } };
 global.Logger = { _out: [], log: function (m) { this._out.push(String(m)); } };
 
@@ -99,11 +121,13 @@ function freshBook(extra) {
     maintenance_log: new Sheet('maintenance_log', [HEADERS.maintenance_log.slice()]),
   };
   Object.assign(sheets, extra || {});
-  book = new Spreadsheet(sheets);
+  SHEETS = sheets;
   // the script caches the spreadsheet and header lookups per execution; reset between tests
-  _ss = null; resetSheetCache_(); resetOps();
+  resetExecutionCaches_(); resetOps();
   return sheets;
 }
+// `book` stays available for the few tests that reach for the spreadsheet directly
+Object.defineProperty(global, 'book', { get: function () { return new Spreadsheet(SHEETS, GEN); }, configurable: true });
 
 // ---- runner ----------------------------------------------------------------
 const tests = [];
@@ -390,6 +414,52 @@ run('setupHeaders only appends and never removes a header', () => {
   const after = sheets.task_log.data[0];
   before.forEach((h, i) => { if (h && String(after[i]) !== String(h)) throw new Error('header ' + h + ' was altered'); });
   if (sheets.task_log.data.length !== 5) throw new Error('setupHeaders touched data rows');
+});
+
+// ---- container reuse: THE v8.11 REGRESSION ---------------------------------
+// This is the bug that made task creation fail for Frankie on 2026-07-30. The item-7
+// caching stored Spreadsheet/Sheet handles in globals, and nothing cleared them when a new
+// request arrived. The first request into a fresh container worked; every request after it
+// reused dead handles and returned {error} instantly.
+run('REGRESSION addTask works on a REUSED container, not just a fresh one', () => {
+  const sheets = freshBook();
+  const before = sheets.tasks.data.length;
+  let r = doPost({ postData: { contents: JSON.stringify({ action: 'addTask', data: { name: 'first', type: 'one_off', due_date: '2026-08-01' } }) } });
+  if (JSON.parse(r).error) throw new Error('first request failed: ' + r);
+  newExecution();                       // same container, next request, handles now stale
+  r = JSON.parse(doPost({ postData: { contents: JSON.stringify({ action: 'addTask', data: { name: 'second', type: 'one_off', due_date: '2026-08-02' } }) } }));
+  if (r.error) throw new Error('SECOND request failed on a reused container: ' + r.error);
+  if (sheets.tasks.data.length !== before + 2) throw new Error('expected 2 new rows, got ' + (sheets.tasks.data.length - before));
+});
+run('REGRESSION five consecutive requests all succeed', () => {
+  freshBook();
+  for (var i = 0; i < 5; i++) {
+    newExecution();
+    var out = JSON.parse(doPost({ postData: { contents: JSON.stringify({ action: 'addTask', data: { name: 'task' + i, type: 'one_off', due_date: '2026-08-01' } }) } }));
+    if (out.error) throw new Error('request ' + (i + 1) + ' failed: ' + out.error);
+  }
+});
+run('REGRESSION getAllData works on a reused container', () => {
+  freshBook();
+  doGet({ parameter: { action: 'getAllData' } });
+  newExecution();
+  const out = JSON.parse(doGet({ parameter: { action: 'getAllData' } }));
+  if (out.error) throw new Error('second getAllData failed: ' + out.error);
+  if (!out.tasks) throw new Error('no tasks returned');
+});
+run('REGRESSION a snooze then a complete across two executions both land', () => {
+  const sheets = freshBook();
+  let out = JSON.parse(doPost({ postData: { contents: JSON.stringify({ action: 'snoozeTask', data: { task_id: 't1', until_date: '2026-08-09' } }) } }));
+  if (out.error) throw new Error('snooze failed: ' + out.error);
+  newExecution();
+  out = JSON.parse(doPost({ postData: { contents: JSON.stringify({ action: 'completeTask', data: { task_id: 't2', task_name: 'Bins', type: 'one_off', completed_by: 'Frankie', scope: 'household' } }) } }));
+  if (out.error) throw new Error('complete failed on reused container: ' + out.error);
+});
+run('REGRESSION the per-execution caching still pays for itself', () => {
+  freshBook();
+  resetOps();
+  doGet({ parameter: { action: 'getAllData' } });
+  if (ops.openById !== 1) throw new Error('getAllData opened the spreadsheet ' + ops.openById + ' times in one execution');
 });
 
 // ---- report --------------------------------------------------------------

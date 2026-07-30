@@ -113,6 +113,12 @@ function getSheet(name) {
 }
 // Invalidate after anything that changes the header row (setupHeaders) or adds a tab.
 function resetSheetCache_() { _sheetCache = {}; _headerCache = {}; }
+// MUST run first in every doGet/doPost. Apps Script REUSES its V8 container between
+// requests, so these globals survive into the next execution, and a Spreadsheet or Sheet
+// handle from a previous execution throws the moment you touch it. That surfaced as an
+// instant "Couldn't save task" on every request after the first. The caching is only ever
+// valid WITHIN one execution, which is where all the savings were anyway.
+function resetExecutionCaches_() { _ss = null; _sheetCache = {}; _headerCache = {}; }
 function headersOf_(sheet) {
   var key = sheet.getName();
   if (!_headerCache[key]) {
@@ -261,6 +267,7 @@ function purgeSnoozeLogs_CONFIRMED() {
 
 // ── doGet / doPost ─────────────────────────────────────────────────────────────
 function doGet(e) {
+  resetExecutionCaches_();   // never reuse handles from a previous execution
   var action = e.parameter.action;
   var result;
   try {
@@ -275,6 +282,7 @@ function doGet(e) {
 }
 
 function doPost(e) {
+  resetExecutionCaches_();   // never reuse handles from a previous execution
   var body = JSON.parse(e.postData.contents);
   var action = body.action;
   var data = body.data || {};
