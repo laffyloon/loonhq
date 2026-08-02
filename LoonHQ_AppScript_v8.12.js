@@ -809,12 +809,21 @@ function fixTaskLogHeaderLabels() {
   return { ok: true, changed: true };
 }
 
-// Read-only. Finds completion rows that duplicate another completion of the SAME task on
-// the SAME calendar day, and prints the gap between them. The gap identifies the mechanism:
-//   milliseconds apart -> one gesture fired twice (double tap, or swipe + click)
-//   a few seconds      -> two deliberate taps, or an optimistic retry
+// The household timezone. completed_at is stored as a UTC timestamp, so anything that asks
+// "was this the same DAY" must convert first. Grouping by the UTC date is wrong in both
+// directions here: a nightly task done at 10pm Denver and again the next afternoon shares one
+// UTC date and looks duplicated, while two completions on the same Denver evening can straddle
+// UTC midnight and NOT look duplicated. Same class of bug as the due-date one fixed in v8.12.
+var TZ = 'America/Denver';
+function localDay_(d) { return Utilities.formatDate(d, TZ, 'yyyy-MM-dd'); }
+function localStamp_(d) { return Utilities.formatDate(d, TZ, 'yyyy-MM-dd HH:mm:ss'); }
+
+// Read-only. Finds completion rows that duplicate another completion of the SAME task on the
+// same LOCAL day, and prints the gap between them. The gap identifies the mechanism:
+//   seconds apart      -> one gesture fired twice, or a retry on a write that had landed
 //   ~20-25 seconds     -> the client timed out and the user tapped "retry" on a write that
-//                         had ACTUALLY LANDED. This is the known false-failure problem.
+//                         had ACTUALLY SUCCEEDED (API_TIMEOUT is 25s)
+//   many minutes/hours -> two deliberate completions; for a daily task that is legitimate
 function debugDuplicateCompletions() {
   var sheet = getSheet('task_log');
   var data = sheet.getDataRange().getValues();
@@ -830,35 +839,37 @@ function debugDuplicateCompletions() {
     var at = data[r][iAt];
     var d = at instanceof Date ? at : new Date(String(at));
     if (isNaN(d.getTime())) continue;
-    var day = d.toISOString().split('T')[0];
-    var key = String(data[r][iTask]) + '|' + day;
+    var key = String(data[r][iTask]) + '|' + localDay_(d);
     if (!groups[key]) groups[key] = [];
     groups[key].push({ row: r + 1, id: data[r][iId], name: data[r][iName], by: data[r][iBy], at: d });
   }
 
-  var pairs = 0, gaps = [];
-  Logger.log('--- completions duplicated for the same task on the same day ---');
+  var pairs = 0, gaps = [], suspects = [];
+  Logger.log('--- completions duplicated for the same task on the same LOCAL day (' + TZ + ') ---');
   Object.keys(groups).forEach(function(k) {
     var g = groups[k];
     if (g.length < 2) return;
     pairs++;
     g.sort(function(a, b) { return a.at - b.at; });
-    Logger.log('  "' + g[0].name + '"  (' + g.length + ' rows on ' + k.split('|')[1] + ')');
+    Logger.log('  "' + g[0].name + '"  (' + g.length + ' rows on ' + k.split('|')[1] + ' local)');
     for (var i = 0; i < g.length; i++) {
-      var gap = i === 0 ? '' : '   +' + Math.round((g[i].at - g[i - 1].at) / 1000) + 's after previous';
-      Logger.log('     row ' + g[i].row + '  ' + g[i].at.toISOString() + '  by=' + JSON.stringify(String(g[i].by)) + '  id=' + g[i].id + gap);
-      if (i > 0) gaps.push(Math.round((g[i].at - g[i - 1].at) / 1000));
+      var gap = 0, note = '';
+      if (i > 0) {
+        gap = Math.round((g[i].at - g[i - 1].at) / 1000);
+        gaps.push(gap);
+        note = '   +' + gap + 's after previous';
+        if (gap <= 60) { note += '   <-- SUSPECT'; suspects.push({ name: g[i].name, gap: gap, row: g[i].row, id: g[i].id }); }
+      }
+      Logger.log('     row ' + g[i].row + '  ' + localStamp_(g[i].at) + ' local  by=' + JSON.stringify(String(g[i].by)) + '  id=' + g[i].id + note);
     }
   });
   if (!pairs) Logger.log('  none found');
   Logger.log('');
   Logger.log('duplicate groups: ' + pairs);
-  if (gaps.length) {
-    gaps.sort(function(a, b) { return a - b; });
-    Logger.log('gaps in seconds (sorted): ' + JSON.stringify(gaps));
-    Logger.log('median gap: ' + gaps[Math.floor(gaps.length / 2)] + 's');
-  }
-  return { pairs: pairs, gaps: gaps };
+  if (gaps.length) { gaps.sort(function(a, b) { return a - b; }); Logger.log('gaps in seconds (sorted): ' + JSON.stringify(gaps)); }
+  Logger.log('groups where a pair is under 60s apart (almost certainly a real bug): ' + suspects.length);
+  suspects.forEach(function(x) { Logger.log('   "' + x.name + '"  +' + x.gap + 's  row ' + x.row + '  id=' + x.id); });
+  return { pairs: pairs, gaps: gaps, suspects: suspects };
 }
 
 // ── MIGRATION UTILITIES ───────────────────────────────────────────────────────

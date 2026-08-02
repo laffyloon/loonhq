@@ -85,6 +85,18 @@ let SHEETS = {};
 global.SpreadsheetApp = { openById: function () { ops.openById++; return new Spreadsheet(SHEETS, GEN); } };
 global.ContentService = { MimeType: { JSON: 'json' }, createTextOutput: function (t) { return { setMimeType: function () { return t; } }; } };
 global.Logger = { _out: [], log: function (m) { this._out.push(String(m)); } };
+// Apps Script's date formatter, enough of it for localDay_/localStamp_
+global.Utilities = {
+  formatDate: function (d, tz, fmt) {
+    const p = {};
+    new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+      .formatToParts(d).forEach(x => { p[x.type] = x.value; });
+    const day = p.year + '-' + p.month + '-' + p.day;
+    if (fmt === 'yyyy-MM-dd') return day;
+    return day + ' ' + (p.hour === '24' ? '00' : p.hour) + ':' + p.minute + ':' + p.second;
+  }
+};
 
 // ---- load the real script --------------------------------------------------
 const srcFile = fs.readdirSync('.').filter(f => /^LoonHQ_AppScript_.*\.js$/.test(f))[0];
@@ -609,6 +621,54 @@ run('debugDuplicateCompletions ignores snooze rows and changes nothing', () => {
   const before = JSON.stringify(sheets.task_log.data);
   debugDuplicateCompletions();
   if (JSON.stringify(sheets.task_log.data) !== before) throw new Error('the diagnostic mutated the sheet');
+});
+
+// ---- the diagnostic must group by LOCAL day, not UTC day -------------------
+// Both cases below are taken from Frankie's real task_log. The first version of this
+// diagnostic grouped by UTC date and got BOTH of them wrong.
+const LOGH = ['log_id','task_id','task_name','completed_by','completed_at','scope','notes','','','details','log_type'];
+const compRow = (id, task, name, by, iso) => [id, task, name, by, iso, 'household', '', '', 'completion', '', ''];
+
+run('TZ a nightly task done 10pm then next afternoon is NOT a duplicate', () => {
+  // one UTC day (2026-06-18) but two Denver days: Jun 17 10:30pm and Jun 18 3:03pm
+  freshBook({ task_log: new Sheet('task_log', [LOGH,
+    compRow('l1', 'tW', 'Water potted outdoor plants nightly', 'Frankie',  '2026-06-18T04:30:13.607Z'),
+    compRow('l2', 'tW', 'Water potted outdoor plants nightly', 'Meredith', '2026-06-18T21:03:01.474Z')]) });
+  const r = debugDuplicateCompletions();
+  if (r.pairs !== 0) throw new Error('flagged two different Denver days as a duplicate');
+});
+run('TZ same Denver day but DIFFERENT UTC days is still a duplicate', () => {
+  // 3:00pm and 7:05pm on Aug 2 in Denver, stored as Aug 2 and Aug 3 UTC. Grouping by the
+  // UTC date splits this pair and misses the duplicate entirely.
+  freshBook({ task_log: new Sheet('task_log', [LOGH,
+    compRow('l1', 'tL', 'Clean litter box', 'Frankie', '2026-08-02T21:00:00.000Z'),
+    compRow('l2', 'tL', 'Clean litter box', 'Frankie', '2026-08-03T01:05:00.000Z')]) });
+  const r = debugDuplicateCompletions();
+  if (r.pairs !== 1) throw new Error('missed a same-Denver-day duplicate that straddles UTC midnight');
+});
+run('TZ an afternoon and an evening completion on one Denver day pair up', () => {
+  // Jul 20 in Denver: 2:00pm (Jul 20 UTC) and 11:52pm (Jul 21 UTC)
+  freshBook({ task_log: new Sheet('task_log', [LOGH,
+    compRow('l1', 'tT', 'Walk/Outside Time with Tonks', 'Meredith', '2026-07-20T20:00:00.000Z'),
+    compRow('l2', 'tT', 'Walk/Outside Time with Tonks', 'Frankie',  '2026-07-21T05:52:18.906Z')]) });
+  const r = debugDuplicateCompletions();
+  if (r.pairs !== 1) throw new Error('both are Jul 20 in Denver, should pair');
+});
+run('TZ the real Aug 2 Vacuum upstairs pair is flagged as a SUSPECT', () => {
+  freshBook({ task_log: new Sheet('task_log', [LOGH,
+    compRow('l1', 'tV', 'Vacuum upstairs', 'Meredith', '2026-08-02T17:36:26.848Z'),
+    compRow('l2', 'tV', 'Vacuum upstairs', 'Meredith', '2026-08-02T17:36:48.622Z')]) });
+  const r = debugDuplicateCompletions();
+  if (r.suspects.length !== 1) throw new Error('a 22s gap should be flagged as a suspect');
+  if (r.suspects[0].gap !== 22) throw new Error('gap should be 22s, got ' + r.suspects[0].gap);
+});
+run('TZ a legitimate hours-apart pair is reported but NOT called a suspect', () => {
+  freshBook({ task_log: new Sheet('task_log', [LOGH,
+    compRow('l1', 'tP', 'Pack', 'Meredith', '2026-06-18T18:54:32.526Z'),
+    compRow('l2', 'tP', 'Pack', 'Meredith', '2026-06-18T19:59:21.271Z')]) });
+  const r = debugDuplicateCompletions();
+  if (r.pairs !== 1) throw new Error('same Denver day, should be grouped');
+  if (r.suspects.length !== 0) throw new Error('an hour apart is not a suspect');
 });
 
 // ---- container reuse: THE v8.11 REGRESSION ---------------------------------

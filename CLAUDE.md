@@ -19,7 +19,7 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 - index.html — the entire app (built output, source of truth for deployment)
 - build_v4.py — Python build script that generates index.html
 - qa_harness.js — Node.js DOM mock + 237 frontend runtime checks
-- appscript_harness.js — SpreadsheetApp mock + 54 server-side checks (correctness, API cost, container reuse)
+- appscript_harness.js — SpreadsheetApp mock + 64 server-side checks (correctness, API cost, container reuse)
 - e2e_harness.js — Playwright/Chromium checks + 61 real-browser checks (CSS, events, layout)
 - LoonHQ_AppScript_v8.12.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
@@ -352,6 +352,21 @@ its own unfiltered feed. Do not "fix" it by loosening isCompletionLog.
   data URI from /home/claude/logo_uri.txt, outside the repo. Recovered the real 256x256 WebP
   from commit 240e11e, committed it as logo_uri.txt, and the build now ABORTS rather than
   shipping a blank logo. Never point this at a path outside the repo again.
+
+## DUPLICATE COMPLETIONS — investigation in progress (2026-08-02)
+- Reported: some tasks appear twice in History on the same day.
+- debugDuplicateCompletions() is the read-only diagnostic. It groups completions by task and
+  by LOCAL day and prints the gap between them. The gap identifies the mechanism.
+- FIRST VERSION OF THE DIAGNOSTIC WAS WRONG: it grouped by the UTC date. completed_at is a UTC
+  timestamp and the household is in Denver (UTC-6), so that produced BOTH false positives (a
+  nightly task done 10pm Jun 17 and 3pm Jun 18 shares one UTC date and looked duplicated) and
+  false negatives (two completions on the same Denver evening straddle UTC midnight and were
+  never compared). 4 of the first 7 "duplicates" were legitimate. Same class of bug as the
+  due-date one. ALWAYS convert to TZ before asking "same day".
+- Real signal so far: "Vacuum upstairs" 2026-08-02, two rows 22 SECONDS apart, same person.
+  22s is just under API_TIMEOUT (25s), consistent with the client giving up on a write that
+  actually landed and the user tapping "retry". That is the known false-failure design flaw.
+- A gap under 60s is flagged as a SUSPECT. Anything hours apart is almost certainly genuine.
 
 ## STILL OPEN after v8.12
 - On a TIMEOUT the client still rolls back and says "Couldn't save", but a timeout means the
