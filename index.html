@@ -1088,6 +1088,8 @@ var currentUser=null,currentView='tasks',taskTab='today';
 var loginUserPick=null,pickedOwner='',pickedScope='household',pickedUrgency='this_week';
 var selectMode=false,selectedTaskIds=new Set(),longPressTimer=null;
 var _recentlyCompleted=new Set();
+// task ids with a completion request in flight, so the same task cannot be logged twice
+var _completing=new Set();
 var statsDays=30,statsScope='household';
 var _REMINDER_DAYS={same_day:0,'1_day':1,'2_days':2,'3_days':3,'1_week':7};
 var _DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -1185,7 +1187,13 @@ function apiPost(body){
 }
 // A request that never settles (hung connection) must not block syncing forever, so
 // writes older than 15s stop counting as pending.
-function writesPending(){var cut=Date.now()-15000;_inFlightWrites=_inFlightWrites.filter(function(t){return t>cut;});return _inFlightWrites.length>0;}
+// A backstop against a hung request blocking sync forever. The cutoff MUST be longer than
+// API_TIMEOUT: at 15s it expired writes that were still genuinely in flight, so refreshData
+// treated server state as authoritative, cleared _recentlyCompleted, and a task the user had
+// just ticked off REAPPEARED on the list. Tapping it again wrote a second completion row.
+// _fetchTimeout now guarantees every request settles within API_TIMEOUT, so this only has to
+// cover the impossible case.
+function writesPending(){var cut=Date.now()-(API_TIMEOUT+5000);_inFlightWrites=_inFlightWrites.filter(function(t){return t>cut;});return _inFlightWrites.length>0;}
 
 function refreshData(silent){
   if(!silent)setSyncState('loading','Syncing...');
@@ -1836,13 +1844,30 @@ function confirmBatchSnooze(){
 function completeTask(id){var t=(state.tasks||[]).find(function(x){return x.task_id===id;});if(t&&t.status!=='done'&&t.status!=='ended')handleComplete(t);}
 function handleComplete(t){
   var tid=t.task_id,ttype=t.type;
+  // Guard against completing the same task twice. Three separate paths call this (the circle,
+  // the swipe, the action menu) and a slow save could resurrect the card mid-flight, so
+  // without this a second tap silently wrote a second completion row.
+  if(_completing.has(tid))return;
   // attempt() re-runs cleanly after a rollback, so it doubles as the retry handler
   function attempt(){
+    _completing.add(tid);
     _recentlyCompleted.add(tid);
     var wrap=document.querySelector('.tc-wrap[data-task-id="'+tid+'"]');
     if(wrap){wrap.style.height=wrap.offsetHeight+'px';wrap.style.transition='all .2s';setTimeout(function(){wrap.style.height='0';wrap.style.opacity='0';wrap.style.overflow='hidden';},10);}
     setSyncState('loading','Logging...');
-    apiPost({action:'completeTask',data:{task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_month:t.sched_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,due_date:t.due_date,end_date:t.end_date,completed_by:creditFor(t),scope:t.scope||'household',notes:''}}).then(function(){if(ttype==='scheduled'||ttype==='interval')_recentlyCompleted.delete(tid);scheduleBgSync();}).catch(function(){_recentlyCompleted.delete(tid);actionFailed("Couldn't complete",renderTasks,'Could not complete',attempt);});
+    apiPost({action:'completeTask',data:{task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_month:t.sched_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,due_date:t.due_date,end_date:t.end_date,completed_by:creditFor(t),scope:t.scope||'household',notes:''}}).then(function(){
+      // Do NOT release _recentlyCompleted here. For a recurring task the server advances
+      // due_date, but LOCAL state still holds the old one, so dropping the filter before the
+      // reconcile lands puts the finished card straight back into Today. That is the window
+      // in which a second tap wrote a duplicate completion (seen 10s and 22s apart on
+      // 2026-08-02). The payload apply clears it, which is the point where server state is
+      // actually authoritative.
+      _completing.delete(tid);
+      scheduleBgSync(SYNC_FAST);
+    }).catch(function(){
+      _completing.delete(tid);_recentlyCompleted.delete(tid);
+      actionFailed("Couldn't complete",renderTasks,'Could not complete',attempt);
+    });
   }
   attempt();
 }

@@ -18,7 +18,7 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 ## Repo structure
 - index.html — the entire app (built output, source of truth for deployment)
 - build_v4.py — Python build script that generates index.html
-- qa_harness.js — Node.js DOM mock + 237 frontend runtime checks
+- qa_harness.js — Node.js DOM mock + 246 frontend runtime checks
 - appscript_harness.js — SpreadsheetApp mock + 64 server-side checks (correctness, API cost, container reuse)
 - e2e_harness.js — Playwright/Chromium checks + 61 real-browser checks (CSS, events, layout)
 - LoonHQ_AppScript_v8.12.js — current Apps Script source (deploy separately to script.google.com)
@@ -353,7 +353,28 @@ its own unfiltered feed. Do not "fix" it by loosening isCompletionLog.
   from commit 240e11e, committed it as logo_uri.txt, and the build now ABORTS rather than
   shipping a blank logo. Never point this at a path outside the repo again.
 
-## DUPLICATE COMPLETIONS — investigation in progress (2026-08-02)
+## DUPLICATE COMPLETIONS — ROOT CAUSE FOUND AND FIXED (2026-08-02, v8.12)
+THE BUG: handleComplete's success path did
+    if(ttype==='scheduled'||ttype==='interval')_recentlyCompleted.delete(tid);
+For a RECURRING task the server advances due_date, but LOCAL state still holds the OLD date.
+Releasing the filter the instant the write succeeded put the finished card straight back into
+Today, where it sat until the reconcile landed. On a slow sync that window is 10-20 seconds,
+and a second tap in it wrote a second completion row. Both real duplicates found in the live
+sheet were recurring tasks, 10s and 22s apart, same person.
+- FIX: do NOT release _recentlyCompleted on success. The payload apply clears it, which is the
+  only point where server state is actually authoritative. Never reintroduce the early delete.
+- SECOND FIX: _completing is a Set of task ids with a completion in flight. handleComplete
+  returns early if the id is already in it. Three paths call handleComplete (circle, swipe,
+  action menu), so this also covers a plain double tap. Released on success AND failure.
+- THIRD FIX: writesPending() expired in-flight writes after 15s, which is SHORTER than
+  API_TIMEOUT (25s). A write still legitimately in flight stopped counting, so refreshData
+  applied a stale payload and cleared _recentlyCompleted, resurrecting the card. The cutoff is
+  now API_TIMEOUT+5000. It must always exceed API_TIMEOUT.
+- The qa_harness test for this MUST be async (runAsync + await tick) and must build its own
+  task fixture. A synchronous version passes against the broken code because the .then has not
+  run yet, and by that point in the chain state.tasks is empty.
+
+## DUPLICATE COMPLETIONS — how the investigation went (2026-08-02)
 - Reported: some tasks appear twice in History on the same day.
 - debugDuplicateCompletions() is the read-only diagnostic. It groups completions by task and
   by LOCAL day and prints the gap between them. The gap identifies the mechanism.

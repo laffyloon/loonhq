@@ -277,7 +277,7 @@ run('toggleLegend', ()=>toggleLegend());
 // complete / snooze / batch (network stubbed)
 run('handleComplete one_off', ()=>handleComplete(state.tasks[0]));
 run('handleComplete scheduled', ()=>handleComplete(state.tasks[2]));
-run('handleComplete sends due_date+freq', ()=>{ __posts.length=0; handleComplete(state.tasks[2]); const d=__posts[__posts.length-1].data; if(!('due_date' in d)) throw new Error('due_date missing'); if(!('sched_freq' in d)) throw new Error('sched_freq missing'); if(!('sched_interval' in d)) throw new Error('sched_interval missing'); });
+run('handleComplete sends due_date+freq', ()=>{ __posts.length=0; _completing.clear(); _recentlyCompleted.clear(); handleComplete(state.tasks[2]); const d=__posts[__posts.length-1].data; if(!('due_date' in d)) throw new Error('due_date missing'); if(!('sched_freq' in d)) throw new Error('sched_freq missing'); if(!('sched_interval' in d)) throw new Error('sched_interval missing'); });
 run('openSnooze future task uses due_date base', ()=>{ snoozingTask=state.tasks[4]; openSnooze(state.tasks[4]); }); // t5 due_date=plus(15)
 run('openSnooze overdue task uses today base', ()=>{ openSnooze(state.tasks[7]); }); // t8 due_date=plus(-3)
 run('pickSnoozeDays sets pending', ()=>{ pickSnoozeDays(3, new FakeEl('button')); if(!pendingSnooze||pendingSnooze.value!==3||pendingSnooze.kind!=='days') throw new Error('pending not set'); });
@@ -794,12 +794,23 @@ runAsync('a successful sync clears _recentlyCompleted', async ()=>{
   if(_recentlyCompleted.has('stale-id')) throw new Error('_recentlyCompleted should reset once server state is authoritative');
 });
 
-runAsync('a hung write stops blocking syncs after 15s', async ()=>{
+runAsync('a write 20s old STILL blocks: it may legitimately still be in flight', async ()=>{
+  // API_TIMEOUT is 25s, so at 20s the request has not even given up yet. Expiring it here is
+  // what let refreshData clear _recentlyCompleted and resurrect a completed card.
   state.tasks=[{task_id:'hung-1',name:'x',type:'one_off',due_date:plus(1),status:'active',scope:'household'}];
   rebuildTaskIndex(); _lastWriteAt=0;
-  _inFlightWrites=[Date.now()-20000];   // a write that never settled 20s ago
+  _inFlightWrites=[Date.now()-20000];
   await refreshData(true);
-  if(state.tasks.length!==0) throw new Error('a long-dead write should stop blocking syncs forever');
+  if(state.tasks.length!==1) throw new Error('a 20s-old write should still count as pending');
+  _inFlightWrites=[];
+});
+runAsync('a write older than the request timeout stops blocking syncs forever', async ()=>{
+  state.tasks=[{task_id:'hung-2',name:'x',type:'one_off',due_date:plus(1),status:'active',scope:'household'}];
+  rebuildTaskIndex(); _lastWriteAt=0;
+  _inFlightWrites=[Date.now()-(API_TIMEOUT+10000)];   // impossible: it should have settled
+  await refreshData(true);
+  if(state.tasks.length!==0) throw new Error('a truly dead write should not block syncing');
+  _inFlightWrites=[];
 });
 
 // ---- temp record lifetime (v8.8.3) ----
@@ -1147,6 +1158,56 @@ run('a no-date one-off created at 10pm Denver lands in TODAY, not Tomorrow', ()=
     isToday = d.getFullYear()===todayMid.getFullYear() && d.getMonth()===todayMid.getMonth() && d.getDate()===todayMid.getDate();
   } finally { _unfreezeClock(); }
   if(!isToday) throw new Error('task dated '+due+' would not bucket as today');
+});
+
+// ── duplicate completions (2026-08-02) ──────────────────────────────────────
+run('completing the same task twice in a row sends only ONE request', ()=>{
+  __posts.length=0; _completing.clear(); _recentlyCompleted.clear();
+  const t = state.tasks[2];
+  handleComplete(t);
+  handleComplete(t);          // second tap, e.g. swipe then tap, or a resurrected card
+  const sent = __posts.filter(p=>p.action==='completeTask').length;
+  if(sent !== 1) throw new Error('expected 1 completeTask, got '+sent);
+  _completing.clear(); _recentlyCompleted.clear();
+});
+runAsync('a RECURRING task stays hidden AFTER the save succeeds, until the sync', async ()=>{
+  // The server advances due_date but LOCAL state still holds the old one. Releasing the
+  // filter on success put the finished card straight back into Today, which is the window a
+  // second tap landed in. It must stay filtered until a payload is actually applied.
+  __posts.length=0; _completing.clear(); _recentlyCompleted.clear(); __failNext=false;
+  const t = {task_id:'dup-recurring',name:'Vacuum upstairs',type:'interval',recurrence_days:7,
+             sched_freq:'day',due_date:todayStr(),status:'active',scope:'household',owner:''};
+  state.tasks=[t]; rebuildTaskIndex();
+  handleComplete(t);
+  await tick(); await tick(); await tick();      // let the POST promise and its .then run
+  if(__posts.filter(p=>p.action==='completeTask').length !== 1) throw new Error('no completeTask sent');
+  if(!_recentlyCompleted.has(t.task_id))
+    throw new Error('the finished recurring card was released before the reconcile landed');
+  if(_completing.has(t.task_id)) throw new Error('the in-flight guard was never released');
+  _completing.clear(); _recentlyCompleted.clear();
+});
+runAsync('a FAILED complete does put the card back, so it can be retried', async ()=>{
+  __posts.length=0; _completing.clear(); _recentlyCompleted.clear();
+  const t = {task_id:'dup-oneoff',name:'Take out bins',type:'one_off',
+             due_date:todayStr(),status:'active',scope:'household',owner:''};
+  state.tasks=[t]; rebuildTaskIndex();
+  __failNext = true;
+  handleComplete(t);
+  await tick(); await tick(); await tick();
+  if(_recentlyCompleted.has(t.task_id)) throw new Error('a failed completion must restore the card');
+  if(_completing.has(t.task_id)) throw new Error('the guard must release on failure too');
+  _completing.clear(); _recentlyCompleted.clear(); __failNext=false;
+});
+run('the completion guard is released so the task can be done again later', ()=>{
+  __posts.length=0; _completing.clear(); _recentlyCompleted.clear();
+  const t = state.tasks[2];
+  handleComplete(t);
+  if(!_completing.has(t.task_id)) throw new Error('guard not set while in flight');
+  _completing.delete(t.task_id); _recentlyCompleted.clear();
+  __posts.length=0;
+  handleComplete(t);
+  if(__posts.filter(p=>p.action==='completeTask').length !== 1) throw new Error('could not complete again after release');
+  _completing.clear(); _recentlyCompleted.clear();
 });
 
 // ---- report ----
