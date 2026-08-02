@@ -809,6 +809,58 @@ function fixTaskLogHeaderLabels() {
   return { ok: true, changed: true };
 }
 
+// Read-only. Finds completion rows that duplicate another completion of the SAME task on
+// the SAME calendar day, and prints the gap between them. The gap identifies the mechanism:
+//   milliseconds apart -> one gesture fired twice (double tap, or swipe + click)
+//   a few seconds      -> two deliberate taps, or an optimistic retry
+//   ~20-25 seconds     -> the client timed out and the user tapped "retry" on a write that
+//                         had ACTUALLY LANDED. This is the known false-failure problem.
+function debugDuplicateCompletions() {
+  var sheet = getSheet('task_log');
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) { Logger.log('task_log is empty'); return { pairs: 0 }; }
+  var header = data[0].map(String);
+  var iId = header.indexOf('log_id'), iTask = header.indexOf('task_id');
+  var iName = header.indexOf('task_name'), iBy = header.indexOf('completed_by');
+  var iAt = header.indexOf('completed_at');
+
+  var groups = {};
+  for (var r = 1; r < data.length; r++) {
+    if (!logRowIsCompletion_(header, data[r])) continue;
+    var at = data[r][iAt];
+    var d = at instanceof Date ? at : new Date(String(at));
+    if (isNaN(d.getTime())) continue;
+    var day = d.toISOString().split('T')[0];
+    var key = String(data[r][iTask]) + '|' + day;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push({ row: r + 1, id: data[r][iId], name: data[r][iName], by: data[r][iBy], at: d });
+  }
+
+  var pairs = 0, gaps = [];
+  Logger.log('--- completions duplicated for the same task on the same day ---');
+  Object.keys(groups).forEach(function(k) {
+    var g = groups[k];
+    if (g.length < 2) return;
+    pairs++;
+    g.sort(function(a, b) { return a.at - b.at; });
+    Logger.log('  "' + g[0].name + '"  (' + g.length + ' rows on ' + k.split('|')[1] + ')');
+    for (var i = 0; i < g.length; i++) {
+      var gap = i === 0 ? '' : '   +' + Math.round((g[i].at - g[i - 1].at) / 1000) + 's after previous';
+      Logger.log('     row ' + g[i].row + '  ' + g[i].at.toISOString() + '  by=' + JSON.stringify(String(g[i].by)) + '  id=' + g[i].id + gap);
+      if (i > 0) gaps.push(Math.round((g[i].at - g[i - 1].at) / 1000));
+    }
+  });
+  if (!pairs) Logger.log('  none found');
+  Logger.log('');
+  Logger.log('duplicate groups: ' + pairs);
+  if (gaps.length) {
+    gaps.sort(function(a, b) { return a - b; });
+    Logger.log('gaps in seconds (sorted): ' + JSON.stringify(gaps));
+    Logger.log('median gap: ' + gaps[Math.floor(gaps.length / 2)] + 's');
+  }
+  return { pairs: pairs, gaps: gaps };
+}
+
 // ── MIGRATION UTILITIES ───────────────────────────────────────────────────────
 // Run manually from the Apps Script editor ONCE after deploying v8.2.
 // Safe to run: only creates rows in tasks, never deletes data.

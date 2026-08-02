@@ -562,6 +562,55 @@ run('batchDelete works on a REUSED container', () => {
   if (out.error) throw new Error('second call failed: ' + out.error);
 });
 
+// ---- duplicate-completion diagnostic ---------------------------------------
+function dupLogSheet() {
+  const H = ['log_id','task_id','task_name','completed_by','completed_at','scope','notes','','','details','log_type'];
+  return new Sheet('task_log', [H,
+    // one gesture fired twice: 1 second apart
+    ['d1','tA','Vacuum upstairs','Frankie','2026-08-02T18:00:00.000Z','household','','','completion','',''],
+    ['d2','tA','Vacuum upstairs','Frankie','2026-08-02T18:00:01.000Z','household','','','completion','',''],
+    // timed out then retried: 24 seconds apart
+    ['d3','tB','Water plants','Meredith','2026-08-02T19:00:00.000Z','household','','','completion','',''],
+    ['d4','tB','Water plants','Meredith','2026-08-02T19:00:24.000Z','household','','','completion','',''],
+    // a genuine single completion, must NOT be flagged
+    ['d5','tC','Clean litter box','Frankie','2026-08-02T20:00:00.000Z','household','','','completion','',''],
+    // same task, DIFFERENT day: legitimate for a daily task, must NOT be flagged
+    ['d6','tC','Clean litter box','Frankie','2026-08-01T20:00:00.000Z','household','','','completion','',''],
+    // a snooze row must be ignored entirely
+    ['d7','tA','Vacuum upstairs','Frankie','2026-08-02T18:00:02.000Z','household','','snooze','{"until_date":"2026-08-05"}','',''],
+  ]);
+}
+run('debugDuplicateCompletions finds same-task same-day duplicates', () => {
+  freshBook({ task_log: dupLogSheet() });
+  const r = debugDuplicateCompletions();
+  if (r.pairs !== 2) throw new Error('expected 2 duplicate groups, got ' + r.pairs);
+});
+run('debugDuplicateCompletions reports the gap that identifies the cause', () => {
+  freshBook({ task_log: dupLogSheet() });
+  const r = debugDuplicateCompletions();
+  if (r.gaps.join(',') !== '1,24') throw new Error('expected gaps 1s and 24s, got ' + r.gaps.join(','));
+});
+run('debugDuplicateCompletions does NOT flag a single completion', () => {
+  freshBook({ task_log: dupLogSheet() });
+  const out = Logger._out.join('\n');
+  if (/Clean litter box/.test(out) && /2 rows/.test(out)) throw new Error('flagged a legitimate single completion');
+});
+run('debugDuplicateCompletions does NOT flag the same task on different days', () => {
+  const H = ['log_id','task_id','task_name','completed_by','completed_at','scope','notes','','','details','log_type'];
+  freshBook({ task_log: new Sheet('task_log', [H,
+    ['a','tD','Daily thing','Frankie','2026-08-01T10:00:00.000Z','household','','','completion','',''],
+    ['b','tD','Daily thing','Frankie','2026-08-02T10:00:00.000Z','household','','','completion','',''],
+    ['c','tD','Daily thing','Frankie','2026-08-03T10:00:00.000Z','household','','','completion','','']]) });
+  const r = debugDuplicateCompletions();
+  if (r.pairs !== 0) throw new Error('a daily task on 3 separate days was flagged as duplicated');
+});
+run('debugDuplicateCompletions ignores snooze rows and changes nothing', () => {
+  const sheets = freshBook({ task_log: dupLogSheet() });
+  const before = JSON.stringify(sheets.task_log.data);
+  debugDuplicateCompletions();
+  if (JSON.stringify(sheets.task_log.data) !== before) throw new Error('the diagnostic mutated the sheet');
+});
+
 // ---- container reuse: THE v8.11 REGRESSION ---------------------------------
 // This is the bug that made task creation fail for Frankie on 2026-07-30. The item-7
 // caching stored Spreadsheet/Sheet handles in globals, and nothing cleared them when a new
