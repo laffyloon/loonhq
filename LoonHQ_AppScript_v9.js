@@ -1,4 +1,4 @@
-// LoonHQ Apps Script v8.12
+// LoonHQ Apps Script v9
 //
 // DEPLOY: paste over everything in script.google.com -> Save -> Deploy ->
 //         Manage deployments -> pencil on the EXISTING deployment -> New version.
@@ -18,7 +18,7 @@ var HEADERS = {
   tasks:   ['task_id','name','type','weekday','day_of_month','recurrence_days','due_date','end_date',
             'urgency_window','reminder_offset','linked_asset_id','owner','scope','status','notes',
             'created_at','sched_month','sched_freq','sched_interval','sched_start',
-            'linked_project_id','sched_pattern'],
+            'linked_project_id','sched_pattern','done_together'],
   projects:['project_id','name','description','status','target_date','created_at'],
   subtasks:['subtask_id','project_id','name','status','due_date','sort_order'],
   grocery: ['item_id','name','category','status','added_by','checked_at','sort_order'],
@@ -515,20 +515,60 @@ function deleteTask(data) {
   return { ok: true };
 }
 
+// True when this task already has a completion logged within the last `withinMs`.
+// Section 11A: catches a timeout-retry writing the same completion twice. It reads the
+// contiguous span from task_id to completed_at in ONE call, which is 4 of the 9+ columns,
+// rather than getDataRange over the whole log.
+function recentCompletionExists_(logSheet, taskId, withinMs) {
+  var headers = headersOf_(logSheet);
+  var iTask = headers.indexOf('task_id'), iAt = headers.indexOf('completed_at');
+  if (iTask < 0 || iAt < 0) return false;
+  var last = logSheet.getLastRow();
+  if (last < 2) return false;
+  var lo = Math.min(iTask, iAt), hi = Math.max(iTask, iAt);
+  var vals = logSheet.getRange(2, lo + 1, last - 1, hi - lo + 1).getValues();
+  var tOff = iTask - lo, aOff = iAt - lo, target = String(taskId), now = Date.now();
+  for (var i = vals.length - 1; i >= 0; i--) {
+    if (String(vals[i][tOff]) !== target) continue;
+    var raw = vals[i][aOff];
+    var d = raw instanceof Date ? raw : new Date(String(raw));
+    if (isNaN(d.getTime())) continue;
+    if ((now - d.getTime()) <= withinMs) return true;
+  }
+  return false;
+}
 function completeTask(data) {
   var today = new Date(); today.setHours(0, 0, 0, 0);
   var logSheet = getSheet('task_log');
+  var taskSheet0 = getSheet('tasks');
+  var rowNum0 = findRow(taskSheet0, 'task_id', data.task_id);
+
+  // Section 11B: if the task is already finished, a second completion is a duplicate.
+  // Recurring tasks stay 'active' after completing, so this only trips on real repeats.
+  if (rowNum0 >= 0) {
+    var th = headersOf_(taskSheet0);
+    var sIdx = th.indexOf('status');
+    if (sIdx >= 0) {
+      var st = String(taskSheet0.getRange(rowNum0, sIdx + 1).getValues()[0][0] || '');
+      if (st === 'done' || st === 'ended') return { ok: true, skipped: 'already_' + st };
+    }
+  }
+  // Section 11A: same completion inside 60 seconds means a retry, not a second event.
+  if (recentCompletionExists_(logSheet, data.task_id, 60000)) {
+    return { ok: true, skipped: 'duplicate_within_60s' };
+  }
+  var newLogId = newId('l');
   var logEntry = {
-    log_id: newId('l'), task_id: data.task_id, task_name: data.task_name,
+    log_id: newLogId, task_id: data.task_id, task_name: data.task_name,
     completed_by: data.completed_by, completed_at: new Date().toISOString(),
     scope: data.scope || 'household', notes: data.notes || '',
     log_type: 'completion', details: ''
   };
   appendRow(logSheet, HEADERS.task_log, logEntry);
 
-  var taskSheet = getSheet('tasks');
-  var rowNum = findRow(taskSheet, 'task_id', data.task_id);
-  if (rowNum < 0) return { ok: true };
+  var taskSheet = taskSheet0;
+  var rowNum = rowNum0;
+  if (rowNum < 0) return { ok: true, log_id: newLogId };
 
   if (data.type === 'scheduled' || data.type === 'interval') {
     var nextDue = computeNextDue(data, today);
@@ -540,7 +580,7 @@ function completeTask(data) {
   } else {
     updateRow(taskSheet, rowNum, { status: 'done' });
   }
-  return { ok: true };
+  return { ok: true, log_id: newLogId };
 }
 
 // One request instead of one per task. Both the task rows and every matching log row are
@@ -579,8 +619,12 @@ function batchDelete(data) {
   return { ok: true, deleted: deleted };
 }
 function batchComplete(data) {
-  (data.tasks || []).forEach(function(t) { completeTask(Object.assign({ completed_by: data.completed_by }, t)); });
-  return { ok: true };
+  var ids = [];
+  (data.tasks || []).forEach(function(t) {
+    var r = completeTask(Object.assign({ completed_by: data.completed_by }, t));
+    ids.push((r && r.log_id) || '');
+  });
+  return { ok: true, log_ids: ids };
 }
 
 function snoozeTask(data) {

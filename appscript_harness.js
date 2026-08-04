@@ -671,6 +671,100 @@ run('TZ a legitimate hours-apart pair is reported but NOT called a suspect', () 
   if (r.suspects.length !== 0) throw new Error('an hour apart is not a suspect');
 });
 
+// ---- v9 completion guards ---------------------------------------------------
+run('v9 completeTask returns the log_id so undo can target the exact row', () => {
+  freshBook();
+  const r = completeTask({ task_id: 't2', task_name: 'Bins', type: 'one_off', completed_by: 'Frankie', scope: 'household' });
+  if (!r.ok || !r.log_id) throw new Error('no log_id returned: ' + JSON.stringify(r));
+});
+run('v9 batchComplete returns one log_id per task, in order', () => {
+  freshBook();
+  const r = batchComplete({ completed_by: 'Frankie', tasks: [
+    { task_id: 't1', task_name: 'A', type: 'one_off', scope: 'household' },
+    { task_id: 't2', task_name: 'B', type: 'one_off', scope: 'household' }] });
+  if (!r.log_ids || r.log_ids.length !== 2) throw new Error('expected 2 log_ids, got ' + JSON.stringify(r.log_ids));
+  if (r.log_ids[0] === r.log_ids[1]) throw new Error('log_ids must be distinct');
+});
+run('v9 DEDUP a repeat completion inside 60s writes no second row', () => {
+  // MUST use a RECURRING task. A one-off flips to status done, so the status guard would
+  // block the repeat and this test would pass even with the dedup check removed.
+  const sheets = freshBook();
+  const rec = { task_id: 't1', task_name: 'Water plants', type: 'interval', recurrence_days: 1,
+                sched_freq: 'month', completed_by: 'Frankie', scope: 'household' };
+  const before = sheets.task_log.data.length;
+  completeTask(rec);
+  const afterFirst = sheets.task_log.data.length;
+  if (afterFirst !== before + 1) throw new Error('first completion did not write');
+  const st = TASK_HDR.indexOf('status');
+  if (String(sheets.tasks.data[1][st]) !== 'active') throw new Error('fixture broken: recurring task should still be active');
+  const r = completeTask(rec);
+  if (sheets.task_log.data.length !== afterFirst) throw new Error('a duplicate row was written');
+  if (!r.ok) throw new Error('the skip must still report ok');
+  if (r.skipped !== 'duplicate_within_60s') throw new Error('expected the dedup guard to fire, got ' + r.skipped);
+});
+run('v9 DEDUP an OLD completion for the same task does not block a new one', () => {
+  const H = HEADERS.task_log.slice();
+  const old = new Sheet('task_log', [H,
+    ['l-old', 't2', 'Bins', 'Frankie', '2026-01-01T10:00:00.000Z', 'household', '', '', 'completion']]);
+  const sheets = freshBook({ task_log: old });
+  completeTask({ task_id: 't2', task_name: 'Bins', type: 'one_off', completed_by: 'Frankie', scope: 'household' });
+  if (sheets.task_log.data.length !== 3) throw new Error('a months-old completion wrongly blocked a new one');
+});
+run('v9 DEDUP is per task, so two different tasks in one batch both write', () => {
+  const sheets = freshBook();
+  const before = sheets.task_log.data.length;
+  batchComplete({ completed_by: 'Frankie', tasks: [
+    { task_id: 't1', task_name: 'A', type: 'one_off', scope: 'household' },
+    { task_id: 't2', task_name: 'B', type: 'one_off', scope: 'household' }] });
+  if (sheets.task_log.data.length !== before + 2) throw new Error('expected 2 new rows, got ' + (sheets.task_log.data.length - before));
+});
+run('v9 STATUS GUARD a task already done writes nothing', () => {
+  const sheets = freshBook();
+  const st = TASK_HDR.indexOf('status');
+  sheets.tasks.data[2][st] = 'done';          // t2 is row index 2
+  const before = sheets.task_log.data.length;
+  const r = completeTask({ task_id: 't2', task_name: 'Bins', type: 'one_off', completed_by: 'Frankie', scope: 'household' });
+  if (sheets.task_log.data.length !== before) throw new Error('logged a completion for an already-done task');
+  if (!r.ok) throw new Error('must still report ok');
+});
+run('v9 STATUS GUARD an ended recurring task writes nothing', () => {
+  const sheets = freshBook();
+  const st = TASK_HDR.indexOf('status');
+  sheets.tasks.data[1][st] = 'ended';
+  const before = sheets.task_log.data.length;
+  completeTask({ task_id: 't1', task_name: 'Water plants', type: 'interval', recurrence_days: 1, sched_freq: 'month', completed_by: 'Frankie', scope: 'household' });
+  if (sheets.task_log.data.length !== before) throw new Error('logged a completion for an ended task');
+});
+run('v9 a RECURRING task stays active and can be completed again on a later day', () => {
+  const sheets = freshBook();
+  const st = TASK_HDR.indexOf('status');
+  completeTask({ task_id: 't1', task_name: 'Water plants', type: 'interval', recurrence_days: 1, sched_freq: 'month', completed_by: 'Frankie', scope: 'household' });
+  if (String(sheets.tasks.data[1][st]) !== 'active') throw new Error('recurring task should stay active, got ' + sheets.tasks.data[1][st]);
+});
+run('v9 done_together is a safe append at the END of the tasks header', () => {
+  const h = HEADERS.tasks;
+  if (h[h.length - 1] !== 'done_together') throw new Error('done_together must be last so setupHeaders appends it: ' + h.slice(-3));
+  if (h.indexOf('done_together') !== h.lastIndexOf('done_together')) throw new Error('duplicated');
+});
+run('v9 addTask round-trips done_together', () => {
+  const sheets = freshBook();
+  addTask({ name: 'Walk dog', type: 'one_off', due_date: '2026-08-05', scope: 'household', owner: '', done_together: 'true' });
+  const row = sheets.tasks.data[sheets.tasks.data.length - 1];
+  const idx = TASK_HDR.indexOf('done_together');
+  if (String(row[idx]) !== 'true') throw new Error('done_together not stored, got ' + JSON.stringify(row[idx]));
+});
+run('v9 COST the dedup check reads a column span, not the whole log', () => {
+  const rows = [HEADERS.task_log.slice()];
+  for (let i = 0; i < 300; i++) rows.push(['l' + i, 'tz' + i, 'T', 'F', '2026-01-01T00:00:00Z', 'household', '', '', 'completion']);
+  const log = new Sheet('task_log', rows);
+  freshBook({ task_log: log });
+  resetOps();
+  completeTask({ task_id: 't2', task_name: 'Bins', type: 'one_off', completed_by: 'Frankie', scope: 'household' });
+  // task_id and completed_at are 4 columns apart, so the span read is 300x4=1200 cells.
+  // A getDataRange scan of 300x9 would be 2700. Assert we are nearer the former.
+  if (ops.cellsRead > 1500) throw new Error('read ' + ops.cellsRead + ' cells, a full scan is 2700');
+});
+
 // ---- container reuse: THE v8.11 REGRESSION ---------------------------------
 // This is the bug that made task creation fail for Frankie on 2026-07-30. The item-7
 // caching stored Spreadsheet/Sheet handles in globals, and nothing cleared them when a new

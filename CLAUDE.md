@@ -18,10 +18,10 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 ## Repo structure
 - index.html — the entire app (built output, source of truth for deployment)
 - build_v4.py — Python build script that generates index.html
-- qa_harness.js — Node.js DOM mock + 246 frontend runtime checks
-- appscript_harness.js — SpreadsheetApp mock + 64 server-side checks (correctness, API cost, container reuse)
-- e2e_harness.js — Playwright/Chromium checks + 61 real-browser checks (CSS, events, layout)
-- LoonHQ_AppScript_v8.12.js — current Apps Script source (deploy separately to script.google.com)
+- qa_harness.js — Node.js DOM mock + 276 frontend runtime checks
+- appscript_harness.js — SpreadsheetApp mock + 75 server-side checks (correctness, API cost, container reuse)
+- e2e_harness.js — Playwright/Chromium checks + 62 real-browser checks (CSS, events, layout)
+- LoonHQ_AppScript_v9.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
 
 ## Build workflow
@@ -60,11 +60,11 @@ DO NOT recommend clearing, resetting, or deleting sheet data under any circumsta
 without explicit approval AND a second confirmation from Frankie. This is a hard rule.
 Real user data is live in the sheet.
 
-## Current version: v8.12
+## Current version: v9
 index.html in the repo is the live deployed build. build_v4.py is the source of truth.
 
 ## AppScript deploy state
-The repo file is LoonHQ_AppScript_v8.12.js (name tracks the app's major.minor, not the
+The repo file is LoonHQ_AppScript_v9.js (name tracks the app's major.minor, not the
 AppScript's own history). Deployed by the user up to the v8.8 content on 2026-07-29.
 Still NOT in the user's editor (added in v8.9):
 - logRowIsCompletion_ / completionLogs_ : getAllData now filters on RAW cells, so it works
@@ -321,6 +321,54 @@ its own unfiltered feed. Do not "fix" it by loosening isCompletionLog.
 - Delegated click handlers for: data-sub, data-addsub, data-editproj, data-editsub, .snooze-opt[data-snooze]
 - build_v4.py is the source of truth — edit it, then run python3 build_v4.py to regenerate index.html
 - Never edit index.html directly
+
+## v9 — MULTI-TAP CREDIT CYCLING (2026-08-04). Read this before touching completion.
+THE SINGLE WRITE RULE: flushPending() is the ONLY function that writes a completion.
+Cycling taps mutate the local _pending map and nothing else: no apiPost, no state.tasks
+mutation, no task_log write. handleComplete (swipe + card action menu) and
+batchCompleteSelected (multi-select bar) BOTH arm _pending and delegate to flushPending.
+If you add a completion path, route it through flushPending or you reintroduce the
+duplicate-write class of bug this app has had three times.
+
+- _pending: task_id -> {credit, idx, timer, startedAt, lastTapAt, task}. credit is a
+  completed_by string, or null meaning "cleared, do not commit".
+- PENDING_MS 2500 countdown, TAP_GUARD_MS 250 swallows accidental double taps,
+  RECENT_COMMIT_MS 10000, UNDO_MS 5000.
+- flushPending deletes every id from _pending SYNCHRONOUSLY before any async work, so a
+  concurrent flush trigger cannot find and re-commit the same task. One batchComplete
+  request per flush, never one per task.
+- _recentCommit + recentlyCommitted() hide a just-committed task for 10s so a stale
+  payload cannot resurrect it. BOTH cycleCompletion and handleComplete refuse a task that
+  is recentlyCommitted; without that guard a second tap right after a commit writes again.
+- bgSyncAllowed() is a predicate, not logic buried in the timer callback, because the qa
+  harness STUBS setTimeout (line ~100) and cannot fire real timers. Anything time-based
+  must be testable through a predicate or it cannot be covered.
+- defaultCreditFor derives credit from ASSIGNMENT: owner both -> both, done_together ->
+  both, owner one person -> that person, empty -> current user, personal -> the owner.
+  creditFor() still exists for legacy paths but the v9 flow uses defaultCreditFor.
+- Section 12E: a failed commit does NOT auto-retry. It shows "Couldn't confirm" and
+  restores the card. Never re-arm _toastRetry on a completion failure.
+- showToast() disarms any armed undo. Only one toast exists at a time, so without that a
+  later failure toast would fire undoLastCompletion when tapped.
+
+## v9 SPEC CONTRADICTION worth settling
+Section 2 said BOTH "tapping another task's circle commits the first" AND "multiple cards
+can be in pending state simultaneously". Those cannot both hold for sequential taps. The
+explicit rule won: tapping a second circle flushes the first. The map and flushPending are
+still genuinely multi-capable (batch flush sends one request for N tasks, covered by a
+test that seeds the map directly), which is what Section 5's single-batch-call requirement
+needs. If you want true simultaneous pending from tapping, remove the flush in
+cycleCompletion and the "tapping a second card commits the first" test.
+
+## v9 user colours — ONE palette, no exceptions
+--user-f #9333EA / --user-f-light #F3E8FF / --user-f-dark #6B21A8
+--user-m #D97706 / --user-m-light #FEF3C7 / --user-m-dark #92400E
+Every per-user colour reads these: login buttons and avatars, owner picker chips, card
+owner circles, history dots, stats bars, trend chart strokes, pending credit circles,
+batch credit selector. The pre-v9 split (purple/yellow in five places, green/blue in the
+history dots) is gone. "Both" is ALWAYS a 135deg split of the two light colours with NO
+letter. A qa test parses the stylesheet and fails if any of those rules stops using a
+--user-* variable, so do not hardcode a hex.
 
 ## v8.12 fixes (2026-07-30, second session)
 - NO-DUE-DATE TASKS LANDED ON TOMORROW. submitTask defaulted a blank due date with

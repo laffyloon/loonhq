@@ -105,6 +105,14 @@ const tick = () => new Promise(r => setImmediate(r));
 global.Set = Set;
 
 // ---- load and run the app script ----
+// The stylesheet too, so colour rules can be asserted rather than eyeballed.
+global.__cssText = (function(){
+  try{
+    const html = fs.readFileSync('index.html','utf8');
+    const m = html.match(/<style>([\s\S]*?)<\/style>/);
+    return m ? m[1] : '';
+  }catch(e){ return ''; }
+})();
 let js = fs.readFileSync('/home/claude/extracted.js','utf8');
 // strip the window.onload assignment auto-run side effects are fine; eval in global scope
 try {
@@ -277,7 +285,7 @@ run('toggleLegend', ()=>toggleLegend());
 // complete / snooze / batch (network stubbed)
 run('handleComplete one_off', ()=>handleComplete(state.tasks[0]));
 run('handleComplete scheduled', ()=>handleComplete(state.tasks[2]));
-run('handleComplete sends due_date+freq', ()=>{ __posts.length=0; _completing.clear(); _recentlyCompleted.clear(); handleComplete(state.tasks[2]); const d=__posts[__posts.length-1].data; if(!('due_date' in d)) throw new Error('due_date missing'); if(!('sched_freq' in d)) throw new Error('sched_freq missing'); if(!('sched_interval' in d)) throw new Error('sched_interval missing'); });
+run('handleComplete sends due_date+freq', ()=>{ __posts.length=0; _v9reset(); handleComplete(state.tasks[2]); const d=__posts[__posts.length-1].data.tasks[0]; if(!('due_date' in d)) throw new Error('due_date missing'); if(!('sched_freq' in d)) throw new Error('sched_freq missing'); if(!('sched_interval' in d)) throw new Error('sched_interval missing'); });
 run('openSnooze future task uses due_date base', ()=>{ snoozingTask=state.tasks[4]; openSnooze(state.tasks[4]); }); // t5 due_date=plus(15)
 run('openSnooze overdue task uses today base', ()=>{ openSnooze(state.tasks[7]); }); // t8 due_date=plus(-3)
 run('pickSnoozeDays sets pending', ()=>{ pickSnoozeDays(3, new FakeEl('button')); if(!pendingSnooze||pendingSnooze.value!==3||pendingSnooze.kind!=='days') throw new Error('pending not set'); });
@@ -573,7 +581,9 @@ run('completeTask wrapper calls handleComplete', ()=>{
   completeTask('ct1');
   state.tasks=sv;
   if(!__posts.length) throw new Error('no API call made');
-  if(__posts[0].action!=='completeTask') throw new Error('wrong action: '+__posts[0].action);
+  // v9: every completion, including the single-task path, goes out as a batchComplete
+  if(__posts[0].action!=='batchComplete') throw new Error('wrong action: '+__posts[0].action);
+  if(__posts[0].data.tasks[0].task_id!=='ct1') throw new Error('wrong task in the batch');
 });
 run('computeFirstDue interval with no due_date returns today', ()=>{
   // Interval task with no due_date and no sched_start: first due is today
@@ -866,22 +876,26 @@ run('tapping a toast fires the retry once and disarms it', ()=>{
   if(fired!==1) throw new Error('retry should fire exactly once, fired '+fired);
   if(_toastRetry) throw new Error('retry should be disarmed after tapping');
 });
-runAsync('a failed complete offers retry, and tapping it re-runs the action', async ()=>{
-  const t={task_id:'retry-1',name:'Retry me',type:'one_off',due_date:plus(1),status:'active',scope:'household'};
-  state.tasks=[t]; rebuildTaskIndex(); _recentlyCompleted.clear(); _inFlightWrites=[]; _lastWriteAt=0;
+runAsync('a failed completion does NOT auto-retry, and restores the card', async ()=>{
+  // Section 12E: on failure the outcome is unknown, so retrying could double-write. The
+  // card returns to its pre-completion state and the toast says so. No retry is armed.
+  _v9reset(); currentUser='Frankie';
+  const t={task_id:'retry-1',name:'Retry me',type:'one_off',due_date:plus(1),status:'active',
+           scope:'household',owner:''};
+  state.tasks=[t]; rebuildTaskIndex(); _inFlightWrites=[]; _lastWriteAt=0;
   hideToast();
   __failNext=true;
-  handleComplete(t);
-  await tick();
-  if(_recentlyCompleted.has('retry-1')) throw new Error('failed completion should have rolled back');
-  if(!_toastRetry) throw new Error('a failed completion should offer a retry');
-  __posts.length=0;
-  onToastTap();                       // this attempt succeeds
-  await tick();
-  if(__posts.length!==1||__posts[0].action!=='completeTask') throw new Error('retry should re-issue completeTask, got '+JSON.stringify(__posts.map(p=>p.action)));
-  if(!_recentlyCompleted.has('retry-1')) throw new Error('a successful retry should hide the task again');
-  _recentlyCompleted.clear(); state.tasks=[]; _taskById={}; hideToast();
+  await handleComplete(t);
+  await tick(); await tick();
+  if(_recentlyCompleted.has('retry-1')) throw new Error('a failed completion must un-hide the task');
+  if(recentlyCommitted('retry-1')) throw new Error('a failed completion must not count as committed');
+  if(_toastRetry) throw new Error('v9 must NOT arm an automatic retry on a failed completion');
+  if(isPending('retry-1')) throw new Error('the task should not be left pending');
+  const msg=String(el('toast-msg').textContent||'');
+  if(!/Couldn't confirm/.test(msg)) throw new Error('expected a "Couldn\'t confirm" toast, got: '+msg);
+  _v9reset(); state.tasks=[]; _taskById={}; hideToast();
 });
+
 runAsync('a failed add offers retry, and tapping it re-creates the temp task', async ()=>{
   state.tasks=[]; _taskById={}; editingTask=null; _inFlightWrites=[]; _lastWriteAt=0; hideToast();
   el('t-name').value='Retry add'; el('t-type').value='one_off'; el('t-due').value=plus(2);
@@ -1162,13 +1176,13 @@ run('a no-date one-off created at 10pm Denver lands in TODAY, not Tomorrow', ()=
 
 // ── duplicate completions (2026-08-02) ──────────────────────────────────────
 run('completing the same task twice in a row sends only ONE request', ()=>{
-  __posts.length=0; _completing.clear(); _recentlyCompleted.clear();
+  __posts.length=0; _v9reset();
   const t = state.tasks[2];
   handleComplete(t);
   handleComplete(t);          // second tap, e.g. swipe then tap, or a resurrected card
-  const sent = __posts.filter(p=>p.action==='completeTask').length;
-  if(sent !== 1) throw new Error('expected 1 completeTask, got '+sent);
-  _completing.clear(); _recentlyCompleted.clear();
+  const sent = __posts.filter(p=>p.action==='batchComplete').length;
+  if(sent !== 1) throw new Error('expected 1 commit, got '+sent);
+  _v9reset();
 });
 runAsync('a RECURRING task stays hidden AFTER the save succeeds, until the sync', async ()=>{
   // The server advances due_date but LOCAL state still holds the old one. Releasing the
@@ -1180,7 +1194,7 @@ runAsync('a RECURRING task stays hidden AFTER the save succeeds, until the sync'
   state.tasks=[t]; rebuildTaskIndex();
   handleComplete(t);
   await tick(); await tick(); await tick();      // let the POST promise and its .then run
-  if(__posts.filter(p=>p.action==='completeTask').length !== 1) throw new Error('no completeTask sent');
+  if(__posts.filter(p=>p.action==='batchComplete').length !== 1) throw new Error('no commit sent');
   if(!_recentlyCompleted.has(t.task_id))
     throw new Error('the finished recurring card was released before the reconcile landed');
   if(_completing.has(t.task_id)) throw new Error('the in-flight guard was never released');
@@ -1198,16 +1212,342 @@ runAsync('a FAILED complete does put the card back, so it can be retried', async
   if(_completing.has(t.task_id)) throw new Error('the guard must release on failure too');
   _completing.clear(); _recentlyCompleted.clear(); __failNext=false;
 });
-run('the completion guard is released so the task can be done again later', ()=>{
-  __posts.length=0; _completing.clear(); _recentlyCompleted.clear();
-  const t = state.tasks[2];
-  handleComplete(t);
-  if(!_completing.has(t.task_id)) throw new Error('guard not set while in flight');
-  _completing.delete(t.task_id); _recentlyCompleted.clear();
+runAsync('the completion guard blocks a repeat, then releases after the window', async ()=>{
+  // v9: _completing gave way to recentlyCommitted, which also survives the flush that
+  // clears the pending map, so a second tap right after a commit cannot write again.
+  _v9reset(); currentUser='Frankie';
+  const t={task_id:'guard-1',name:'Guard me',type:'one_off',due_date:todayStr(),status:'active',scope:'household',owner:''};
+  state.tasks=[t]; rebuildTaskIndex();
   __posts.length=0;
-  handleComplete(t);
-  if(__posts.filter(p=>p.action==='completeTask').length !== 1) throw new Error('could not complete again after release');
-  _completing.clear(); _recentlyCompleted.clear();
+  await handleComplete(t); await tick(); await tick();
+  if(__posts.filter(p=>p.action==='batchComplete').length!==1) throw new Error('first commit did not fire');
+  if(!recentlyCommitted('guard-1')) throw new Error('guard not set after the commit');
+  __posts.length=0;
+  await handleComplete(t); await tick(); await tick();
+  if(__posts.length!==0) throw new Error('a repeat commit got through the guard');
+  _recentCommit['guard-1']=Date.now()-(RECENT_COMMIT_MS+1000);
+  if(recentlyCommitted('guard-1')) throw new Error('the guard should expire');
+  _v9reset();
+});
+
+
+// ══ v9 MULTI-TAP CREDIT CYCLING ═════════════════════════════════════════════
+function _v9task(o){
+  return Object.assign({task_id:'v9-'+Math.random().toString(36).slice(2,8),name:'V9 task',
+    type:'one_off',due_date:todayStr(),status:'active',scope:'household',owner:'',
+    done_together:''},o||{});
+}
+function _v9reset(){
+  Object.keys(_pending).forEach(function(k){if(_pending[k].timer)clearTimeout(_pending[k].timer);delete _pending[k];});
+  Object.keys(_recentCommit).forEach(function(k){delete _recentCommit[k];});
+  _recentlyCompleted.clear();_completing.clear();__posts.length=0;__failNext=false;
+}
+
+// ---- Section 14: assignment-derived defaults ----
+run('v9 default credit for an "either of us" task is the current user', ()=>{
+  _v9reset(); currentUser='Frankie';
+  if(defaultCreditFor(_v9task({owner:''}))!=='Frankie') throw new Error('expected Frankie');
+  currentUser='Meredith';
+  if(defaultCreditFor(_v9task({owner:''}))!=='Meredith') throw new Error('expected Meredith');
+  currentUser='Frankie';
+});
+run('v9 default credit for an assigned task is the ASSIGNEE, not the tapper', ()=>{
+  _v9reset(); currentUser='Frankie';
+  if(defaultCreditFor(_v9task({owner:'Meredith'}))!=='Meredith')
+    throw new Error('Frankie tapping Meredith\'s task must default to Meredith');
+});
+run('v9 default credit for a "both of us" task is Both', ()=>{
+  _v9reset();
+  if(defaultCreditFor(_v9task({owner:'Frankie,Meredith'}))!=='Frankie,Meredith') throw new Error('expected both');
+});
+run('v9 default credit with done_together is Both regardless of owner', ()=>{
+  _v9reset(); currentUser='Frankie';
+  if(defaultCreditFor(_v9task({owner:'',done_together:'true'}))!=='Frankie,Meredith') throw new Error('either+flag should be both');
+  if(defaultCreditFor(_v9task({owner:'Meredith',done_together:'true'}))!=='Frankie,Meredith') throw new Error('assigned+flag should be both');
+});
+run('v9 default credit for a personal task is its owner', ()=>{
+  _v9reset(); currentUser='Frankie';
+  if(defaultCreditFor(_v9task({scope:'personal',owner:'Frankie'}))!=='Frankie') throw new Error('expected the owner');
+});
+
+// ---- cycle orders ----
+run('v9 either-of-us cycle is me, them, both, clear', ()=>{
+  _v9reset(); currentUser='Frankie';
+  const c=creditCycleFor(_v9task({owner:''}));
+  if(c.join('|')!=='Frankie|Meredith|Frankie,Meredith|') throw new Error(JSON.stringify(c));
+  if(c[c.length-1]!==null) throw new Error('cycle must end in clear');
+});
+run('v9 assigned-task cycle starts with the assignee', ()=>{
+  _v9reset(); currentUser='Frankie';
+  const c=creditCycleFor(_v9task({owner:'Meredith'}));
+  if(c[0]!=='Meredith'||c[1]!=='Frankie'||c[2]!=='Frankie,Meredith'||c[3]!==null) throw new Error(JSON.stringify(c));
+});
+run('v9 both-of-us cycle starts with Both', ()=>{
+  _v9reset(); currentUser='Frankie';
+  const c=creditCycleFor(_v9task({owner:'Frankie,Meredith'}));
+  if(c[0]!=='Frankie,Meredith'||c[1]!=='Frankie'||c[2]!=='Meredith'||c[3]!==null) throw new Error(JSON.stringify(c));
+});
+run('v9 a PERSONAL task has only complete and clear', ()=>{
+  _v9reset(); currentUser='Frankie';
+  const c=creditCycleFor(_v9task({scope:'personal',owner:'Frankie'}));
+  if(c.length!==2) throw new Error('expected 2 states, got '+c.length+' '+JSON.stringify(c));
+  if(c[0]!=='Frankie'||c[1]!==null) throw new Error(JSON.stringify(c));
+});
+
+// ---- Section 12A: cycling never writes ----
+run('v9 cycling three times produces ZERO api calls', ()=>{
+  _v9reset(); currentUser='Frankie';
+  const t=_v9task({owner:''}); state.tasks=[t]; rebuildTaskIndex();
+  cycleCompletion(t);
+  _pending[t.task_id].lastTapAt=0; cycleCompletion(t);
+  _pending[t.task_id].lastTapAt=0; cycleCompletion(t);
+  if(__posts.length!==0) throw new Error('cycling wrote '+__posts.length+' request(s)');
+  if(_pending[t.task_id].credit!=='Frankie,Meredith') throw new Error('third tap should be both, got '+_pending[t.task_id].credit);
+  _v9reset();
+});
+run('v9 cycling never mutates state.tasks', ()=>{
+  _v9reset(); currentUser='Frankie';
+  const t=_v9task({owner:''}); state.tasks=[t]; rebuildTaskIndex();
+  const snap=JSON.stringify(state.tasks);
+  cycleCompletion(t); _pending[t.task_id].lastTapAt=0; cycleCompletion(t);
+  if(JSON.stringify(state.tasks)!==snap) throw new Error('state.tasks changed during cycling');
+  _v9reset();
+});
+run('v9 the tap guard swallows a second tap inside 250ms', ()=>{
+  _v9reset(); currentUser='Frankie';
+  const t=_v9task({owner:''}); state.tasks=[t]; rebuildTaskIndex();
+  cycleCompletion(t);
+  const first=_pending[t.task_id].credit;
+  cycleCompletion(t);   // immediate second tap, no lastTapAt reset
+  if(_pending[t.task_id].credit!==first) throw new Error('the guard did not swallow the double tap');
+  _v9reset();
+});
+run('v9 the cycle wraps back round after clear', ()=>{
+  _v9reset(); currentUser='Frankie';
+  const t=_v9task({owner:''}); state.tasks=[t]; rebuildTaskIndex();
+  for(let i=0;i<4;i++){cycleCompletion(t); if(_pending[t.task_id])_pending[t.task_id].lastTapAt=0;}
+  if(_pending[t.task_id].credit!==null) throw new Error('4th tap should be clear, got '+_pending[t.task_id].credit);
+  cycleCompletion(t);
+  if(_pending[t.task_id].credit!=='Frankie') throw new Error('5th tap should wrap to the default');
+  _v9reset();
+});
+
+// ---- Section 12B/F: flush is the only writer, and is idempotent ----
+runAsync('v9 flush produces exactly ONE api call per task', async ()=>{
+  _v9reset(); currentUser='Frankie';
+  const t=_v9task({owner:''}); state.tasks=[t]; rebuildTaskIndex();
+  cycleCompletion(t);
+  __posts.length=0;
+  await flushPending();
+  await tick(); await tick();
+  if(__posts.length!==1) throw new Error('expected 1 request, got '+__posts.length);
+  if(__posts[0].action!=='batchComplete') throw new Error('expected batchComplete, got '+__posts[0].action);
+  if(__posts[0].data.tasks.length!==1) throw new Error('expected 1 task in the batch');
+  _v9reset();
+});
+runAsync('v9 a multi-task flush is ONE batch call, not one call per task', async ()=>{
+  // Several entries can sit in the map at once (a swipe commit racing a cycle, or a flush
+  // trigger arriving with more than one armed). Section 5 requires a single request.
+  _v9reset(); currentUser='Frankie';
+  const a=_v9task({owner:''}), b=_v9task({owner:'Meredith'}), c=_v9task({owner:'Frankie,Meredith'});
+  state.tasks=[a,b,c]; rebuildTaskIndex();
+  [a,b,c].forEach(function(t){
+    _pending[t.task_id]={credit:defaultCreditFor(t),idx:0,startedAt:Date.now(),lastTapAt:Date.now(),task:t,timer:null};
+  });
+  __posts.length=0;
+  await flushPending();
+  await tick(); await tick();
+  if(__posts.length!==1) throw new Error('expected ONE request for three tasks, got '+__posts.length);
+  if(__posts[0].data.tasks.length!==3) throw new Error('expected 3 tasks in the batch, got '+__posts[0].data.tasks.length);
+  const by=__posts[0].data.tasks.map(function(x){return x.completed_by;});
+  if(by.join('|')!=='Frankie|Meredith|Frankie,Meredith') throw new Error('per-task credit lost: '+by.join('|'));
+  if(pendingCount()!==0) throw new Error('the map should be empty after a flush');
+  _v9reset();
+});
+run('v9 tapping a second card commits the first at its current credit', ()=>{
+  _v9reset(); currentUser='Frankie';
+  const a=_v9task({owner:''}), b=_v9task({owner:''});
+  state.tasks=[a,b]; rebuildTaskIndex();
+  cycleCompletion(a);
+  __posts.length=0;
+  cycleCompletion(b);
+  const commits=__posts.filter(p=>p.action==='batchComplete');
+  if(commits.length!==1) throw new Error('the first card should have committed, saw '+commits.length);
+  if(commits[0].data.tasks[0].task_id!==a.task_id) throw new Error('committed the wrong card');
+  if(isPending(a.task_id)) throw new Error('the first card is still pending');
+  if(!isPending(b.task_id)) throw new Error('the second card should now be pending');
+  _v9reset();
+});
+runAsync('v9 a second flush for the same task is a no-op', async ()=>{
+  _v9reset(); currentUser='Frankie';
+  const t=_v9task({owner:''}); state.tasks=[t]; rebuildTaskIndex();
+  cycleCompletion(t);
+  await flushPending([t.task_id]); await tick(); await tick();
+  const after=__posts.length;
+  await flushPending([t.task_id]); await tick(); await tick();
+  if(__posts.length!==after) throw new Error('the second flush wrote again');
+  if(isPending(t.task_id)) throw new Error('the task is still pending after flushing');
+  _v9reset();
+});
+runAsync('v9 flush removes from the pending map BEFORE the api call', async ()=>{
+  _v9reset(); currentUser='Frankie';
+  const t=_v9task({owner:''}); state.tasks=[t]; rebuildTaskIndex();
+  cycleCompletion(t);
+  const p=flushPending([t.task_id]);           // do not await: check synchronously
+  if(isPending(t.task_id)) throw new Error('still in the pending map while the call is in flight');
+  await p; await tick();
+  _v9reset();
+});
+runAsync('v9 a CLEARED pending state commits nothing', async ()=>{
+  _v9reset(); currentUser='Frankie';
+  const t=_v9task({owner:''}); state.tasks=[t]; rebuildTaskIndex();
+  const cycle=creditCycleFor(t);
+  for(let i=0;i<cycle.length;i++){cycleCompletion(t); if(_pending[t.task_id])_pending[t.task_id].lastTapAt=0;}
+  if(_pending[t.task_id].credit!==null) throw new Error('should be cleared');
+  __posts.length=0;
+  await flushPending([t.task_id]); await tick(); await tick();
+  if(__posts.length!==0) throw new Error('a cleared task must not be committed');
+  _v9reset();
+});
+runAsync('v9 starting a new pending window commits the previous card', async ()=>{
+  _v9reset(); currentUser='Frankie';
+  const a=_v9task({owner:''}), b=_v9task({owner:''});
+  state.tasks=[a,b]; rebuildTaskIndex();
+  cycleCompletion(a);
+  __posts.length=0;
+  cycleCompletion(b);
+  await tick(); await tick();
+  if(!__posts.length) throw new Error('the first card should have committed');
+  if(!isPending(b.task_id)) throw new Error('the new card should be pending');
+  if(isPending(a.task_id)) throw new Error('the old card should have flushed');
+  _v9reset();
+});
+
+// ---- Section 12C: the recent-commit guard ----
+runAsync('v9 recentlyCommitted hides a task a stale refresh returns as active', async ()=>{
+  _v9reset(); currentUser='Frankie';
+  const t=_v9task({owner:''}); state.tasks=[t]; rebuildTaskIndex();
+  cycleCompletion(t);
+  await flushPending([t.task_id]); await tick(); await tick();
+  if(!recentlyCommitted(t.task_id)) throw new Error('not marked as recently committed');
+  if(!completionHidden(t.task_id)) throw new Error('a just-committed task must stay hidden');
+  _recentCommit[t.task_id]=Date.now()-(RECENT_COMMIT_MS+1000);
+  if(recentlyCommitted(t.task_id)) throw new Error('the guard must expire after the window');
+  _v9reset();
+});
+
+// ---- Section 12D: rendering during pending ----
+run('v9 renderTasks during pending keeps the card and its pending visual', ()=>{
+  _v9reset(); currentUser='Frankie';
+  const t=_v9task({owner:'',name:'Pending render task'}); state.tasks=[t]; rebuildTaskIndex();
+  cycleCompletion(t);
+  renderTasks();
+  if(!isPending(t.task_id)) throw new Error('rendering dropped the pending state');
+  if(_pending[t.task_id].credit!=='Frankie') throw new Error('rendering changed the credit');
+  if(__posts.length!==0) throw new Error('rendering triggered a write');
+  _v9reset();
+});
+
+// ---- Section 3: swipe ----
+runAsync('v9 swipe-right commits immediately at the default credit', async ()=>{
+  _v9reset(); currentUser='Frankie';
+  const t=_v9task({owner:'Meredith'}); state.tasks=[t]; rebuildTaskIndex();
+  _pending[t.task_id]={credit:defaultCreditFor(t),idx:0,startedAt:Date.now(),lastTapAt:Date.now(),task:t,timer:null};
+  __posts.length=0;
+  await flushPending([t.task_id]); await tick(); await tick();
+  if(__posts.length!==1) throw new Error('expected one commit, got '+__posts.length);
+  if(__posts[0].data.tasks[0].completed_by!=='Meredith')
+    throw new Error('swipe should credit the assignee, got '+__posts[0].data.tasks[0].completed_by);
+  _v9reset();
+});
+
+// ---- Section 4: latest action wins ----
+run('v9 cancelPending clears the pending state without writing', ()=>{
+  _v9reset(); currentUser='Frankie';
+  const t=_v9task({owner:''}); state.tasks=[t]; rebuildTaskIndex();
+  cycleCompletion(t);
+  __posts.length=0;
+  cancelPending(t.task_id);
+  if(isPending(t.task_id)) throw new Error('still pending after cancel');
+  if(__posts.length!==0) throw new Error('cancel wrote to the server');
+  _v9reset();
+});
+run('v9 opening the edit modal cancels a pending completion', ()=>{
+  _v9reset(); currentUser='Frankie';
+  const t=_v9task({owner:''}); state.tasks=[t]; rebuildTaskIndex();
+  cycleCompletion(t);
+  openEditTask(t);
+  if(isPending(t.task_id)) throw new Error('editing did not cancel the pending completion');
+  editingTask=null;
+  _v9reset();
+});
+
+// ---- Section 6: background sync suppression ----
+run('v9 automatic sync is BLOCKED while a completion is pending', ()=>{
+  // NOTE: the harness stubs setTimeout, so this asserts the predicate the timer callback
+  // consults rather than waiting on a real timer.
+  _v9reset(); currentUser='Frankie';
+  if(!bgSyncAllowed()) throw new Error('should be allowed with nothing pending');
+  const t=_v9task({owner:''}); state.tasks=[t]; rebuildTaskIndex();
+  cycleCompletion(t);
+  if(bgSyncAllowed()) throw new Error('a background sync must be blocked while pending');
+  cancelPending(t.task_id);
+  if(!bgSyncAllowed()) throw new Error('sync must resume once the pending map empties');
+  _v9reset();
+});
+runAsync('v9 a MANUAL refresh flushes pending first, then fetches', async ()=>{
+  _v9reset(); currentUser='Frankie';
+  const t=_v9task({owner:''}); state.tasks=[t]; rebuildTaskIndex();
+  cycleCompletion(t);
+  __posts.length=0;
+  await refreshData(false);
+  await tick(); await tick();
+  const commits=__posts.filter(p=>p.action==='batchComplete');
+  if(commits.length!==1) throw new Error('manual refresh should commit the pending task, saw '+commits.length);
+  if(isPending(t.task_id)) throw new Error('still pending after a manual refresh');
+  _v9reset();
+});
+
+// ---- Section 8: batch credit selector ----
+run('v9 batch complete sends the SELECTED credit for every task', ()=>{
+  _v9reset(); currentUser='Frankie';
+  const a=_v9task({owner:''}), b=_v9task({owner:'Meredith'});
+  state.tasks=[a,b]; rebuildTaskIndex();
+  selectedTaskIds.clear(); selectedTaskIds.add(a.task_id); selectedTaskIds.add(b.task_id);
+  selectMode=true;
+  pickBatchCredit('BOTH');
+  __posts.length=0;
+  batchCompleteSelected();
+  const post=__posts.filter(p=>p.action==='batchComplete')[0];
+  if(!post) throw new Error('no batchComplete sent');
+  // the batch-level field is only a fallback; the server prefers each task's own value
+  post.data.tasks.forEach(function(p){
+    if(p.completed_by!=='Frankie,Meredith') throw new Error('per-task credit not applied: '+p.completed_by);
+  });
+  _batchCredit=null; selectMode=false; selectedTaskIds.clear();
+  _v9reset();
+});
+run('v9 batch credit defaults to the current user', ()=>{
+  _v9reset(); currentUser='Meredith'; _batchCredit=null;
+  if(batchCreditValue()!=='Meredith') throw new Error('expected Meredith, got '+batchCreditValue());
+  currentUser='Frankie';
+  if(batchCreditValue()!=='Frankie') throw new Error('expected Frankie');
+  _v9reset();
+});
+
+// ---- Section 1: colour consistency ----
+run('v9 every per-user colour reads the --user-* variables', ()=>{
+  const css=__cssText||'';
+  if(!css) return;   // only meaningful when the harness captured the stylesheet
+  const rules=['.who-btn.sel-f','.who-btn.sel-m','.who-opt.sel-f','.who-opt.sel-m',
+               '.who-f{','.who-m{','.ldot{','.ldot.b{','.bar-fill.pur','.bar-fill.yel'];
+  rules.forEach(function(r){
+    const i=css.indexOf(r);
+    if(i<0) throw new Error('rule not found: '+r);
+    const chunk=css.slice(i,css.indexOf('}',i));
+    if(!/--user-[fm]/.test(chunk)) throw new Error(r+' does not use a --user-* variable: '+chunk);
+  });
+  if(/stroke="var\(--purple\)"|stroke="var\(--yellow\)"/.test(css)) throw new Error('trend chart still uses the old palette');
 });
 
 // ---- report ----

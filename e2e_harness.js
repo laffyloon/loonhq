@@ -102,11 +102,16 @@ const ok = (n, cond, detail) => results.push([cond ? 'PASS' : 'FAIL', n + (cond 
   // ---- joint owner badge on the card ----
   const jointBadge = await page.locator('.tc-wrap:has-text("Pick shower tile") .who-both').count();
   ok('joint task shows the F&M owner badge', jointBadge === 1, 'found ' + jointBadge + ' .who-both');
-  const badgeText = await page.evaluate(() => {
+  const bothStyle = await page.evaluate(() => {
     const el = document.querySelector('.who-both');
-    return el ? getComputedStyle(el, '::before').content : null;
+    if (!el) return null;
+    const s = getComputedStyle(el);
+    return { bg: s.backgroundImage, glyph: getComputedStyle(el, '::before').content, text: el.textContent.trim() };
   });
-  ok('joint badge renders its F&M glyph via CSS', badgeText && badgeText.includes('F') && badgeText.includes('M'), 'content=' + badgeText);
+  ok('joint badge is a diagonal split of the two user colours',
+     bothStyle && /gradient/.test(bothStyle.bg), JSON.stringify(bothStyle));
+  ok('joint badge carries NO letter (v9)',
+     bothStyle && !bothStyle.text && (bothStyle.glyph === 'none' || !bothStyle.glyph), JSON.stringify(bothStyle));
 
   await page.waitForTimeout(SETTLE);
   await page.screenshot({ path: OUT + '/01-today.png' });
@@ -202,32 +207,32 @@ const ok = (n, cond, detail) => results.push([cond ? 'PASS' : 'FAIL', n + (cond 
   await page.locator('.tc-wrap:has-text("Overdue thing") .circ').first().click();
   await page.waitForSelector('#toast-msg.on', { timeout: 5000 });
   const toast = await page.locator('#toast-msg').innerText();
-  ok('a failed completion shows a toast', /Couldn't complete/.test(toast), 'toast=' + toast);
-  ok('the toast offers tap to retry', /Tap to retry/.test(toast), 'toast=' + toast);
-  const tappable = await page.evaluate(() => {
+  ok('a failed completion says it could not be confirmed', /Couldn't confirm/.test(toast), 'toast=' + toast);
+  ok('v9 does NOT offer an automatic retry', !/Tap to retry/.test(toast), 'toast=' + toast);
+  await page.waitForTimeout(500);
+  const after = await page.locator('.tc').count();
+  ok('the task is restored after the failure', after === before, 'before=' + before + ' after=' + after);
+  const cleanState = await page.evaluate(() => ({ pending: pendingCount(), recent: Object.keys(_recentCommit).length }));
+  ok('a failed completion leaves nothing pending or marked committed',
+     cleanState.pending === 0 && cleanState.recent === 0, JSON.stringify(cleanState));
+  await page.screenshot({ path: OUT + '/07-failed-completion.png' });
+
+  // and a SUCCESSFUL completion offers undo instead
+  failPosts = false;
+  await page.evaluate(() => { const t = state.tasks.find(x => x.task_id === 't5'); if (t) handleComplete(t); });
+  await page.waitForSelector('#toast-msg.on', { timeout: 8000 });
+  await page.waitForTimeout(400);
+  const undoToast = await page.locator('#toast-msg').innerText();
+  ok('a successful completion offers Undo', /Undo/.test(undoToast), 'toast=' + undoToast);
+  const undoTappable = await page.evaluate(() => {
     const t = document.getElementById('toast-msg');
     return { cls: t.className, pe: getComputedStyle(t).pointerEvents };
   });
-  ok('retry toast is actually clickable', tappable.cls.includes('tappable') && tappable.pe === 'auto', JSON.stringify(tappable));
-  await page.waitForTimeout(400);
-  const after = await page.locator('.tc').count();
-  ok('the task is restored after the failure', after === before, 'before=' + before + ' after=' + after);
-  await page.screenshot({ path: OUT + '/07-retry-toast.png' });
-
-  // retry succeeds this time
-  failPosts = false;
-  await page.click('#toast-msg');
-  await page.waitForTimeout(600);
-  const collapsed = await page.evaluate(() => {
-    const w = document.querySelector('.tc-wrap[data-task-id="t5"]');
-    return w ? { h: w.offsetHeight, op: w.style.opacity } : { h: -1, op: 'gone' };
-  });
-  ok('tapping retry hides the card immediately', collapsed.h === 0 || collapsed.op === 'gone', JSON.stringify(collapsed));
-  ok('the retried completion reached the server', await page.evaluate(() => true) && serverCompleted.has('t5'), 'server never recorded t5');
-  // the 3s background reconcile should then drop it from the DOM for good
-  await page.waitForFunction(() => !document.querySelector('.tc-wrap[data-task-id="t5"]'), { timeout: 8000 })
-    .then(() => ok('the background reconcile removes the completed card', true))
-    .catch(() => ok('the background reconcile removes the completed card', false, 'card still in the DOM after the sync'));
+  ok('the undo toast is clickable', undoTappable.cls.includes('tappable') && undoTappable.pe === 'auto', JSON.stringify(undoTappable));
+  ok('the completion reached the server', serverCompleted.has('t5'), 'server never recorded t5');
+  // clear the undo toast so it cannot bleed into the next section's assertions
+  await page.evaluate(() => { _undoItems = null; _undoLogIds = null; hideToast(); });
+  await page.waitForTimeout(200);
 
   // ---- the three glitches Frankie reported on 2026-07-30 -------------------
   // a) the pending card must not flash. It used to run pulse 1s infinite, oscillating

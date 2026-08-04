@@ -22,6 +22,11 @@
   --amber:#C97A10;--amber-light:#FDF2E0;
   --blue:#2B6CB0;--blue-light:#EBF4FF;
   --purple:#5B4BB0;--purple-light:#EFECFB;
+  /* THE per-user palette. Every place a user-specific colour appears reads these and
+     nothing else. Before v9 there were two contradictory schemes: purple/yellow in five
+     places and green/blue in the history dots, so the same person had two identities. */
+  --user-f:#9333EA;--user-f-light:#F3E8FF;--user-f-dark:#6B21A8;
+  --user-m:#D97706;--user-m-light:#FEF3C7;--user-m-dark:#92400E;
   --yellow:#B58A0E;--yellow-light:#FBF1CF;
   --terra:#C25E3A;--terra-light:#FAECE5;
   --slate:#2D6A9F;--slate-light:#E2EEF8;
@@ -44,11 +49,11 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .login-sub{font-size:14px;color:var(--text2);margin-bottom:28px;text-align:center}
 .who-buttons{display:flex;gap:10px;margin-bottom:24px}
 .who-btn{padding:14px 24px;border-radius:14px;border:2px solid var(--border);background:var(--card);font-size:15px;font-weight:500;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:8px;min-width:120px;transition:all .15s}
-.who-btn.sel-f{border-color:var(--purple);background:var(--purple-light);color:var(--purple)}
-.who-btn.sel-m{border-color:var(--yellow);background:var(--yellow-light);color:var(--yellow)}
+.who-btn.sel-f{border-color:var(--user-f);background:var(--user-f-light);color:var(--user-f-dark)}
+.who-btn.sel-m{border-color:var(--user-m);background:var(--user-m-light);color:var(--user-m-dark)}
 .who-avatar{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:600;background:var(--bg2);color:var(--text2)}
-.who-btn.sel-f .who-avatar{background:var(--purple);color:#fff}
-.who-btn.sel-m .who-avatar{background:var(--yellow);color:#fff}
+.who-btn.sel-f .who-avatar{background:var(--user-f);color:#fff}
+.who-btn.sel-m .who-avatar{background:var(--user-m);color:#fff}
 .pin-wrap{display:flex;flex-direction:column;align-items:center;gap:14px;width:100%;max-width:320px}
 .pin-label{font-size:13px;color:var(--text2)}
 .pin-input{width:100%;padding:14px 16px;font-size:22px;text-align:center;letter-spacing:.4em;border:1.5px solid var(--border);border-radius:12px;background:var(--card);color:var(--text);outline:none;font-family:'DM Mono',monospace}
@@ -184,7 +189,48 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .circ{width:22px;height:22px;border-radius:50%;border:2px solid var(--border2);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s;cursor:pointer;margin-top:1px}
 .circ:hover{border-color:var(--green)}
 .circ.sel{background:var(--green);border-color:var(--green)}
+
 .circ.sel::after{content:'\2713';font-size:11px;color:#fff;font-weight:700}
+/* v9 pending completion. A green ring marks "will complete", the fill marks WHO. */
+.circ.pending{border-color:var(--green);position:relative;font-size:10px;font-weight:700;overflow:visible}
+.circ.pending.cc-f{background:var(--user-f-light);color:var(--user-f-dark)}
+.circ.pending.cc-m{background:var(--user-m-light);color:var(--user-m-dark)}
+.circ.pending.cc-both{background:linear-gradient(135deg,var(--user-f-light) 50%,var(--user-m-light) 50%)}
+/* the sweep: a conic wedge grows clockwise over the pending window */
+.circ-ring{position:absolute;top:-4px;left:-4px;right:-4px;bottom:-4px;border-radius:50%;
+  background:conic-gradient(var(--green) var(--sweep,0turn),transparent 0);
+  -webkit-mask:radial-gradient(circle,transparent 62%,#000 64%);
+  mask:radial-gradient(circle,transparent 62%,#000 64%);
+  animation:sweep var(--pending-ms,2500ms) linear forwards;pointer-events:none}
+@keyframes sweep{from{--sweep:0turn}to{--sweep:1turn}}
+@property --sweep{syntax:'<angle>';initial-value:0turn;inherits:false}
+/* fallback for engines without @property: a simple fade-in ring still reads as a timer */
+@supports not (background:conic-gradient(red 0turn,transparent 0)){
+  .circ-ring{background:none;border:2px solid var(--green);opacity:.35;animation:ringpulse var(--pending-ms,2500ms) linear forwards}
+  @keyframes ringpulse{from{opacity:.15}to{opacity:1}}
+}
+.circ.committed{background:var(--green);border-color:var(--green)}
+.circ.committed::after{content:'\2713';font-size:11px;color:#fff;font-weight:700}
+/* swipe background tinted by who is getting credit */
+.swipe-bg.cc-f{background:var(--user-f)}
+.swipe-bg.cc-m{background:var(--user-m)}
+.swipe-bg.cc-both{background:linear-gradient(135deg,var(--user-f) 50%,var(--user-m) 50%)}
+/* Section 9: stale-data nudge */
+.stale-badge{display:none;align-items:center;gap:6px;justify-content:center;padding:6px 10px;
+  background:var(--amber-light,#FDF3E0);color:var(--terra);font-size:12px;cursor:pointer;
+  border-bottom:1px solid var(--border)}
+.stale-badge.on{display:flex}
+.stale-badge .dot{width:6px;height:6px;border-radius:50%;background:var(--terra)}
+/* Section 8: batch credit selector */
+.batch-credit{display:flex;align-items:center;gap:6px}
+.batch-credit-lbl{font-size:11px;opacity:.75;margin-right:2px}
+.bc-opt{width:26px;height:26px;border-radius:50%;border:2px solid rgba(255,255,255,.35);
+  font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;background:transparent;color:#fff;font-family:inherit;padding:0}
+.bc-opt.sel{border-color:#fff}
+.bc-opt.bc-f.sel{background:var(--user-f-light);color:var(--user-f-dark)}
+.bc-opt.bc-m.sel{background:var(--user-m-light);color:var(--user-m-dark)}
+.bc-opt.bc-both.sel{background:linear-gradient(135deg,var(--user-f-light) 50%,var(--user-m-light) 50%);color:transparent}
 /* KEY FIX: flex:1 + min-width:0 is correct. NO overflow:hidden here. */
 .tcontent{flex:1;min-width:0}
 .tn{font-size:14px;color:var(--text);line-height:1.35;word-break:break-word;overflow-wrap:anywhere}
@@ -211,12 +257,11 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .mp i{font-size:13px;flex-shrink:0}
 .owners{display:flex;gap:3px;flex-shrink:0;margin-top:1px}
 .who{width:22px;height:22px;border-radius:50%;font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center}
-.who-f{background:var(--purple-light);color:var(--purple)}
-.who-m{background:var(--yellow-light);color:var(--yellow)}
+.who-f{background:var(--user-f-light);color:var(--user-f-dark)}
+.who-m{background:var(--user-m-light);color:var(--user-m-dark)}
 .who-either{background:var(--terra-light);color:var(--terra)}
 .who-either::before{content:'F\00B7M';font-size:8px;font-weight:700;letter-spacing:-0.5px}
-.who-both{background:linear-gradient(135deg,var(--purple-light) 50%,var(--yellow-light) 50%);color:var(--text2)}
-.who-both::before{content:'F\0026M';font-size:8px;font-weight:700;letter-spacing:-0.5px}
+.who-both{background:linear-gradient(135deg,var(--user-f-light) 50%,var(--user-m-light) 50%);color:var(--text2)}
 .task-menu-btn{background:none;border:none;color:var(--text3);font-size:18px;padding:0 2px;cursor:pointer;line-height:1;align-self:center;flex-shrink:0}
 .task-menu-btn:hover{color:var(--text)}
 
@@ -286,8 +331,8 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
 .who-pick{display:flex;gap:7px;flex-wrap:wrap}
 .who-opt{padding:8px 14px;border-radius:20px;border:1px solid var(--border);font-size:13px;cursor:pointer;background:var(--bg);color:var(--text2);transition:all .15s;font-family:inherit}
 .who-opt.sel-either{background:var(--terra-light);color:var(--terra);border-color:var(--terra)}
-.who-opt.sel-f{background:var(--purple-light);color:var(--purple);border-color:var(--purple)}
-.who-opt.sel-m{background:var(--yellow-light);color:var(--yellow);border-color:var(--yellow)}
+.who-opt.sel-f{background:var(--user-f-light);color:var(--user-f-dark);border-color:var(--user-f)}
+.who-opt.sel-m{background:var(--user-m-light);color:var(--user-m-dark);border-color:var(--user-m)}
 
 /* SCOPE PICK in modal — household=green, personal=slate */
 .scope-pick{display:flex;gap:8px}
@@ -373,9 +418,9 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
 .dlbl{font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em}
 .log-item{display:flex;gap:9px;padding:8px 0;border-bottom:1px solid var(--border)}
 .log-item:last-child{border-bottom:none}
-.ldot{width:8px;height:8px;border-radius:50%;background:var(--green);margin-top:5px;flex-shrink:0}
-.ldot.b{background:var(--blue)}.ldot.n{background:var(--border2)}
-.ldot.both{background:linear-gradient(135deg,var(--green) 50%,var(--blue) 50%)}
+.ldot{width:8px;height:8px;border-radius:50%;background:var(--user-f);margin-top:5px;flex-shrink:0}
+.ldot.b{background:var(--user-m)}.ldot.n{background:var(--border2)}
+.ldot.both{background:linear-gradient(135deg,var(--user-f-light) 50%,var(--user-m-light) 50%)}
 .lt{font-size:12.5px;word-break:break-word}
 .lm{font-size:11px;color:var(--text3);margin-top:2px}
 .flag-box{background:var(--amber-light);border:1px solid #F0C86A;border-radius:var(--radius-sm);padding:9px 11px;font-size:12px;color:var(--amber);display:flex;gap:7px}
@@ -413,7 +458,7 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
 .bar-lbl{font-size:11.5px;color:var(--text2);width:70px;flex-shrink:0}
 .bar-track{flex:1;height:10px;background:var(--bg2);border-radius:99px;overflow:hidden}
 .bar-fill{height:100%;border-radius:99px;background:var(--green)}
-.bar-fill.pur{background:var(--purple)}.bar-fill.yel{background:var(--yellow)}
+.bar-fill.pur{background:var(--user-f)}.bar-fill.yel{background:var(--user-m)}
 .bar-val{font-size:11px;color:var(--text3);width:24px;text-align:right;flex-shrink:0}
 .sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
 .sl{font-size:10.5px;font-weight:600;color:var(--text3);letter-spacing:.05em;text-transform:uppercase}
@@ -569,7 +614,6 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
         <button class="btn btn-icon" onclick="toggleSearch()"><i class="ti ti-search"></i></button>
         <button class="btn btn-icon" id="select-btn" onclick="enterBatch()" title="Select multiple tasks"><i class="ti ti-list-check"></i></button>
         <button class="btn btn-icon" onclick="refreshData()" title="Refresh"><i class="ti ti-refresh"></i></button>
-        <button class="btn btn-icon" id="mob-more-btn" style="display:none" onclick="openMobileMenu()"><i class="ti ti-dots"></i></button>
       </div>
     </div>
     <div class="topbar">
@@ -603,6 +647,7 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
           <button class="search-clear" id="search-clear" onclick="clearSearch()">&#x2715;</button>
         </div>
       </div>
+      <div class="stale-badge" id="stale-badge" onclick="refreshData()"><span class="dot"></span><i class="ti ti-refresh"></i> Tap to refresh</div>
       <div class="scroll" id="task-scroll">
         <div class="ptr-indicator" id="ptr"><div class="spinner"></div><span>Refreshing...</span></div>
         <div id="task-list"></div>
@@ -613,6 +658,14 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
           <div class="batch-top-actions">
             <button class="batch-btn ghost" onclick="selectAll()"><i class="ti ti-select-all"></i> Select all</button>
             <button class="batch-btn ghost" onclick="exitBatch()">Cancel</button>
+          </div>
+        </div>
+        <div class="batch-top">
+          <div class="batch-credit-lbl">Credit</div>
+          <div class="batch-credit" id="batch-credit">
+            <button class="bc-opt bc-f" id="bc-f" onclick="pickBatchCredit('Frankie')">F</button>
+            <button class="bc-opt bc-m" id="bc-m" onclick="pickBatchCredit('Meredith')">M</button>
+            <button class="bc-opt bc-both" id="bc-both" onclick="pickBatchCredit('BOTH')">FM</button>
           </div>
         </div>
         <div class="batch-actions">
@@ -848,6 +901,10 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
         <button class="who-opt" id="owner-m" onclick="pickOwner('Meredith')">Meredith</button>
       </div>
     </div>
+      <div class="form-row" id="t-together-row"><label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:13.5px;color:var(--text)">
+        <input type="checkbox" id="t-done-together" style="width:17px;height:17px;accent-color:var(--green);cursor:pointer">
+        Usually completed by both of us</label>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:3px;margin-left:26px">Completion will credit both by default</div></div>
     <div class="form-row"><div class="form-label">Notes (optional)</div><input class="form-input" id="t-notes" placeholder="Any extra context"></div>
     <div class="form-row" id="t-asset-row"><div class="form-label">Link to asset (optional)</div><select class="form-input" id="t-asset-link"><option value="">No asset link</option></select></div>
     <div class="form-row" id="t-proj-row"><div class="form-label">Link to project (optional)</div><select class="form-input" id="t-proj-link"><option value="">No project link</option></select></div>
@@ -946,13 +1003,6 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
 </div>
 
 <!-- MOBILE MORE MENU -->
-<div class="modal-bg gone" id="modal-mobile-menu">
-  <div class="modal" style="gap:0;padding:0;padding-bottom:calc(0px + var(--safe-bottom))">
-    <div class="action-sheet-item" onclick="refreshData();closeModal('modal-mobile-menu')"><i class="ti ti-refresh"></i> Refresh</div>
-    <div class="action-sheet-item" onclick="enterBatch();closeModal('modal-mobile-menu')"><i class="ti ti-checkbox"></i> Select multiple tasks</div>
-    <div class="action-sheet-item action-sheet-cancel" onclick="closeModal('modal-mobile-menu')">Cancel</div>
-  </div>
-</div>
 
 <!-- EDIT / ADD ASSET -->
 <div class="modal-bg gone" id="modal-edit-asset">
@@ -1088,6 +1138,175 @@ var currentUser=null,currentView='tasks',taskTab='today';
 var loginUserPick=null,pickedOwner='',pickedScope='household',pickedUrgency='this_week';
 var selectMode=false,selectedTaskIds=new Set(),longPressTimer=null;
 var _recentlyCompleted=new Set();
+// ── v9 PENDING COMPLETION ENGINE ────────────────────────────────────────────
+// Tapping the circle no longer writes anything. It cycles a local credit choice and
+// starts a 2.5s countdown; ONLY flushPending() ever talks to the server. That single
+// write rule is what keeps this from reintroducing the duplicate-completion bugs.
+var PENDING_MS=2500;          // countdown before a pending completion commits
+var TAP_GUARD_MS=250;         // ignore a second tap on the same circle inside this
+var RECENT_COMMIT_MS=10000;   // ignore a server payload that resurrects a just-committed task
+var UNDO_MS=5000;             // how long the undo toast lives
+// task_id -> {credit, idx, timer, startedAt, lastTapAt, task}
+// credit is a completed_by string, or null meaning "cleared, do not commit"
+var _pending={};
+// task_id -> timestamp of a successful commit, so a stale refresh cannot resurrect it
+var _recentCommit={};
+
+function pendingCount(){return Object.keys(_pending).length;}
+// Section 6: automatic syncing is only safe when nothing is mid-commit. Kept as its own
+// predicate so the rule is assertable rather than buried in a timer callback.
+function bgSyncAllowed(){return pendingCount()===0;}
+function isPending(tid){return Object.prototype.hasOwnProperty.call(_pending,tid);}
+function otherPerson(name){var o=_PEOPLE.filter(function(n){return n!==name;});return o[0]||name;}
+function bothCredit(){return _PEOPLE.join(',');}
+function isDoneTogether(t){var v=t&&t.done_together;return v===true||v==='true'||v==='TRUE'||v===1||v==='1';}
+
+// Section 14: the default credit derives from the ASSIGNMENT, not from who tapped.
+function defaultCreditFor(t){
+  if(String(t.scope||'household')==='personal')return String(t.owner||currentUser);
+  var owner=String(t.owner||'');
+  if(owner.indexOf(',')>=0)return bothCredit();       // assigned to both
+  if(isDoneTogether(t))return bothCredit();           // flagged as usually done together
+  if(owner)return owner;                              // assigned to one person
+  return currentUser;                                 // either of us
+}
+// The full cycle. Last entry is always null, meaning clear/cancel.
+function creditCycleFor(t){
+  if(String(t.scope||'household')==='personal')return [String(t.owner||currentUser),null];
+  var owner=String(t.owner||''),both=bothCredit();
+  if(owner.indexOf(',')>=0||isDoneTogether(t))return [both,currentUser,otherPerson(currentUser),null];
+  if(owner)return [owner,otherPerson(owner),both,null];
+  return [currentUser,otherPerson(currentUser),both,null];
+}
+function creditClass(credit){
+  if(!credit)return '';
+  var f=hasPerson(credit,'Frankie'),m=hasPerson(credit,'Meredith');
+  return f&&m?'cc-both':f?'cc-f':m?'cc-m':'';
+}
+function creditLetter(credit){
+  if(!credit)return '';
+  var f=hasPerson(credit,'Frankie'),m=hasPerson(credit,'Meredith');
+  if(f&&m)return '';
+  return f?'F':m?'M':'';
+}
+function buzz(credit,cleared){
+  if(cleared||!navigator.vibrate)return;
+  try{navigator.vibrate(hasPerson(credit,'Frankie')&&hasPerson(credit,'Meredith')?[15,50,15]:[15]);}catch(e){}
+}
+
+// Paint one circle to match its pending state. Kept separate from renderTasks so a
+// cycle tap can update in place without rebuilding the list (Section 12D relies on
+// renderTasks reading the same _pending map when it does rebuild).
+function paintCircle(circ,tid){
+  if(!circ)return;
+  var p=_pending[tid];
+  circ.className='circ'+(selectMode&&selectedTaskIds.has(tid)?' sel':'');
+  circ.innerHTML='';
+  if(!p||!p.credit)return;
+  circ.className+=' pending '+creditClass(p.credit);
+  var letter=creditLetter(p.credit);
+  if(letter)circ.appendChild(document.createTextNode(letter));
+  var ring=document.createElement('span');ring.className='circ-ring';
+  // restart the sweep from wherever this pending window currently is
+  ring.style.setProperty('--pending-ms',PENDING_MS+'ms');ring.style.animationDuration=PENDING_MS+'ms';
+  circ.appendChild(ring);
+}
+function repaintPending(tid){
+  var wrap=document.querySelector('.tc-wrap[data-task-id="'+tid+'"]');
+  if(wrap)paintCircle(wrap.querySelector('.circ'),tid);
+}
+
+// THE tap handler. Never writes. Never mutates state.tasks.
+function cycleCompletion(t){
+  var tid=t.task_id,now=Date.now();
+  if(recentlyCommitted(tid))return;                 // committed moments ago, do not re-arm
+  var p=_pending[tid];
+  if(p&&(now-p.lastTapAt)<TAP_GUARD_MS)return;        // accidental double tap
+  // Section 2: starting a new pending window commits any other pending card first.
+  var others=Object.keys(_pending).filter(function(k){return k!==tid;});
+  if(!p&&others.length)flushPending(others);
+  var cycle=creditCycleFor(t);
+  var idx=p?(p.idx+1)%cycle.length:0;
+  var credit=cycle[idx];
+  if(p&&p.timer)clearTimeout(p.timer);
+  _pending[tid]={credit:credit,idx:idx,startedAt:now,lastTapAt:now,task:t,timer:null};
+  buzz(credit,!credit);
+  _pending[tid].timer=setTimeout(function(){flushPending([tid]);},PENDING_MS);
+  repaintPending(tid);
+  setSyncState('loading',credit?'Completing...':'Cancelled');
+}
+// Section 4: any non-cycle interaction with a pending card cancels it.
+function cancelPending(tid,repaint){
+  var p=_pending[tid];
+  if(!p)return false;
+  if(p.timer)clearTimeout(p.timer);
+  delete _pending[tid];
+  if(repaint!==false)repaintPending(tid);
+  if(!pendingCount())setSyncState('ok','Ready');
+  return true;
+}
+function cancelAllPending(){Object.keys(_pending).forEach(function(k){cancelPending(k);});}
+
+// Section 12C: a payload that still shows a just-committed task as active is stale.
+function recentlyCommitted(tid){
+  var t=_recentCommit[tid];
+  if(!t)return false;
+  if(Date.now()-t>RECENT_COMMIT_MS){delete _recentCommit[tid];return false;}
+  return true;
+}
+function completionHidden(tid){return _recentlyCompleted.has(tid)||recentlyCommitted(tid);}
+
+// THE ONLY PATH THAT WRITES A COMPLETION. Section 12A/B/F.
+function flushPending(ids){
+  var list=(ids||Object.keys(_pending)).slice();
+  var items=[];
+  // Remove EVERY id from the map synchronously, before any async work, so a concurrent
+  // flush trigger cannot find and re-commit the same task.
+  list.forEach(function(tid){
+    var p=_pending[tid];
+    if(!p)return;
+    if(p.timer)clearTimeout(p.timer);
+    delete _pending[tid];
+    if(!p.credit){repaintPending(tid);return;}        // cleared: no API call at all
+    items.push({task_id:tid,credit:p.credit,task:p.task});
+  });
+  if(!items.length){if(!pendingCount())setSyncState('ok','Ready');return Promise.resolve();}
+
+  var picks=items.map(function(it){var t=it.task;return {
+    task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,
+    weekday:t.weekday,day_of_month:t.day_of_month,sched_freq:t.sched_freq,
+    sched_interval:t.sched_interval,sched_month:t.sched_month,due_date:t.due_date,
+    end_date:t.end_date,scope:t.scope||'household',completed_by:it.credit};});
+  var tids=items.map(function(it){return it.task_id;});
+  tids.forEach(function(tid){_recentlyCompleted.add(tid);_recentCommit[tid]=Date.now();});
+  collapseCards(tids);
+  setSyncState('loading','Logging...');
+  // One request for the whole flush, never one per task.
+  return apiPost({action:'batchComplete',data:{tasks:picks,completed_by:currentUser}})
+    .then(function(res){
+      showUndoToast(items,res&&res.log_ids?res.log_ids:null);
+      scheduleBgSync(SYNC_FAST);
+    })
+    .catch(function(){
+      // Section 12E: no automatic retry. Put the cards back and say so.
+      tids.forEach(function(tid){_recentlyCompleted.delete(tid);delete _recentCommit[tid];});
+      renderTasks();
+      showToast("Couldn't confirm "+(items.length>1?items.length+' completions':'the completion'));
+      setSyncState('err','Could not save');
+      scheduleBgSync();
+    });
+}
+function collapseCards(tids){
+  tids.forEach(function(tid){
+    var wrap=document.querySelector('.tc-wrap[data-task-id="'+tid+'"]');
+    if(!wrap)return;
+    wrap.style.height=wrap.offsetHeight+'px';wrap.style.transition='all .2s';
+    var circ=wrap.querySelector('.circ');
+    if(circ){circ.className='circ committed';circ.innerHTML='';}
+    setTimeout(function(){wrap.style.height='0';wrap.style.opacity='0';wrap.style.overflow='hidden';},180);
+  });
+}
+
 // task ids with a completion request in flight, so the same task cannot be logged twice
 var _completing=new Set();
 var statsDays=30,statsScope='household';
@@ -1145,7 +1364,7 @@ document.getElementById('pin-input').addEventListener('input',function(e){
     else{document.getElementById('pin-err').textContent='Incorrect PIN';e.target.value='';}
   }
 });
-function logout(){localStorage.removeItem('loonhq_user');currentUser=null;loginUserPick=null;closeModal('modal-qs');document.querySelectorAll('.who-btn').forEach(function(b){b.className='who-btn';});document.getElementById('pin-wrap').style.visibility='hidden';document.getElementById('pin-input').value='';showLogin();}
+function logout(){flushPending();localStorage.removeItem('loonhq_user');currentUser=null;loginUserPick=null;closeModal('modal-qs');document.querySelectorAll('.who-btn').forEach(function(b){b.className='who-btn';});document.getElementById('pin-wrap').style.visibility='hidden';document.getElementById('pin-input').value='';showLogin();}
 function updateUserDisplay(){
   var ch=currentUser.charAt(0),cls=currentUser==='Frankie'?'f':'m';
   var av=document.getElementById('user-avatar');av.textContent=ch;av.className='user-av '+cls;
@@ -1196,7 +1415,12 @@ function apiPost(body){
 function writesPending(){var cut=Date.now()-(API_TIMEOUT+5000);_inFlightWrites=_inFlightWrites.filter(function(t){return t>cut;});return _inFlightWrites.length>0;}
 
 function refreshData(silent){
+  // A manual refresh is also a flush trigger. Commit what is pending, then fetch.
+  if(!silent&&pendingCount()){
+    return flushPending().then(function(){return refreshData(silent);});
+  }
   if(!silent)setSyncState('loading','Syncing...');
+  hideStaleBadge();
   var syncStart=Date.now();
   return apiGet({action:'getAllData'}).then(function(data){
     // A write that is still in flight, or that landed after this fetch was issued, may not be
@@ -1238,7 +1462,16 @@ function refreshData(silent){
 // is waiting on the real row, so sync fast (SYNC_FAST). After a rollback, or when a payload
 // was discarded, back off (SYNC_SLOW) to let writes settle.
 var SYNC_FAST=700,SYNC_SLOW=3000;
-function scheduleBgSync(delay){if(_bgSyncTimer)clearTimeout(_bgSyncTimer);_bgSyncTimer=setTimeout(function(){_bgSyncTimer=null;refreshData(true);},delay||SYNC_SLOW);}
+function scheduleBgSync(delay){
+  if(_bgSyncTimer)clearTimeout(_bgSyncTimer);
+  _bgSyncTimer=setTimeout(function(){
+    _bgSyncTimer=null;
+    // Section 6: a payload landing mid-cycle would rebuild the list underneath the user's
+    // finger. Hold off and re-arm; the flush itself schedules the real reconcile.
+    if(!bgSyncAllowed()){scheduleBgSync(SYNC_SLOW);return;}
+    refreshData(true);
+  },delay||SYNC_SLOW);
+}
 function rebuildTaskIndex(){_taskById={};(state.tasks||[]).forEach(function(t){_taskById[t.task_id]=t;});}
 // Shared tail for every failed optimistic action: undo locally, tell the user, then let the
 // server settle it. The reconcile matters because a local undo can disagree with the server
@@ -1248,9 +1481,47 @@ function actionFailed(msg,render,label,retry){
   scheduleBgSync();showToast(msg,retry);setSyncState('err',label||'Could not save');
 }
 // retry is optional; when given, the toast becomes tappable and re-runs the failed action.
+// ── v9 UNDO TOAST (Section 7) ───────────────────────────────────────────────
+// Shown after a commit. Tapping Undo removes the log row and restores the task.
+// Only one toast at a time; a new one replaces the old.
+var _undoItems=null,_undoLogIds=null,_undoTimer=null;
+function showUndoToast(items,logIds){
+  var t=document.getElementById('toast-msg');if(!t)return;
+  if(_toastTimer){clearTimeout(_toastTimer);_toastTimer=null;}
+  if(_undoTimer){clearTimeout(_undoTimer);_undoTimer=null;}
+  _undoItems=items;_undoLogIds=logIds||null;_toastRetry=null;
+  t.textContent=items.length>1
+    ? items.length+' tasks completed  ·  Undo all'
+    : (items[0].task.name||'Task')+' completed  ·  Undo';
+  t.classList.add('tappable');t.classList.add('on');
+  _undoTimer=setTimeout(function(){_undoTimer=null;_undoItems=null;_undoLogIds=null;hideToast();},UNDO_MS);
+}
+function undoLastCompletion(){
+  var items=_undoItems,logIds=_undoLogIds;
+  _undoItems=null;_undoLogIds=null;
+  if(_undoTimer){clearTimeout(_undoTimer);_undoTimer=null;}
+  hideToast();
+  if(!items||!items.length)return;
+  setSyncState('loading','Undoing...');
+  items.forEach(function(it){_recentlyCompleted.delete(it.task_id);delete _recentCommit[it.task_id];});
+  renderTasks();
+  var calls=items.map(function(it,i){
+    return apiPost({action:'uncompleteTask',data:{
+      log_id:(logIds&&logIds[i])||'',task_id:it.task_id}});
+  });
+  Promise.all(calls).then(function(){
+    scheduleBgSync(SYNC_FAST);
+  }).catch(function(){
+    showToast("Couldn't undo");setSyncState('err','Undo failed');scheduleBgSync();
+  });
+}
 function showToast(msg,retry){
   var t=document.getElementById('toast-msg');if(!t)return;
   if(_toastTimer){clearTimeout(_toastTimer);_toastTimer=null;}   // don't let an older toast cut this one short
+  // Only one toast is ever visible, so a new one disarms any pending undo. Without this a
+  // later failure toast would still fire undoLastCompletion when tapped.
+  if(_undoTimer){clearTimeout(_undoTimer);_undoTimer=null;}
+  _undoItems=null;_undoLogIds=null;
   t.textContent=retry?(msg+'  ·  Tap to retry'):msg;
   t.classList.toggle('tappable',!!retry);
   _toastRetry=retry||null;
@@ -1258,11 +1529,28 @@ function showToast(msg,retry){
   _toastTimer=setTimeout(function(){_toastTimer=null;hideToast();},retry?7000:4000);
 }
 function hideToast(){var t=document.getElementById('toast-msg');if(t){t.classList.remove('on');t.classList.remove('tappable');}_toastRetry=null;}
-function onToastTap(){var r=_toastRetry;hideToast();if(_toastTimer){clearTimeout(_toastTimer);_toastTimer=null;}if(r)r();}
+function onToastTap(){
+  if(_undoItems){undoLastCompletion();return;}   // v9 undo takes priority
+  var r=_toastRetry;hideToast();if(_toastTimer){clearTimeout(_toastTimer);_toastTimer=null;}if(r)r();
+}
 // Backstop: now that apiPost rejects on server errors, any call site without its
 // own .catch() would surface an unhandled rejection. Report it rather than fail silently.
 if(typeof window!=='undefined'&&window.addEventListener)window.addEventListener('unhandledrejection',function(e){if(e.reason&&e.reason.apiError){e.preventDefault();scheduleBgSync();showToast("Couldn't save, try again");setSyncState('err','Save failed');}});
-document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&_lastFetch&&(Date.now()-_lastFetch)>60000)refreshData(true);});
+document.addEventListener('visibilitychange',function(){
+  // Backgrounding, phone lock or a browser tab switch must not strand a pending
+  // completion, so commit before we lose the foreground.
+  if(document.hidden){flushPending();return;}
+  if(_lastFetch&&(Date.now()-_lastFetch)>STALE_MS)showStaleBadge();
+  if(_lastFetch&&(Date.now()-_lastFetch)>60000&&!pendingCount())refreshData(true);
+});
+// Section 9: a subtle nudge when the data on screen may be older than the other person's
+// changes. Purely advisory; tapping it flushes and refetches.
+var STALE_MS=30000;
+function showStaleBadge(){var b=document.getElementById('stale-badge');if(b)b.classList.add('on');}
+function hideStaleBadge(){var b=document.getElementById('stale-badge');if(b)b.classList.remove('on');}
+function checkStale(){
+  if(_lastFetch&&(Date.now()-_lastFetch)>STALE_MS)showStaleBadge();else hideStaleBadge();
+}
 function setSyncState(s,msg){var d=document.getElementById('sync-dot'),l=document.getElementById('sync-lbl');if(d)d.className='sync-dot'+(s==='err'?' err':s==='loading'?' loading':'');if(l)l.textContent=msg;}
 function renderAll(){
   if(currentView==='tasks')renderTasks();
@@ -1276,6 +1564,7 @@ function renderAll(){
 var pageNames={tasks:'Tasks',projects:'Projects',grocery:'Shopping List',assets:'Assets',metrics:'Activity'};
 var addLabels={tasks:'Add task',projects:'Add project',grocery:'Add item',assets:'',metrics:''};
 function go(name){
+  flushPending();   // Section 5: switching section commits what is pending
   exitBatch();
   if(currentView)document.getElementById('v-'+currentView).classList.add('gone');
   currentView=name;
@@ -1286,7 +1575,6 @@ function go(name){
   document.getElementById('topbtnlbl').textContent=addLabels[name];
   document.getElementById('topbtn').style.display=(name==='metrics'||name==='assets')?'none':'flex';
   document.getElementById('fab').style.display=(name==='metrics'||name==='assets')?'none':'flex';
-  var mb=document.getElementById('mob-more-btn');if(mb)mb.style.display=name==='tasks'?'flex':'none';
   var sb=document.getElementById('select-btn');if(sb)sb.style.display=(name==='tasks'&&taskTab!=='history')?'':'none';
   closePanel();
   if(name==='metrics'){if(metricsTab==='stats')renderStats();else renderHistory();}
@@ -1300,6 +1588,7 @@ function openMobileMenu(){openModal('modal-mobile-menu');}
 
 // ── SCOPE / TAB ───────────────────────────────────────────
 function setTaskTab(t){
+  flushPending();   // Section 5
   taskTab=t;
   document.querySelectorAll('[data-tab]').forEach(function(b){b.classList.toggle('on',b.dataset.tab===t);});
   var isHist=t==='history';
@@ -1415,7 +1704,7 @@ function computeNextDue(task,fromDate){
 function renderTasks(){
   var el=document.getElementById('task-list');el.innerHTML='';
   var all=state.tasks.filter(function(t){
-    if(_recentlyCompleted.has(t.task_id))return false;
+    if(completionHidden(t.task_id))return false;
     if((t.status==='done'||t.status==='ended')&&t.type!=='scheduled'&&t.type!=='interval')return false;
     if(t.status==='ended')return false;
     var sc=t.scope||'household';
@@ -1567,8 +1856,11 @@ function makeTaskCard(t){
   circ.addEventListener('click',function(e){
     e.stopPropagation();
     if(selectMode){toggleSelect(t.task_id);return;}
-    handleComplete(t);
+    cycleCompletion(t);   // v9: cycles credit locally, never writes
   });
+  // Section 12D: a rebuilt list must show a pending card in its pending visual, not as
+  // a fresh active card, so there is never a second completion target for one task.
+  if(isPending(t.task_id))paintCircle(circ,t.task_id);
   div.appendChild(circ);
 
   // Body: tap = open edit modal
@@ -1655,7 +1947,7 @@ function makeTaskCard(t){
 
   // Three-dot menu
   var mb=document.createElement('button');mb.className='task-menu-btn';mb.innerHTML='&#8943;';
-  mb.addEventListener('click',function(e){e.stopPropagation();openTaskMenu(e,t);});
+  mb.addEventListener('click',function(e){e.stopPropagation();cancelPending(t.task_id);openTaskMenu(e,t);});
   div.appendChild(mb);
 
   wrap.appendChild(div);
@@ -1702,8 +1994,20 @@ function attachSwipe(cardEl,wrapEl,swipeBg,task){
   },{passive:false});
   cardEl.addEventListener('touchend',function(){
     if(axis!=='x'){cardEl.style.transform='';swipeBg.style.display='none';return;}
-    if(curX>THRESH){cardEl.style.transform='translateX(110%)';setTimeout(function(){handleComplete(task);},160);}
-    else if(curX<-THRESH){cardEl.style.transform='';swipeBg.style.display='none';openSnooze(task);}
+    if(curX>THRESH){
+      // Section 3: the fast path. Commit straight away at the assignment-derived default,
+      // flashing that person's colour so the user sees who got credit.
+      cancelPending(task.task_id,false);
+      var credit=defaultCreditFor(task);
+      var cc=creditClass(credit);
+      if(cc){swipeBg.className='swipe-bg swipe-complete '+cc;}
+      var cEl=cardEl.querySelector('.circ');
+      if(cEl){cEl.className='circ pending '+cc;cEl.innerHTML='';var L=creditLetter(credit);if(L)cEl.textContent=L;}
+      cardEl.style.transform='translateX(110%)';
+      _pending[task.task_id]={credit:credit,idx:0,startedAt:Date.now(),lastTapAt:Date.now(),task:task,timer:null};
+      setTimeout(function(){flushPending([task.task_id]);},160);
+    }
+    else if(curX<-THRESH){cardEl.style.transform='';swipeBg.style.display='none';cancelPending(task.task_id);openSnooze(task);}
     else{cardEl.style.transform='';swipeBg.style.display='none';}
     curX=0;axis=null;
   });
@@ -1720,6 +2024,7 @@ function enterBatch(){
   selectMode=true;selectedTaskIds.clear();
   var bar=document.getElementById('batch-bar');
   bar.classList.add('on');
+  _batchCredit=null;syncBatchCredit();
   applyBatchInset();
   updateBatchCount();
 }
@@ -1766,18 +2071,34 @@ function toggleSelect(id){
   }
 }
 function updateBatchCount(){document.getElementById('batch-count').textContent=selectedTaskIds.size+' selected';}
-function batchCompleteSelected(){
-  var picks=[];
-  selectedTaskIds.forEach(function(id){var t=state.tasks.find(function(x){return x.task_id===id;});if(t)picks.push({task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,sched_month:t.sched_month,due_date:t.due_date,end_date:t.end_date,scope:t.scope,completed_by:creditFor(t)});});
-  if(!picks.length)return;
-  exitBatch();
-  function attempt(){
-    picks.forEach(function(p){_recentlyCompleted.add(p.task_id);});
-    renderTasks();setSyncState('loading','Completing...');
-    apiPost({action:'batchComplete',data:{tasks:picks,completed_by:currentUser}}).then(function(){scheduleBgSync(SYNC_FAST);}).catch(function(){picks.forEach(function(p){_recentlyCompleted.delete(p.task_id);});actionFailed("Couldn't complete tasks",renderTasks,'Could not complete',attempt);});
-  }
-  attempt();
+// Section 8: which credit the whole batch gets. Defaults to the logged-in user.
+var _batchCredit=null;
+function batchCreditValue(){return _batchCredit==='BOTH'?bothCredit():(_batchCredit||currentUser);}
+function pickBatchCredit(v){_batchCredit=v;syncBatchCredit();}
+function syncBatchCredit(){
+  var cur=_batchCredit||currentUser;
+  [['bc-f','Frankie'],['bc-m','Meredith'],['bc-both','BOTH']].forEach(function(pair){
+    var el=document.getElementById(pair[0]);
+    if(el)el.classList.toggle('sel',cur===pair[1]);
+  });
 }
+function batchCompleteSelected(){
+  var ids=[];selectedTaskIds.forEach(function(id){ids.push(id);});
+  if(!ids.length)return;
+  var credit=batchCreditValue();          // Section 8: one credit for the whole selection
+  exitBatch();
+  var armed=[];
+  ids.forEach(function(id){
+    var t=(state.tasks||[]).find(function(x){return x.task_id===id;});
+    if(!t)return;
+    _pending[id]={credit:credit,idx:0,startedAt:Date.now(),lastTapAt:Date.now(),task:t,timer:null};
+    armed.push(id);
+  });
+  // Routed through the same flush as everything else, so flushPending stays the single
+  // code path that writes a completion (Section 12A).
+  return flushPending(armed);
+}
+
 // Mass delete. One request for the whole selection, and the server removes the task rows
 // and their log rows in blocks. Optimistic like every other action, with a working retry.
 function batchDeleteSelected(){
@@ -1842,35 +2163,17 @@ function confirmBatchSnooze(){
 
 // ── COMPLETE / SNOOZE ─────────────────────────────────────
 function completeTask(id){var t=(state.tasks||[]).find(function(x){return x.task_id===id;});if(t&&t.status!=='done'&&t.status!=='ended')handleComplete(t);}
+// The immediate-commit path: swipe-right and the card action menu. It arms the pending map
+// at the assignment-derived default and flushes at once, so flushPending remains the ONLY
+// code that ever writes a completion (Section 12A). No cycling, no countdown.
 function handleComplete(t){
-  var tid=t.task_id,ttype=t.type;
-  // Guard against completing the same task twice. Three separate paths call this (the circle,
-  // the swipe, the action menu) and a slow save could resurrect the card mid-flight, so
-  // without this a second tap silently wrote a second completion row.
-  if(_completing.has(tid))return;
-  // attempt() re-runs cleanly after a rollback, so it doubles as the retry handler
-  function attempt(){
-    _completing.add(tid);
-    _recentlyCompleted.add(tid);
-    var wrap=document.querySelector('.tc-wrap[data-task-id="'+tid+'"]');
-    if(wrap){wrap.style.height=wrap.offsetHeight+'px';wrap.style.transition='all .2s';setTimeout(function(){wrap.style.height='0';wrap.style.opacity='0';wrap.style.overflow='hidden';},10);}
-    setSyncState('loading','Logging...');
-    apiPost({action:'completeTask',data:{task_id:t.task_id,task_name:t.name,type:t.type,recurrence_days:t.recurrence_days,weekday:t.weekday,day_of_month:t.day_of_month,sched_month:t.sched_month,sched_freq:t.sched_freq,sched_interval:t.sched_interval,due_date:t.due_date,end_date:t.end_date,completed_by:creditFor(t),scope:t.scope||'household',notes:''}}).then(function(){
-      // Do NOT release _recentlyCompleted here. For a recurring task the server advances
-      // due_date, but LOCAL state still holds the old one, so dropping the filter before the
-      // reconcile lands puts the finished card straight back into Today. That is the window
-      // in which a second tap wrote a duplicate completion (seen 10s and 22s apart on
-      // 2026-08-02). The payload apply clears it, which is the point where server state is
-      // actually authoritative.
-      _completing.delete(tid);
-      scheduleBgSync(SYNC_FAST);
-    }).catch(function(){
-      _completing.delete(tid);_recentlyCompleted.delete(tid);
-      actionFailed("Couldn't complete",renderTasks,'Could not complete',attempt);
-    });
-  }
-  attempt();
+  var tid=t.task_id;
+  if(recentlyCommitted(tid))return;                 // just committed; ignore a repeat tap
+  if(isPending(tid)&&_pending[tid].credit)return;   // already armed, let it commit once
+  _pending[tid]={credit:defaultCreditFor(t),idx:0,startedAt:Date.now(),lastTapAt:Date.now(),task:t,timer:null};
+  return flushPending([tid]);
 }
+
 function snoozeBase(t){
   var today0=new Date();today0.setHours(0,0,0,0);
   var dueD=t.due_date?new Date(String(t.due_date).split('T')[0]+'T12:00:00'):null;
@@ -1953,6 +2256,7 @@ function closeTaskMenuOnce(e){if(openMenu&&!openMenu.contains(e.target))closeTas
 // ── ADD TASK ──────────────────────────────────────────────
 function openAddTask(){
   editingTask=null;pickedOwner='';pickedScope='household';pickedUrgency='this_week';
+  var dtA=document.getElementById('t-done-together');if(dtA)dtA.checked=false;
   document.getElementById('task-modal-title').textContent='Add task';
   document.getElementById('task-submit-btn').textContent='Add task';
   document.getElementById('task-delete-btn').classList.add('gone');
@@ -1961,8 +2265,10 @@ function openAddTask(){
   clearTaskForm();openModal('modal-task');
 }
 function openEditTask(t){
+  cancelPending(t.task_id);   // Section 4: latest action wins
   populateAssetDropdown();populateProjectDropdown();
   editingTask=t;pickedScope=t.scope||'household';pickedOwner=t.owner||'';pickedUrgency=t.urgency_window||'this_week';
+  var dtE=document.getElementById('t-done-together');if(dtE)dtE.checked=isDoneTogether(t);
   document.getElementById('task-modal-title').textContent='Edit task';
   document.getElementById('task-submit-btn').textContent='Save changes';
   document.getElementById('task-delete-btn').classList.remove('gone');
@@ -2051,7 +2357,7 @@ function updateSchedFields(){
 function submitTask(){
   var name=document.getElementById('t-name').value.trim();if(!name){alert('Task name required');return;}
   var type=document.getElementById('t-type').value;
-  var data={name:name,type:type,scope:pickedScope,owner:pickedScope==='personal'?currentUser:pickedOwner,notes:document.getElementById('t-notes').value.trim(),status:'active'};
+  var data={name:name,type:type,scope:pickedScope,owner:pickedScope==='personal'?currentUser:pickedOwner,done_together:(document.getElementById('t-done-together')||{}).checked?'true':'',notes:document.getElementById('t-notes').value.trim(),status:'active'};
   if(type==='one_off'){var due=document.getElementById('t-due').value||'';var projSel2=document.getElementById('t-proj-link');var hasProj=projSel2&&projSel2.value;if(!due&&!editingTask&&!hasProj){due=todayStr();}data.due_date=due;data.reminder_offset=document.getElementById('t-remind').value||'';}
   else if(type==='floating'){data.urgency_window=pickedUrgency;}
   else if(type==='scheduled'){
@@ -2450,6 +2756,7 @@ function setStatsRange(d){
   renderStats();
 }
 function setStatsScope(s){
+  flushPending();   // Section 5: scope switch commits
   statsScope=s;
   document.querySelectorAll('.scope-pill').forEach(function(b){b.classList.toggle('on',b.dataset.scope===s);});
   renderStats();
@@ -2505,7 +2812,7 @@ function renderTrendChart(){
   // X-axis week labels (M/D)
   var xLabels='';var step=Math.max(1,Math.ceil(n/6));
   weeks.forEach(function(w,i){if(i%step!==0&&i!==n-1)return;var x=px+Math.round(i/(n-1||1)*(W-px-14));var m=w.start.getMonth()+1;var d=w.start.getDate();xLabels+='<text x="'+x+'" y="'+(H-1)+'" font-size="7" fill="var(--text3)" text-anchor="middle">'+m+'/'+d+'</text>';});
-  wrapEl.innerHTML='<div class="trend-title">Completions over time</div><svg width="100%" viewBox="0 0 '+W+' '+H+'" style="overflow:visible">'+yLines+'<polyline points="'+fPts+'" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><polyline points="'+mPts+'" fill="none" stroke="var(--yellow)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'+xLabels+'</svg><div class="trend-legend"><span><span class="trend-legend-dot" style="background:var(--purple)"></span>Frankie</span><span><span class="trend-legend-dot" style="background:var(--yellow)"></span>Meredith</span></div>';
+  wrapEl.innerHTML='<div class="trend-title">Completions over time</div><svg width="100%" viewBox="0 0 '+W+' '+H+'" style="overflow:visible">'+yLines+'<polyline points="'+fPts+'" fill="none" stroke="var(--user-f)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><polyline points="'+mPts+'" fill="none" stroke="var(--user-m)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'+xLabels+'</svg><div class="trend-legend"><span><span class="trend-legend-dot" style="background:var(--purple)"></span>Frankie</span><span><span class="trend-legend-dot" style="background:var(--yellow)"></span>Meredith</span></div>';
 }
 function renderHistory(){
   var scope=metricsTab==='personal'?'personal':'household';
