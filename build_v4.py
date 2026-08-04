@@ -29,6 +29,7 @@ CSS = """
   /* THE per-user palette. Every place a user-specific colour appears reads these and
      nothing else. Before v9 there were two contradictory schemes: purple/yellow in five
      places and green/blue in the history dots, so the same person had two identities. */
+  --logo:LOGO_URI_PLACEHOLDER;
   --user-f:#9333EA;--user-f-light:#F3E8FF;--user-f-dark:#6B21A8;
   --user-m:#D97706;--user-m-light:#FEF3C7;--user-m-dark:#92400E;
   --yellow:#B58A0E;--yellow-light:#FBF1CF;
@@ -49,6 +50,11 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 /* LOGIN */
 .login{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:linear-gradient(180deg,#F7F5F0 0%,#E5F5EF 100%)}
 .login-logo{margin-bottom:20px}
+/* All three logo spots paint the same single copy of the image via --logo. They are
+   divs rather than <img> so the data URI is stored once; role/aria-label keep them
+   announced to screen readers exactly as the old alt text did. */
+.logo-img{background-image:var(--logo);background-size:contain;background-repeat:no-repeat;background-position:center}
+.login-logo-img{width:120px;height:120px;border-radius:24px;box-shadow:0 4px 20px rgba(0,0,0,.18)}
 .login-title{font-size:24px;font-weight:600;letter-spacing:-.5px;margin-bottom:6px}
 .login-sub{font-size:14px;color:var(--text2);margin-bottom:28px;text-align:center}
 .who-buttons{display:flex;gap:10px;margin-bottom:24px}
@@ -568,7 +574,7 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
 def HTML_BODY(logo, icon):
     return f"""
 <div id="login-screen" class="login">
-  <div class="login-logo"><img src="{logo}" alt="Loon HQ" style="width:120px;height:120px;border-radius:24px;box-shadow:0 4px 20px rgba(0,0,0,.18)"></div>
+  <div class="login-logo"><div class="logo-img login-logo-img" role="img" aria-label="Loon HQ"></div></div>
   <div class="login-title">Loon HQ</div>
   <div class="login-sub">The Laffy Loon command center</div>
   <div class="who-buttons">
@@ -585,7 +591,7 @@ def HTML_BODY(logo, icon):
 <div class="app gone" id="main-app">
   <div class="sidebar">
     <div class="sb-top">
-      <img class="sb-logo-icon" src="{logo}" alt="Loon HQ">
+      <div class="sb-logo-icon logo-img" role="img" aria-label="Loon HQ"></div>
       <div><div class="sb-logo-text">Loon <span>HQ</span></div><div class="sb-addr">4455 W Alaska Pl</div></div>
     </div>
     <div class="user-row" onclick="openQuickSwitch()">
@@ -609,7 +615,7 @@ def HTML_BODY(logo, icon):
 
   <div class="main">
     <div class="mobile-hdr">
-      <img class="mobile-hdr-logo" src="{logo}" alt="LHQ">
+      <div class="mobile-hdr-logo logo-img" role="img" aria-label="Loon HQ"></div>
       <div class="mobile-hdr-title">Loon <span>HQ</span></div>
       <div class="mobile-hdr-user" id="mob-user" onclick="openQuickSwitch()">?</div>
     </div>
@@ -3009,7 +3015,7 @@ HTML = f"""<!DOCTYPE html>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
-<style>{CSS}</style>
+<style>{CSS.replace('LOGO_URI_PLACEHOLDER', "url('" + LOGO + "')")}</style>
 </head>
 <body>
 {body}

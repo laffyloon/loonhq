@@ -49,7 +49,7 @@ A note on what this review found overall: **the app's own code is fast.** Render
 
 ## Medium
 
-### [ ] Step 3: The logo is embedded three times, and is a quarter of the download
+### [x] Step 3: The logo is embedded three times, and is a quarter of the download  — **DONE, 269.5KB to 225.4KB (44KB saved, 16%)**
 - **Finding:** `build_v4.py:571,588,612` — the same 22KB image data URI is written into the page three times (login screen, sidebar, mobile header). | Evidence: `Verified` — `index.html` is 267.2KB total; the three copies account for 66.8KB, exactly 25%.
 - **Impact:** Every visit downloads the same picture three times over. On a phone on cellular that is a needless quarter of the page weight, on a file that is already large.
 - **Task:** Embed the image once and have all three places refer to that single copy, for example by defining it once as a CSS variable and using it as a background image.
@@ -59,6 +59,7 @@ A note on what this review found overall: **the app's own code is fast.** Render
 - **Files:**
   - `build_v4.py` — the three logo insertion points and the stylesheet
 - **Verify:** `ls -l index.html` should show the file dropping from **267KB to about 222KB**, and the browser harness logo checks must still pass: `NODE_PATH=$(npm root -g) node e2e_harness.js`.
+- **Result:** 269.5KB to 225.4KB. Image data appears exactly once and decodes to a valid 17,090-byte WebP. All suites green: 276 frontend, 75 server, 64 browser (2 new logo checks added). Note: completing this exposed a latent build bug, see Deferred.
 - **Rollback:** `git revert`.
 - **Depends on:** None
 - **Manual steps:** None.
@@ -182,6 +183,9 @@ A note on what this review found overall: **the app's own code is fast.** Render
 ---
 
 ## Deferred
+
+- **Latent build bug found and fixed during Step 3.** `CSS` in `build_v4.py` is a plain string, not an f-string, so a `{logo}` placeholder written into it was never substituted and shipped to the browser as literal text. The first attempt at Step 3 silently produced a page with no logo at all, caught only because the size check and the image-decode assertion both failed. Any future placeholder added to the CSS block has the same trap; the fix used an explicit replace at the point of insertion.
+- **"Either of us" task circles still show `F·M`.** Pre-existing, not introduced by v9. The old design distinguished `F·M` (either) from `F&M` (both); v9 removed the letters from "both" only, as the spec asked. The result is that the only circle still showing letters is the "either of us" one, which could now read as "both" to a user. Worth a decision: drop the letters there too, or leave it.
 
 - **Correct the performance note in CLAUDE.md.** It lists event delegation on task cards as "the biggest remaining perf win". Measurement says otherwise: 150 cards render in 17.2ms and a cycle tap costs about 1ms, with 6 listeners per card. The real costs are the blocked CDN (Step 2) and Apps Script round trips. Worth a one-line correction so the next session does not spend effort there.
 - **`_recentCommit` entries are only cleaned when read.** Entries for tasks never looked at again persist for the session. Negligible for a two-person task list; would matter at thousands of tasks.

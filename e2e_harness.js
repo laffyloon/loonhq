@@ -303,18 +303,27 @@ const ok = (n, cond, detail) => results.push([cond ? 'PASS' : 'FAIL', n + (cond 
   const logo = await page.evaluate(async () => {
     const el = document.querySelector('.sb-logo-icon');
     if (!el) return { found: false };
-    const src = el.getAttribute('src') || '';
-    let loaded = el.complete && el.naturalWidth > 0;
-    if (!loaded && src) {
-      loaded = await new Promise(res => { const i = new Image(); i.onload = () => res(true); i.onerror = () => res(false); i.src = src; });
-    }
-    return { found: true, empty: src === '', isData: src.startsWith('data:image/'), len: src.length, loaded,
-             w: el.naturalWidth, h: el.naturalHeight };
+    // the image is now painted from a single --logo custom property rather than three
+    // separate <img src> copies, so read the resolved background instead
+    const bg = getComputedStyle(el).backgroundImage || '';
+    const m = bg.match(/url\(["']?(data:[^"')]+)["']?\)/);
+    const uri = m ? m[1] : '';
+    const loaded = uri ? await new Promise(res => { const i = new Image(); i.onload = () => res(i.naturalWidth); i.onerror = () => res(0); i.src = uri; }) : 0;
+    return { found: true, empty: !uri, isData: uri.startsWith('data:image/'), len: uri.length,
+             loaded: loaded > 0, w: loaded, label: el.getAttribute('aria-label') || '' };
   });
   ok('the logo element exists', logo.found, 'no .sb-logo-icon');
-  ok('the logo src is not empty', logo.found && !logo.empty, JSON.stringify(logo));
+  ok('the logo image resolves to a real URI', logo.found && !logo.empty, JSON.stringify(logo));
   ok('the logo is a self-contained data URI, not a remote URL', logo.isData, JSON.stringify(logo));
   ok('the browser actually decoded the logo image', logo.loaded && logo.w > 0, JSON.stringify(logo));
+  ok('the logo keeps an accessible label', /loon/i.test(logo.label), 'aria-label=' + logo.label);
+  // the whole point of the change: one copy of the image, not three
+  const logoCopies = await page.evaluate(() => {
+    const all = [...document.querySelectorAll('.logo-img')];
+    const uris = new Set(all.map(e => getComputedStyle(e).backgroundImage));
+    return { spots: all.length, distinct: uris.size };
+  });
+  ok('all logo spots share ONE image definition', logoCopies.spots >= 2 && logoCopies.distinct === 1, JSON.stringify(logoCopies));
 
   // ---- batch mode: the bar must FIT, and mass delete must exist -------------
   // 360px, not the 430 used above. The old one-row bar fitted at 430 and only clipped
