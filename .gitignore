@@ -1,2 +1,4 @@
 .claude/
 extracted.js
+__pycache__/
+*.pyc
