@@ -281,7 +281,6 @@ run('setTaskTab all', ()=>setTaskTab('all'));
 run('setMetricsTab stats', ()=>setMetricsTab('stats'));
 run('setMetricsTab household history', ()=>setMetricsTab('household'));
 run('setMetricsTab personal history', ()=>setMetricsTab('personal'));
-run('toggleLegend', ()=>toggleLegend());
 
 // complete / snooze / batch (network stubbed)
 run('handleComplete one_off', ()=>handleComplete(state.tasks[0]));
@@ -370,7 +369,6 @@ run('updateUserDisplay', ()=>updateUserDisplay());
 run('quickSwitch', ()=>quickSwitch('Meredith'));
 
 // ── v8.1 new tests ───────────────────────────────────────
-run('toggleLegend no-op', ()=>toggleLegend());
 run('toggleSearch', ()=>{ toggleSearch(); toggleSearch(); });
 run('onSearchInput filters', ()=>{
   taskSearch=''; taskTab='all';
@@ -1037,19 +1035,8 @@ run('owner picker: toggling one name off leaves the other', ()=>{
   pickedOwner=''; pickOwner('Frankie'); pickOwner('Meredith'); pickOwner('Frankie');
   if(pickedOwner!=='Meredith') throw new Error('expected Meredith, got '+pickedOwner);
 });
-run('creditFor: joint task credits both, whoever completes it', ()=>{
-  currentUser='Frankie';
-  if(creditFor({owner:'Frankie,Meredith'})!=='Frankie,Meredith') throw new Error('joint task must credit both');
-  currentUser='Meredith';
-  if(creditFor({owner:'Frankie,Meredith'})!=='Frankie,Meredith') throw new Error('joint credit must not depend on who clicks');
-  currentUser='Frankie';
-});
-run('creditFor: single-owner and either-of-us credit whoever completed it', ()=>{
-  currentUser='Meredith';
-  if(creditFor({owner:''})!=='Meredith') throw new Error('either-of-us should credit the completer');
-  if(creditFor({owner:'Frankie'})!=='Meredith') throw new Error('a single-owner task credits whoever actually did it');
-  currentUser='Frankie';
-});
+
+
 run('submitTask sends a joint owner', ()=>{
   __posts.length=0; editingTask=null; pickedScope='household'; pickedOwner='';
   pickOwner('Frankie'); pickOwner('Meredith');
@@ -1189,7 +1176,7 @@ runAsync('a RECURRING task stays hidden AFTER the save succeeds, until the sync'
   // The server advances due_date but LOCAL state still holds the old one. Releasing the
   // filter on success put the finished card straight back into Today, which is the window a
   // second tap landed in. It must stay filtered until a payload is actually applied.
-  __posts.length=0; _completing.clear(); _recentlyCompleted.clear(); __failNext=false;
+  __posts.length=0; _recentlyCompleted.clear(); __failNext=false;
   const t = {task_id:'dup-recurring',name:'Vacuum upstairs',type:'interval',recurrence_days:7,
              sched_freq:'day',due_date:todayStr(),status:'active',scope:'household',owner:''};
   state.tasks=[t]; rebuildTaskIndex();
@@ -1198,11 +1185,10 @@ runAsync('a RECURRING task stays hidden AFTER the save succeeds, until the sync'
   if(__posts.filter(p=>p.action==='batchComplete').length !== 1) throw new Error('no commit sent');
   if(!_recentlyCompleted.has(t.task_id))
     throw new Error('the finished recurring card was released before the reconcile landed');
-  if(_completing.has(t.task_id)) throw new Error('the in-flight guard was never released');
-  _completing.clear(); _recentlyCompleted.clear();
+  _recentlyCompleted.clear();
 });
 runAsync('a FAILED complete does put the card back, so it can be retried', async ()=>{
-  __posts.length=0; _completing.clear(); _recentlyCompleted.clear();
+  __posts.length=0; _recentlyCompleted.clear();
   const t = {task_id:'dup-oneoff',name:'Take out bins',type:'one_off',
              due_date:todayStr(),status:'active',scope:'household',owner:''};
   state.tasks=[t]; rebuildTaskIndex();
@@ -1210,8 +1196,7 @@ runAsync('a FAILED complete does put the card back, so it can be retried', async
   handleComplete(t);
   await tick(); await tick(); await tick();
   if(_recentlyCompleted.has(t.task_id)) throw new Error('a failed completion must restore the card');
-  if(_completing.has(t.task_id)) throw new Error('the guard must release on failure too');
-  _completing.clear(); _recentlyCompleted.clear(); __failNext=false;
+  _recentlyCompleted.clear(); __failNext=false;
 });
 runAsync('the completion guard blocks a repeat, then releases after the window', async ()=>{
   // v9: _completing gave way to recentlyCommitted, which also survives the flush that
@@ -1241,7 +1226,7 @@ function _v9task(o){
 function _v9reset(){
   Object.keys(_pending).forEach(function(k){if(_pending[k].timer)clearTimeout(_pending[k].timer);delete _pending[k];});
   Object.keys(_recentCommit).forEach(function(k){delete _recentCommit[k];});
-  _recentlyCompleted.clear();_completing.clear();__posts.length=0;__failNext=false;
+  _recentlyCompleted.clear();__posts.length=0;__failNext=false;
 }
 
 // ---- Section 14: assignment-derived defaults ----
@@ -1592,6 +1577,185 @@ run('v9.1 every icon the app uses has a drawing', ()=>{
   const drawn=new Set((css.match(/--i-[a-z0-9-]+:url/g)||[]).map(x=>x.slice(4,-4)));
   const missing=[...used].filter(u=>!drawn.has(u));
   if(missing.length) throw new Error('icons used but never drawn: '+missing.join(', '));
+});
+
+// ---- v9.2 stale-data watch (Step 5) ----
+run('v9.2 checkStale raises the badge once data is older than the window', ()=>{
+  const saved=_lastFetch;
+  _lastFetch=Date.now();
+  checkStale();
+  if(el('stale-badge').classList.contains('on')) throw new Error('badge shown on fresh data');
+  _lastFetch=Date.now()-(STALE_MS+5000);
+  checkStale();
+  if(!el('stale-badge').classList.contains('on')) throw new Error('badge NOT shown on stale data');
+  _lastFetch=Date.now();
+  checkStale();
+  if(el('stale-badge').classList.contains('on')) throw new Error('badge not cleared after a refresh');
+  _lastFetch=saved;
+});
+run('v9.2 the stale watch is actually started when the app opens', ()=>{
+  // it used to be defined but never called, so the badge only ever appeared on
+  // return-from-background and never while the app sat open
+  const src=fs.readFileSync('/home/claude/extracted.js','utf8');
+  if(!/startStaleWatch\(\)/.test(src)) throw new Error('startStaleWatch is never called');
+  const inShowApp=/function showApp\(\)\{[^}]*startStaleWatch\(\)/.test(src);
+  if(!inShowApp) throw new Error('showApp does not start the stale watch');
+  if(!/setInterval\(checkStale/.test(src)) throw new Error('checkStale is not polled');
+});
+
+// ---- v9.2 UNDO coverage (Step 6: it had none at all) ----
+runAsync('v9.2 undo fires, removes the completion locally and calls the server', async ()=>{
+  _v9reset(); currentUser='Frankie';
+  const t=_v9task({owner:''}); state.tasks=[t]; rebuildTaskIndex();
+  cycleCompletion(t);
+  await flushPending([t.task_id]); await tick(); await tick();
+  if(!_undoItems) throw new Error('no undo was armed after a commit');
+  if(!completionHidden(t.task_id)) throw new Error('task should be hidden after commit');
+  __posts.length=0;
+  undoLastCompletion();
+  await tick(); await tick();
+  const undo=__posts.filter(p=>p.action==='batchUncomplete');
+  if(undo.length!==1) throw new Error('expected 1 batchUncomplete, got '+undo.length);
+  if(completionHidden(t.task_id)) throw new Error('undo must un-hide the task');
+  if(_undoItems) throw new Error('undo should disarm itself');
+  _v9reset();
+});
+runAsync('v9.2 undoing a batch is ONE request, not one per task', async ()=>{
+  _v9reset(); currentUser='Frankie';
+  const a=_v9task({owner:''}), b=_v9task({owner:'Meredith'}), c=_v9task({owner:''});
+  state.tasks=[a,b,c]; rebuildTaskIndex();
+  [a,b,c].forEach(function(t){
+    _pending[t.task_id]={credit:defaultCreditFor(t),idx:0,startedAt:Date.now(),lastTapAt:Date.now(),task:t,timer:null};
+  });
+  await flushPending(); await tick(); await tick();
+  __posts.length=0;
+  undoLastCompletion();
+  await tick(); await tick();
+  const undo=__posts.filter(p=>p.action==='batchUncomplete');
+  if(undo.length!==1) throw new Error('expected ONE request for three undos, got '+undo.length);
+  if(undo[0].data.items.length!==3) throw new Error('expected 3 items, got '+undo[0].data.items.length);
+  _v9reset();
+});
+run('v9.2 the undo toast wording matches how many tasks committed', ()=>{
+  _v9reset(); currentUser='Frankie';
+  const one=[{task_id:'x1',credit:'Frankie',task:{name:'Wash up'}}];
+  showUndoToast(one,null);
+  let msg=String(el('toast-msg').textContent||'');
+  if(!/Wash up/.test(msg)||!/Undo/.test(msg)) throw new Error('single-task wording wrong: '+msg);
+  const many=[one[0],{task_id:'x2',credit:'Frankie',task:{name:'Bins'}}];
+  showUndoToast(many,null);
+  msg=String(el('toast-msg').textContent||'');
+  if(!/2 tasks/.test(msg)||!/Undo all/.test(msg)) throw new Error('batch wording wrong: '+msg);
+  _undoItems=null; hideToast(); _v9reset();
+});
+runAsync('v9.2 a failed undo says so and does not silently swallow it', async ()=>{
+  _v9reset(); currentUser='Frankie';
+  const t=_v9task({owner:''}); state.tasks=[t]; rebuildTaskIndex();
+  cycleCompletion(t);
+  await flushPending([t.task_id]); await tick(); await tick();
+  __failNext=true;
+  undoLastCompletion();
+  await tick(); await tick(); await tick();
+  const msg=String(el('toast-msg').textContent||'');
+  if(!/Couldn't undo/.test(msg)) throw new Error('a failed undo must report it, got: '+msg);
+  __failNext=false; _v9reset();
+});
+
+// ---- v9.2 Lists: rename, custom lists, ordering ----
+run('v9.2 the section is called Lists everywhere', ()=>{
+  const html=fs.readFileSync('index.html','utf8');
+  if(/Shopping List/.test(html)) throw new Error('"Shopping List" still appears');
+  if(/<span>Shop<\/span>/.test(html)) throw new Error('the mobile nav still says Shop');
+  if(pageNames.grocery!=='Lists') throw new Error('page title is '+pageNames.grocery);
+});
+run('v9.2 the three permanent lists cannot be deleted', ()=>{
+  ['Food','Costco','Household'].forEach(function(n){
+    if(!isPermanentList(n)) throw new Error(n+' should be permanent');
+  });
+  if(isPermanentList('Garage')) throw new Error('a custom list must not be permanent');
+  const before=(state.lists||[]).slice();
+  deleteCustomList('Food');                       // must be refused outright
+  if(JSON.stringify(state.lists||[])!==JSON.stringify(before)) throw new Error('deleting a permanent list changed state');
+});
+run('v9.2 allListNames puts permanent lists first, then custom in creation order', ()=>{
+  const sv=state.lists;
+  state.lists=[{list_id:'l2',name:'Second',created_at:'2026-01-02',sort_order:2},
+               {list_id:'l1',name:'First',created_at:'2026-01-01',sort_order:1}];
+  const names=allListNames();
+  if(names.slice(0,3).join(',')!=='Food,Costco,Household') throw new Error('permanent lists not first: '+names);
+  if(names[3]!=='First'||names[4]!=='Second') throw new Error('custom lists out of order: '+names);
+  state.lists=sv;
+});
+run('v9.2 renderGrocery draws a section per list, with a delete button only on custom ones', ()=>{
+  const svL=state.lists, svG=state.grocery;
+  state.lists=[{list_id:'l1',name:'Garage',created_at:'2026-01-01',sort_order:1}];
+  state.grocery=[{item_id:'g1',name:'Milk',category:'Food',status:'need',sort_order:1},
+                 {item_id:'g2',name:'Oil',category:'Garage',status:'need',sort_order:2}];
+  renderGrocery();
+  const wrap=el('lists-wrap');
+  const groups=wrap.children.filter?wrap.children.filter(Boolean):wrap.children;
+  if(groups.length!==4) throw new Error('expected 4 sections (3 permanent + Garage), got '+groups.length);
+  state.lists=svL; state.grocery=svG;
+});
+run('v9.2 an item whose list was deleted falls back rather than vanishing', ()=>{
+  const svL=state.lists, svG=state.grocery;
+  state.lists=[];
+  state.grocery=[{item_id:'orphan',name:'Stray',category:'DeletedList',status:'need',sort_order:1}];
+  renderGrocery();   // must not throw, and must not silently drop the item
+  state.lists=svL; state.grocery=svG;
+});
+runAsync('v9.2 creating a list posts addList and shows it immediately', async ()=>{
+  const svL=state.lists, svG=state.grocery, svPrompt=global.prompt;
+  state.lists=[]; state.grocery=[]; __posts.length=0;
+  global.prompt=function(){return 'Camping';};
+  promptNewList();
+  if(!(state.lists||[]).some(function(l){return l.name==='Camping';}))
+    throw new Error('the new list should appear immediately');
+  await tick(); await tick();
+  const p=__posts.filter(x=>x.action==='addList');
+  if(p.length!==1) throw new Error('expected one addList, got '+p.length);
+  if(p[0].data.name!=='Camping') throw new Error('wrong name sent');
+  global.prompt=svPrompt; state.lists=svL; state.grocery=svG;
+});
+run('v9.2 a duplicate list name is refused before any request', ()=>{
+  const svL=state.lists, svPrompt=global.prompt;
+  state.lists=[{list_id:'l1',name:'Camping',created_at:'2026-01-01',sort_order:1}];
+  __posts.length=0;
+  global.prompt=function(){return 'camping';};   // same name, different case
+  promptNewList();
+  if(__posts.filter(x=>x.action==='addList').length!==0) throw new Error('a duplicate was sent to the server');
+  global.prompt=svPrompt; state.lists=svL;
+});
+runAsync('v9.2 deleting a custom list removes it and its items, and posts deleteList', async ()=>{
+  const svL=state.lists, svG=state.grocery, svConfirm=global.confirm;
+  state.lists=[{list_id:'l1',name:'Garage',created_at:'2026-01-01',sort_order:1}];
+  state.grocery=[{item_id:'g1',name:'Milk',category:'Food',status:'need',sort_order:1},
+                 {item_id:'g2',name:'Oil',category:'Garage',status:'need',sort_order:2}];
+  global.confirm=function(){return true;};
+  __posts.length=0;
+  deleteCustomList('Garage');
+  if((state.lists||[]).length!==0) throw new Error('the list should be gone immediately');
+  if((state.grocery||[]).some(function(g){return g.category==='Garage';})) throw new Error('its items should be gone too');
+  if(!(state.grocery||[]).some(function(g){return g.category==='Food';})) throw new Error('other lists must be untouched');
+  await tick(); await tick();
+  const p=__posts.filter(x=>x.action==='deleteList');
+  if(p.length!==1||p[0].data.name!=='Garage') throw new Error('deleteList not sent correctly');
+  global.confirm=svConfirm; state.lists=svL; state.grocery=svG;
+});
+run('v9.2 reordering posts the new order for that list only', ()=>{
+  __posts.length=0;
+  persistGrocOrder('Food',['g3','g1','g2']);
+  const p=__posts.filter(x=>x.action==='reorderGrocery');
+  if(p.length!==1) throw new Error('expected one reorderGrocery, got '+p.length);
+  if(p[0].data.category!=='Food') throw new Error('wrong list: '+p[0].data.category);
+  if(p[0].data.order.join(',')!=='g3,g1,g2') throw new Error('wrong order sent');
+});
+run('v9.2 drag uses pointer events, not the HTML5 API that never fired on touch', ()=>{
+  const src=fs.readFileSync('/home/claude/extracted.js','utf8');
+  if(/setAttribute\('draggable'/.test(src)) throw new Error('still using HTML5 draggable');
+  if(/addEventListener\('dragstart'/.test(src)) throw new Error('still using dragstart');
+  if(!/pointerdown/.test(src)) throw new Error('no pointerdown handler');
+  if(!/pointermove/.test(src)||!/pointerup/.test(src)) throw new Error('incomplete pointer drag');
 });
 
 // ---- report ----

@@ -1,4 +1,4 @@
-// LoonHQ Apps Script v9
+// LoonHQ Apps Script v9.2
 //
 // DEPLOY: paste over everything in script.google.com -> Save -> Deploy ->
 //         Manage deployments -> pencil on the EXISTING deployment -> New version.
@@ -27,6 +27,7 @@ var HEADERS = {
             'next_service_date','warranty_expiry','icon','icon_bg','icon_color',
             'purchase_price','manual_url','contractors'],
   maintenance_log:['log_id','asset_id','date','note','task_id','log_type'],
+  lists:      ['list_id','name','is_permanent','created_at','sort_order'],
 };
 
 // Seed data: 12 existing hardcoded assets
@@ -346,6 +347,7 @@ function doPost(e) {
     else if (action === 'completeTask') result = completeTask(data);
     else if (action === 'batchComplete') result = batchComplete(data);
     else if (action === 'batchDelete') result = batchDelete(data);
+    else if (action === 'batchUncomplete') result = batchUncomplete(data);
     else if (action === 'snoozeTask') result = snoozeTask(data);
     else if (action === 'addProject') result = addProject(data);
     else if (action === 'updateProject') result = updateProject(data);
@@ -357,6 +359,8 @@ function doPost(e) {
     else if (action === 'updateGrocery') result = updateGrocery(data);
     else if (action === 'deleteGrocery') result = deleteGrocery(data);
     else if (action === 'clearChecked') result = clearChecked();
+    else if (action === 'addList') result = addList(data);
+    else if (action === 'deleteList') result = deleteList(data);
     else if (action === 'reorderGrocery') result = reorderGrocery(data);
     else if (action === 'addAsset') result = addAsset(data);
     else if (action === 'updateAsset') result = updateAsset(data);
@@ -378,6 +382,7 @@ function getAllData() {
   var projects = sheetToObjects(getSheet('projects')).filter(function(p) { return p.status !== 'deleted'; });
   var subtasks = sheetToObjects(getSheet('subtasks'));
   var grocery  = sheetToObjects(getSheet('grocery')).filter(function(g) { return g.status !== 'deleted'; });
+  var lists    = sheetToObjects(getSheet('lists'));
   var task_log = completionLogs_();
 
   // Seed assets on first load
@@ -392,7 +397,7 @@ function getAllData() {
   var maintenance_logs = sheetToObjects(getSheet('maintenance_log'));
 
   return { tasks: tasks, projects: projects, subtasks: subtasks, grocery: grocery,
-           task_log: task_log, assets: assets, maintenance_logs: maintenance_logs };
+           lists: lists, task_log: task_log, assets: assets, maintenance_logs: maintenance_logs };
 }
 
 // ── RECURRENCE HELPERS ────────────────────────────────────────────────────────
@@ -682,6 +687,39 @@ function deleteSubtask(data) {
 }
 
 // ── GROCERY ───────────────────────────────────────────────────────────────────
+// Custom lists (v9.2). The three permanent lists (Food, Costco, Household) are hardcoded
+// in the frontend and are NOT stored here; this tab holds only user-created lists. Grocery
+// items point at a list by NAME via their existing `category` column, which is why adding
+// this needed no migration of existing items.
+function addList(data) {
+  var name = String(data.name || '').trim();
+  if (!name) return { error: 'List name required' };
+  var sheet = getSheet('lists');
+  if (!sheet) return { error: 'lists tab missing; run setupHeaders()' };
+  var existing = sheetToObjects(sheet);
+  for (var i = 0; i < existing.length; i++) {
+    if (String(existing[i].name).toLowerCase() === name.toLowerCase()) {
+      return { ok: true, duplicate: true };     // idempotent, so a retry cannot double-add
+    }
+  }
+  var id = newId('list');
+  appendRow(sheet, HEADERS.lists, {
+    list_id: id, name: name, is_permanent: '',
+    created_at: new Date().toISOString(),
+    sort_order: data.sort_order || (existing.length + 1)
+  });
+  return { ok: true, list_id: id };
+}
+// Removes the list and every grocery item that belonged to it, in blocks.
+function deleteList(data) {
+  var name = String(data.name || '');
+  if (!name) return { error: 'List name required' };
+  var sheet = getSheet('lists');
+  if (sheet) deleteRowsBatched_(sheet, matchingRowNumbers_(sheet, 'name', name));
+  var groc = getSheet('grocery');
+  if (groc) deleteRowsBatched_(groc, matchingRowNumbers_(groc, 'category', name));
+  return { ok: true };
+}
 function addGroceryItem(data) {
   var sheet = getSheet('grocery');
   var id = newId('g');
@@ -767,6 +805,47 @@ function getMaintenanceLogs(asset_id) {
 }
 
 // ── ACTIVITY EDIT ACTIONS ─────────────────────────────────────────────────────
+// Undo a whole flush in ONE request. Undoing ten tasks used to be ten round trips to a
+// backend that serialises them, which is the same shape as the 20-30s delete problem.
+function batchUncomplete(data) {
+  var items = data.items || [];
+  if (!items.length) return { ok: true, restored: 0 };
+  var logSheet = getSheet('task_log');
+  // remove every log row in blocks rather than one call per row
+  var ids = {};
+  items.forEach(function(it) { if (it.log_id) ids[String(it.log_id)] = true; });
+  var lIdx = headersOf_(logSheet).indexOf('log_id');
+  if (lIdx >= 0) {
+    var lastL = logSheet.getLastRow();
+    if (lastL >= 2) {
+      var col = logSheet.getRange(2, lIdx + 1, lastL - 1, 1).getValues();
+      var rows = [];
+      for (var i = 0; i < col.length; i++) if (ids[String(col[i][0])]) rows.push(i + 2);
+      deleteRowsBatched_(logSheet, rows);
+    }
+  }
+  // then restore each task; this part is per-task because each needs its own recurrence math
+  var restored = 0;
+  items.forEach(function(it) { if (it.task_id) { restoreTask_(it.task_id); restored++; } });
+  return { ok: true, restored: restored };
+}
+// Shared by uncompleteTask and batchUncomplete: put a task back to active with a sane due date.
+function restoreTask_(taskId) {
+  var taskSheet = getSheet('tasks');
+  var taskRow = findRow(taskSheet, 'task_id', taskId);
+  if (taskRow < 0) return false;
+  var today = todayIso_();
+  var headers = headersOf_(taskSheet);
+  var rowVals = taskSheet.getRange(taskRow, 1, 1, headers.length).getValues()[0];
+  var taskObj = {};
+  headers.forEach(function(h, i) { taskObj[h] = rowVals[i]; });
+  var newDue = (taskObj.type === 'scheduled' || taskObj.type === 'interval')
+    ? (computeNextDue(taskObj, new Date()) || today)
+    : (stripDate(taskObj.due_date) || today);
+  updateRow(taskSheet, taskRow, { status: 'active', due_date: newDue });
+  return true;
+}
+function todayIso_() { return Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'); }
 function uncompleteTask(data) {
   var logSheet = getSheet('task_log');
   var logRow = findRow(logSheet, 'log_id', data.log_id);

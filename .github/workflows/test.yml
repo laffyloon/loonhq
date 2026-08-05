@@ -1,0 +1,54 @@
+name: tests
+
+# GitHub Pages serves main directly, so anything merged here is live to both users within
+# about a minute. This is the only gate between a change and the phone in your pocket.
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build
+        run: python3 build_v4.py
+
+      # Step 11: index.html is committed alongside the script that generates it. The build
+      # now writes index.html in place, so if the committed copy was stale the working tree
+      # is dirty after building. Fail loudly rather than let the live app drift from source.
+      - name: index.html must match a fresh build
+        run: |
+          if ! git diff --quiet -- index.html; then
+            echo "::error::index.html is out of date. Run python3 build_v4.py and commit the result."
+            git diff --stat -- index.html
+            exit 1
+          fi
+
+      - name: Extract app script
+        run: |
+          python3 -c "import re,os; \
+            html=open('index.html').read(); \
+            s=re.findall(r'<script>(.*?)</script>',html,re.DOTALL); \
+            os.makedirs('/home/claude',exist_ok=True); \
+            open('/home/claude/extracted.js','w').write(max(s,key=len))"
+          node --check /home/claude/extracted.js
+
+      # Denver, because the date-handling tests assert local-vs-UTC behaviour and only
+      # assert under that timezone.
+      - name: Frontend tests
+        run: TZ=America/Denver node qa_harness.js
+
+      - name: Apps Script tests
+        run: node appscript_harness.js

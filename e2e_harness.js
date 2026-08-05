@@ -36,7 +36,13 @@ const FIXTURE = {
     { task_id: 't4', name: 'My private thing', type: 'one_off', due_date: plus(1), owner: 'Frankie', scope: 'personal', status: 'active' },
     { task_id: 't5', name: 'Overdue thing', type: 'one_off', due_date: plus(-3), owner: 'Frankie', scope: 'household', status: 'active' },
   ],
-  projects: [], subtasks: [], grocery: [], assets: [], maintenance_logs: [],
+  projects: [], subtasks: [], grocery: [
+    { item_id: 'g1', name: 'Milk', category: 'Food', status: 'need', sort_order: 1 },
+    { item_id: 'g2', name: 'Eggs', category: 'Food', status: 'need', sort_order: 2 },
+    { item_id: 'g3', name: 'Bread', category: 'Food', status: 'need', sort_order: 3 },
+  ],
+  lists: [{ list_id: 'l1', name: 'Garage', is_permanent: '', created_at: '2026-01-01', sort_order: 1 }],
+  assets: [], maintenance_logs: [],
   task_log: [
     brokenSnooze('s1', 't1', 'Frankie', 6),
     brokenSnooze('s2', 't1', 'Frankie', 4),
@@ -503,6 +509,62 @@ const ok = (n, cond, detail) => results.push([cond ? 'PASS' : 'FAIL', n + (cond 
      batchDeletePayload && batchDeletePayload.task_ids.length === visibleBefore,
      'sent ' + JSON.stringify(batchDeletePayload) + ' for ' + visibleBefore + ' selected');
   ok('the deleted cards disappear immediately', await page.locator('.tc').count() === 0, 'cards remained');
+
+  // ---- v9.2 Lists: rename, custom lists, and drag that works on touch ---------
+  let reorderSent = null;
+  await page.unroute('**script.google.com**');
+  await page.route('**script.google.com**', async route => {
+    const req = route.request();
+    if (req.method() === 'POST') {
+      try { const b = JSON.parse(req.postData() || '{}'); if (b.action === 'reorderGrocery') reorderSent = b.data; } catch (e) {}
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(FIXTURE) });
+  });
+  await page.evaluate(() => go('grocery'));
+  await page.waitForTimeout(SETTLE + 200);
+
+  const nav = await page.evaluate(() => ({
+    title: (document.getElementById('pgtitle') || {}).textContent || '',
+    mobile: [...document.querySelectorAll('.mob-nav-item span')].map(s => s.textContent),
+    side: [...document.querySelectorAll('.nav-item')].map(n => n.textContent.trim()),
+  }));
+  ok('the section is called Lists, not Shop', !/Shop\b/.test(nav.mobile.join(',')) && nav.mobile.includes('Lists'), JSON.stringify(nav.mobile));
+  ok('the sidebar says Lists', nav.side.some(t => /Lists/.test(t)) && !nav.side.some(t => /Shopping List/.test(t)), JSON.stringify(nav.side));
+
+  const sections = await page.evaluate(() => ({
+    count: document.querySelectorAll('#lists-wrap .grp').length,
+    names: [...document.querySelectorAll('#lists-wrap .grp')].map(g => g.getAttribute('data-list')),
+    deletable: [...document.querySelectorAll('#lists-wrap .grp')].filter(g => g.querySelector('.list-del')).map(g => g.getAttribute('data-list')),
+    newBtn: !!document.querySelector('.newlist-btn'),
+  }));
+  ok('the three permanent lists render, plus the custom one', sections.count === 4, JSON.stringify(sections.names));
+  ok('permanent lists come first, custom after', sections.names.slice(0, 3).join(',') === 'Food,Costco,Household', JSON.stringify(sections.names));
+  ok('ONLY the custom list offers delete', sections.deletable.join(',') === 'Garage', JSON.stringify(sections.deletable));
+  ok('there is a New list button', sections.newBtn, 'missing');
+
+  // the whole point: this failed silently on touch before, because HTML5 drag never fires
+  const orderBefore = await page.evaluate(() => [...document.querySelectorAll('[data-list-body="Food"] .gi')].map(e => e.getAttribute('data-item-id')));
+  const handle = page.locator('[data-list-body="Food"] .gi').first().locator('.groc-drag');
+  const hb = await handle.boundingBox();
+  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) { await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2 + i * 9); await page.waitForTimeout(20); }
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  const orderAfter = await page.evaluate(() => [...document.querySelectorAll('[data-list-body="Food"] .gi')].map(e => e.getAttribute('data-item-id')));
+  ok('dragging actually reorders the list', orderBefore.join(',') !== orderAfter.join(','), 'before=' + orderBefore + ' after=' + orderAfter);
+  ok('the new order is sent to the server', reorderSent && reorderSent.order.join(',') === orderAfter.join(','),
+     'sent=' + JSON.stringify(reorderSent) + ' dom=' + orderAfter.join(','));
+  ok('reordering names the right list', reorderSent && reorderSent.category === 'Food', JSON.stringify(reorderSent));
+  // the add-item row must stay pinned to the bottom; a dragged item once landed below it
+  const lastRow = await page.evaluate(() => {
+    const body = document.querySelector('[data-list-body="Food"]');
+    const kids = [...body.children];
+    return { last: kids[kids.length - 1].className, addIsLast: kids[kids.length - 1].classList.contains('groc-add') };
+  });
+  ok('the "+ Add item" row stays last after a drag', lastRow.addIsLast, JSON.stringify(lastRow));
+  await page.screenshot({ path: OUT + '/10-lists.png' });
 
   ok('no uncaught page errors', errors.length === 0, errors.slice(0, 5).join(' ~ '));
 

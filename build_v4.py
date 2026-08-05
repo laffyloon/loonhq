@@ -240,6 +240,8 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .stale-badge.on{display:flex}
 .stale-badge .dot{width:6px;height:6px;border-radius:50%;background:var(--terra)}
 /* Section 8: batch credit selector */
+/* the reassign dialog's Both option: same diagonal split as every other both indicator */
+.qa.qa-both{background:linear-gradient(135deg,var(--user-f-light) 50%,var(--user-m-light) 50%);color:transparent}
 .batch-credit{display:flex;align-items:center;gap:6px}
 .batch-credit-lbl{font-size:11px;opacity:.75;margin-right:2px}
 .bc-opt{width:26px;height:26px;border-radius:50%;border:2px solid rgba(255,255,255,.35);
@@ -399,6 +401,15 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
 .gi{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:14px;cursor:pointer;min-height:32px}
 .groc-add{width:100%;border:none;background:transparent;font-size:14px;padding:8px 0;outline:none;color:var(--text);font-family:inherit;-webkit-appearance:none;min-height:32px}
 .groc-add::placeholder{color:var(--text3)}
+/* v9.2 list section header + custom-list delete + drag feedback */
+.grp-lbl{position:relative}
+.list-del{position:absolute;top:-2px;right:0;background:none;border:none;color:var(--text3);
+  cursor:pointer;padding:2px 4px;font-size:13px;line-height:1;display:inline-flex}
+.list-del:hover{color:var(--red)}
+.gi.dragging{opacity:.85;box-shadow:0 6px 18px rgba(0,0,0,.16);position:relative;z-index:5}
+.groc-drag{cursor:grab;touch-action:none;padding:2px 2px 2px 6px;color:var(--text3)}
+.groc-drag:active{cursor:grabbing}
+.newlist-btn{margin-top:14px;width:100%;justify-content:center}
 .groc-empty{font-size:12.5px;color:var(--text3);padding:3px 0}
 .gi.got{color:var(--text3);text-decoration:line-through}
 .gi.dragging{opacity:.4}
@@ -606,7 +617,7 @@ def HTML_BODY(logo, icon):
       <div class="nav-grp-lbl">manage</div>
       <div class="nav-item on" data-view="tasks" onclick="go('tasks')"><i class="ti ti-check"></i> Tasks</div>
       <div class="nav-item" data-view="projects" onclick="go('projects')"><i class="ti ti-layout-list"></i> Projects</div>
-      <div class="nav-item" data-view="grocery" onclick="go('grocery')"><i class="ti ti-shopping-cart"></i> Shopping List</div>
+      <div class="nav-item" data-view="grocery" onclick="go('grocery')"><i class="ti ti-shopping-cart"></i> Lists</div>
     </div>
     <div class="nav-grp">
       <div class="nav-grp-lbl">reference</div>
@@ -708,13 +719,13 @@ def HTML_BODY(logo, icon):
     <div id="v-grocery" class="view gone">
       <div class="scroll">
         <div class="sh">
-          <div class="sl">Shopping List</div>
+          <div class="sl">Lists</div>
           <button class="btn danger" onclick="clearGrocery()"><i class="ti ti-trash"></i> Clear checked</button>
         </div>
-        <div class="groc-grid">
-          <div class="grp"><div class="grp-lbl">Food <span id="count-food" style="font-weight:400;text-transform:none;letter-spacing:0"></span></div><div id="groc-food"></div></div>
-          <div class="grp"><div class="grp-lbl">Costco <span id="count-costco" style="font-weight:400;text-transform:none;letter-spacing:0"></span></div><div id="groc-costco"></div></div>
-          <div class="grp"><div class="grp-lbl">Household <span id="count-household" style="font-weight:400;text-transform:none;letter-spacing:0"></span></div><div id="groc-household"></div></div>
+        <!-- Sections are rendered by renderGrocery: the three permanent lists first, then
+             any custom lists in creation order. -->
+        <div class="groc-grid" id="lists-wrap"></div>
+        <button class="btn newlist-btn" onclick="promptNewList()"><i class="ti ti-plus"></i> New list</button>
         </div>
       </div>
     </div>
@@ -807,7 +818,7 @@ def HTML_BODY(logo, icon):
   <div class="mobile-nav">
     <button class="mob-nav-item on" data-view="tasks" onclick="go('tasks')"><i class="ti ti-check"></i><span>Tasks</span></button>
     <button class="mob-nav-item" data-view="projects" onclick="go('projects')"><i class="ti ti-layout-list"></i><span>Projects</span></button>
-    <button class="mob-nav-item" data-view="grocery" onclick="go('grocery')"><i class="ti ti-shopping-cart"></i><span>Shop</span></button>
+    <button class="mob-nav-item" data-view="grocery" onclick="go('grocery')"><i class="ti ti-shopping-cart"></i><span>Lists</span></button>
     <button class="mob-nav-item" data-view="assets" onclick="go('assets')"><i class="ti ti-tool"></i><span>Assets</span></button>
     <button class="mob-nav-item" data-view="metrics" onclick="go('metrics')"><i class="ti ti-chart-bar"></i><span>Activity</span></button>
   </div>
@@ -981,7 +992,7 @@ def HTML_BODY(logo, icon):
   <div class="modal">
     <div class="modal-title">Add item</div>
     <div class="form-row"><div class="form-label">Item</div><input class="form-input" id="g-name" placeholder="e.g. Olive oil"></div>
-    <div class="form-row"><div class="form-label">Category</div><select class="form-input" id="g-cat"><option>Food</option><option>Costco</option><option>Household</option></select></div>
+    <div class="form-row"><div class="form-label">Category</div><select class="form-input" id="g-cat"></select></div>
     <div class="modal-actions"><button class="btn" onclick="closeModal('modal-grocery')">Cancel</button><button class="btn primary" onclick="submitGrocery()">Add item</button></div>
   </div>
 </div>
@@ -1095,7 +1106,7 @@ def HTML_BODY(logo, icon):
       <div class="qs-btns">
         <button class="qs-btn f" id="reassign-btn-f" onclick="pickReassignPerson('Frankie')"><div class="qa">F</div><div class="qn">Frankie</div></button>
         <button class="qs-btn m" id="reassign-btn-m" onclick="pickReassignPerson('Meredith')"><div class="qa">M</div><div class="qn">Meredith</div></button>
-        <button class="qs-btn" id="reassign-btn-both" onclick="pickReassignPerson('Frankie,Meredith')"><div class="qa">F&amp;M</div><div class="qn">Both</div></button>
+        <button class="qs-btn" id="reassign-btn-both" onclick="pickReassignPerson('Frankie,Meredith')"><div class="qa qa-both"></div><div class="qn">Both</div></button>
       </div>
     </div>
     <div>
@@ -1148,7 +1159,7 @@ def HTML_BODY(logo, icon):
 JS = """
 <script>
 var API='__API__';
-var state={tasks:[],projects:[],subtasks:[],grocery:[],assets:[],task_log:[],maintenance_logs:[]};
+var state={tasks:[],projects:[],subtasks:[],grocery:[],lists:[],assets:[],task_log:[],maintenance_logs:[]};
 var currentUser=null,currentView='tasks',taskTab='today';
 var loginUserPick=null,pickedOwner='',pickedScope='household',pickedUrgency='this_week';
 var selectMode=false,selectedTaskIds=new Set(),longPressTimer=null;
@@ -1260,7 +1271,6 @@ function cancelPending(tid,repaint){
   if(!pendingCount())setSyncState('ok','Ready');
   return true;
 }
-function cancelAllPending(){Object.keys(_pending).forEach(function(k){cancelPending(k);});}
 
 // Section 12C: a payload that still shows a just-committed task as active is stale.
 function recentlyCommitted(tid){
@@ -1322,8 +1332,6 @@ function collapseCards(tids){
   });
 }
 
-// task ids with a completion request in flight, so the same task cannot be logged twice
-var _completing=new Set();
 var statsDays=30,statsScope='household';
 var _REMINDER_DAYS={same_day:0,'1_day':1,'2_days':2,'3_days':3,'1_week':7};
 var _DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -1360,8 +1368,9 @@ window.onload=function(){
   if(s==='Frankie'||s==='Meredith'){currentUser=s;showApp();refreshData();apiGet({action:'ping'}).catch(function(){});}
   else showLogin();
 };
-function showLogin(){document.getElementById('login-screen').classList.remove('gone');document.getElementById('main-app').classList.add('gone');}
-function showApp(){document.getElementById('login-screen').classList.add('gone');document.getElementById('main-app').classList.remove('gone');updateUserDisplay();}
+function showLogin(){
+  stopStaleWatch();document.getElementById('login-screen').classList.remove('gone');document.getElementById('main-app').classList.add('gone');}
+function showApp(){document.getElementById('login-screen').classList.add('gone');document.getElementById('main-app').classList.remove('gone');updateUserDisplay();startStaleWatch();}
 
 // v9.1: no PIN. The PIN never protected anything (the Apps Script endpoint accepts
 // requests from anyone who has its URL), so it was friction that looked like security.
@@ -1450,7 +1459,7 @@ function refreshData(silent){
     // Server state is now authoritative for everything that was pending.
     _recentlyCompleted.clear();
     state.tasks=data.tasks||[];state.projects=data.projects||[];state.subtasks=data.subtasks||[];
-    state.grocery=data.grocery||[];state.task_log=data.task_log||[];
+    state.grocery=data.grocery||[];state.lists=data.lists||[];state.task_log=data.task_log||[];
     rebuildTaskIndex();
     _subtasksByProj={};(state.subtasks||[]).forEach(function(s){var k=String(s.project_id);if(!_subtasksByProj[k])_subtasksByProj[k]=[];_subtasksByProj[k].push(s);});
     _tasksByAsset={};(state.tasks||[]).forEach(function(t){if(t.linked_asset_id){var k=String(t.linked_asset_id);if(!_tasksByAsset[k])_tasksByAsset[k]=[];_tasksByAsset[k].push(t);}});
@@ -1520,11 +1529,11 @@ function undoLastCompletion(){
   setSyncState('loading','Undoing...');
   items.forEach(function(it){_recentlyCompleted.delete(it.task_id);delete _recentCommit[it.task_id];});
   renderTasks();
-  var calls=items.map(function(it,i){
-    return apiPost({action:'uncompleteTask',data:{
-      log_id:(logIds&&logIds[i])||'',task_id:it.task_id}});
+  // ONE request for the whole undo, not one per task (Step 6 of the optimization plan)
+  var payload=items.map(function(it,i){
+    return {log_id:(logIds&&logIds[i])||'',task_id:it.task_id};
   });
-  Promise.all(calls).then(function(){
+  apiPost({action:'batchUncomplete',data:{items:payload}}).then(function(){
     scheduleBgSync(SYNC_FAST);
   }).catch(function(){
     showToast("Couldn't undo");setSyncState('err','Undo failed');scheduleBgSync();
@@ -1566,6 +1575,16 @@ function hideStaleBadge(){var b=document.getElementById('stale-badge');if(b)b.cl
 function checkStale(){
   if(_lastFetch&&(Date.now()-_lastFetch)>STALE_MS)showStaleBadge();else hideStaleBadge();
 }
+// The badge used to appear ONLY on return from background, so leaving the app open on the
+// counter while the other person ticked things off gave no warning at all: exactly the
+// situation it exists for. Poll while the app is open. Cheap, and it self-corrects after
+// any refresh because refreshData hides the badge.
+var _staleTimer=null;
+function startStaleWatch(){
+  if(_staleTimer)clearInterval(_staleTimer);
+  _staleTimer=setInterval(checkStale,10000);
+}
+function stopStaleWatch(){if(_staleTimer){clearInterval(_staleTimer);_staleTimer=null;}}
 function setSyncState(s,msg){var d=document.getElementById('sync-dot'),l=document.getElementById('sync-lbl');if(d)d.className='sync-dot'+(s==='err'?' err':s==='loading'?' loading':'');if(l)l.textContent=msg;}
 function renderAll(){
   if(currentView==='tasks')renderTasks();
@@ -1576,7 +1595,7 @@ function renderAll(){
 }
 
 // ── NAV ───────────────────────────────────────────────────
-var pageNames={tasks:'Tasks',projects:'Projects',grocery:'Shopping List',assets:'Assets',metrics:'Activity'};
+var pageNames={tasks:'Tasks',projects:'Projects',grocery:'Lists',assets:'Assets',metrics:'Activity'};
 var addLabels={tasks:'Add task',projects:'Add project',grocery:'Add item',assets:'',metrics:''};
 function go(name){
   flushPending();   // Section 5: switching section commits what is pending
@@ -1599,7 +1618,6 @@ function go(name){
   else renderTasks();
 }
 function handleAdd(){if(currentView==='tasks')openAddTask();else if(currentView==='projects')openAddProject();else if(currentView==='grocery')openAddGrocery();}
-function openMobileMenu(){openModal('modal-mobile-menu');}
 
 // ── SCOPE / TAB ───────────────────────────────────────────
 function setTaskTab(t){
@@ -1613,7 +1631,6 @@ function setTaskTab(t){
   var sb=document.getElementById('select-btn');if(sb)sb.style.display=isHist?'none':'';
   exitBatch();renderTasks();
 }
-function toggleLegend(){}
 // ── SEARCH ────────────────────────────────────────────────
 function toggleSearch(){
   searchVisible=!searchVisible;
@@ -1816,8 +1833,6 @@ function peopleOf(v){var s=String(v||'');return s?s.split(','):[];}
 function hasPerson(v,name){return String(v||'').indexOf(name)>=0;}
 function peopleLabel(v){var p=peopleOf(v);return p.length?p.join(' & '):'Unknown';}
 function personDot(v){var f=hasPerson(v,'Frankie'),m=hasPerson(v,'Meredith');return f&&m?'both':f?'':m?'b':'n';}
-// A task owned by both credits both, whoever actually ticks it off.
-function creditFor(t){var o=String(t.owner||'');return o.indexOf(',')>=0?o:currentUser;}
 
 function isNonCompletionMark(v){
   if(v===null||v===undefined)return false;
@@ -2516,33 +2531,89 @@ document.addEventListener('click',function(e){
 function makeGrocEl(item){
   var got=item.status==='got';
   var d=document.createElement('div');d.className='gi'+(got?' got':'');
-  d.setAttribute('data-item-id',item.item_id);d.setAttribute('data-category',item.category||'Food');
+  d.setAttribute('data-item-id',item.item_id);
+  d.setAttribute('data-category',item.category||'Food');
   var chk=document.createElement('div');chk.className='gbox'+(got?' done':'');
   chk.addEventListener('click',function(e){e.stopPropagation();toggleGrocery(item.item_id,d);});
   var txt=document.createElement('span');txt.className='groc-text';txt.textContent=item.name;
   txt.addEventListener('click',function(e){e.stopPropagation();editGrocItem(item.item_id,txt,item);});
   var drag=document.createElement('span');drag.className='groc-drag';drag.innerHTML='<i class="ti ti-grip-vertical"></i>';
-  drag.setAttribute('draggable','false');
+  attachGrocDrag(drag,d);
   d.appendChild(chk);d.appendChild(txt);d.appendChild(drag);
-  d.setAttribute('draggable','true');
-  d.addEventListener('dragstart',function(e){e.dataTransfer.setData('text/plain',item.item_id);d.classList.add('dragging');});
-  d.addEventListener('dragend',function(){d.classList.remove('dragging');});
-  d.addEventListener('dragover',function(e){e.preventDefault();d.classList.add('drag-over');});
-  d.addEventListener('dragleave',function(){d.classList.remove('drag-over');});
-  d.addEventListener('drop',function(e){
-    e.preventDefault();d.classList.remove('drag-over');
-    var fromId=e.dataTransfer.getData('text/plain');
-    var fromEl=document.querySelector('.gi[data-item-id="'+fromId+'"]');
-    if(!fromEl||fromEl===d)return;
-    var cat=d.dataset.category;
-    if(fromEl.dataset.category!==cat)return;
-    var parent=d.parentNode;parent.insertBefore(fromEl,d);
-    var order=[];parent.querySelectorAll('.gi[data-category="'+cat+'"]').forEach(function(el){if(el.dataset.itemId)order.push(el.dataset.itemId);});
-    apiPost({action:'reorderGrocery',data:{category:cat,order:order}}).then(function(){
-      order.forEach(function(id,i){var it=state.grocery.find(function(g){return g.item_id===id;});if(it)it.sort_order=i+1;});
-    }).catch(function(){renderGrocery();scheduleBgSync();showToast("Couldn't save order");});
-  });
   return d;
+}
+// Reorder within one list. This used to use the HTML5 drag-and-drop API (draggable,
+// dragstart, drop), which does not fire AT ALL on touch devices, so the handles simply did
+// nothing on a phone. Pointer events cover mouse and touch with one code path.
+//
+// Two traps worth remembering, both hit on the first attempt:
+//  1. Inserting BEFORE the row you are hovering is a no-op when you are already above it.
+//     Pick the insertion point from the pointer position instead of from a hit test.
+//  2. Moving a node in the DOM releases its pointer capture, so every later move and the
+//     final pointerup went nowhere and the new order was never saved. Re-acquire capture
+//     after each move, and also listen on the document as a backstop.
+function attachGrocDrag(handle,row){
+  var dragging=false,moved=false,list=null,pid=null;
+  handle.style.touchAction='none';     // stop the browser scrolling instead of dragging
+  function pointAt(clientY){
+    // the element the row should sit BEFORE, or null to go last
+    var others=[].slice.call(list.querySelectorAll('.gi')).filter(function(x){return x!==row;});
+    for(var i=0;i<others.length;i++){
+      var r=others[i].getBoundingClientRect();
+      if(clientY<r.top+r.height/2)return others[i];
+    }
+    return null;
+  }
+  function onMove(e){
+    if(!dragging)return;
+    if(e.cancelable)e.preventDefault();
+    // never drop below the "+ Add item" row, which must stay last in its section
+    var addRow=list.querySelector('.groc-add');
+    var target=pointAt(e.clientY)||addRow||null;
+    if(target!==row.nextElementSibling){        // only touch the DOM when it really changes
+      list.insertBefore(row,target);
+      moved=true;
+      try{handle.setPointerCapture(pid);}catch(err){}   // the move above can drop capture
+    }
+  }
+  function onUp(){
+    if(!dragging)return;
+    dragging=false;
+    row.classList.remove('dragging');
+    document.removeEventListener('pointermove',onMove,true);
+    document.removeEventListener('pointerup',onUp,true);
+    document.removeEventListener('pointercancel',onUp,true);
+    try{handle.releasePointerCapture(pid);}catch(err){}
+    if(!moved)return;
+    var cat=row.getAttribute('data-category');
+    var order=[];
+    list.querySelectorAll('.gi').forEach(function(el){
+      var id=el.getAttribute('data-item-id');if(id)order.push(id);
+    });
+    persistGrocOrder(cat,order);
+  }
+  handle.addEventListener('pointerdown',function(e){
+    if(e.cancelable)e.preventDefault();
+    e.stopPropagation();
+    dragging=true;moved=false;pid=e.pointerId;
+    list=row.parentNode;
+    row.classList.add('dragging');
+    try{handle.setPointerCapture(pid);}catch(err){}
+    // on the document as well, because a DOM move can silently drop the capture
+    document.addEventListener('pointermove',onMove,true);
+    document.addEventListener('pointerup',onUp,true);
+    document.addEventListener('pointercancel',onUp,true);
+  });
+}
+function persistGrocOrder(cat,order){
+  apiPost({action:'reorderGrocery',data:{category:cat,order:order}}).then(function(){
+    order.forEach(function(id,i){
+      var it=state.grocery.find(function(g){return g.item_id===id;});
+      if(it)it.sort_order=i+1;
+    });
+  }).catch(function(){
+    renderGrocery();scheduleBgSync();showToast("Couldn't save the new order");
+  });
 }
 function editGrocItem(id,textEl,item){
   var current=textEl.textContent;
@@ -2581,23 +2652,109 @@ function makeGrocAdd(cat){
   });
   return inp;
 }
+// The three lists that always exist. They cannot be renamed or deleted. Everything else
+// is a custom list stored in the `lists` tab; grocery items reference a list by NAME via
+// their existing `category` field, so no migration was needed for existing items.
+var PERMANENT_LISTS=['Food','Costco','Household'];
+function isPermanentList(name){return PERMANENT_LISTS.indexOf(String(name))>=0;}
+function customLists(){
+  return (state.lists||[]).slice().sort(function(a,b){
+    var sa=parseInt(a.sort_order)||0,sb=parseInt(b.sort_order)||0;
+    return sa-sb||String(a.created_at||'').localeCompare(String(b.created_at||''));
+  });
+}
+function allListNames(){
+  return PERMANENT_LISTS.concat(customLists().map(function(l){return l.name;}));
+}
 function renderGrocery(){
-  state.grocery=state.grocery.slice().sort(function(a,b){var sa=parseInt(a.sort_order)||9999,sb=parseInt(b.sort_order)||9999;return sa-sb||(a.name||'').localeCompare(b.name||'');});
-  var cols={Food:document.getElementById('groc-food'),Household:document.getElementById('groc-household'),Costco:document.getElementById('groc-costco')};
-  cols.Food.innerHTML='';cols.Household.innerHTML='';cols.Costco.innerHTML='';
-  var cnt={Food:0,Costco:0,Household:0};
+  state.grocery=state.grocery.slice().sort(function(a,b){
+    var sa=parseInt(a.sort_order)||9999,sb=parseInt(b.sort_order)||9999;
+    return sa-sb||(a.name||'').localeCompare(b.name||'');
+  });
+  var wrap=document.getElementById('lists-wrap');
+  if(!wrap)return;
+  wrap.innerHTML='';
+  var names=allListNames();
+  var byList={};names.forEach(function(n){byList[n]=[];});
   state.grocery.forEach(function(item){
-    var cat=item.category||'Food';if(!cols[cat])cat='Food';cnt[cat]=(cnt[cat]||0)+1;
-    cols[cat].appendChild(makeGrocEl(item));
+    var cat=String(item.category||'Food');
+    if(!byList[cat])cat='Food';          // an item whose list was deleted falls back
+    byList[cat].push(item);
   });
-  ['Food','Household','Costco'].forEach(function(cat){
-    var col=cols[cat];
-    if(!cnt[cat]){var e=document.createElement('div');e.className='groc-empty';e.textContent='Nothing yet.';col.appendChild(e);}
-    col.appendChild(makeGrocAdd(cat));
+  names.forEach(function(name){
+    var grp=document.createElement('div');grp.className='grp';
+    grp.setAttribute('data-list',name);
+    var lbl=document.createElement('div');lbl.className='grp-lbl';
+    var cnt=byList[name].length;
+    lbl.appendChild(document.createTextNode(name+' '));
+    var c=document.createElement('span');
+    c.style.cssText='font-weight:400;text-transform:none;letter-spacing:0';
+    c.textContent=cnt?'('+cnt+')':'';
+    lbl.appendChild(c);
+    // only custom lists can be deleted; the three permanent ones have no delete affordance
+    if(!isPermanentList(name)){
+      var del=document.createElement('button');
+      del.className='list-del';del.title='Delete list';
+      del.innerHTML='<i class="ti ti-trash"></i>';
+      del.addEventListener('click',function(e){e.stopPropagation();deleteCustomList(name);});
+      lbl.appendChild(del);
+    }
+    grp.appendChild(lbl);
+    var body=document.createElement('div');body.setAttribute('data-list-body',name);
+    if(!cnt){var e=document.createElement('div');e.className='groc-empty';e.textContent='Nothing yet.';body.appendChild(e);}
+    byList[name].forEach(function(item){body.appendChild(makeGrocEl(item));});
+    body.appendChild(makeGrocAdd(name));
+    grp.appendChild(body);
+    wrap.appendChild(grp);
   });
-  document.getElementById('count-food').textContent=cnt.Food?'('+cnt.Food+')':'';
-  document.getElementById('count-costco').textContent=cnt.Costco?'('+cnt.Costco+')':'';
-  document.getElementById('count-household').textContent=cnt.Household?'('+cnt.Household+')':'';
+}
+// The add-item dropdown must offer custom lists, not just the three permanent ones.
+function syncListOptions(sel){
+  var el=document.getElementById('g-cat');if(!el)return;
+  var keep=sel||el.value||'Food';
+  el.innerHTML='';
+  allListNames().forEach(function(n){
+    var o=document.createElement('option');o.value=n;o.textContent=n;
+    if(n===keep)o.selected=true;
+    el.appendChild(o);
+  });
+}
+function promptNewList(){
+  var name=(prompt('Name for the new list?')||'').trim();
+  if(!name)return;
+  if(allListNames().some(function(n){return n.toLowerCase()===name.toLowerCase();})){
+    showToast('A list called "'+name+'" already exists');return;
+  }
+  var tmp={list_id:'tmp_'+Date.now(),name:name,is_permanent:'',created_at:new Date().toISOString(),
+           sort_order:(state.lists||[]).length+1,_temp:true};
+  state.lists=(state.lists||[]).concat([tmp]);
+  renderGrocery();
+  setSyncState('loading','Saving...');
+  apiPost({action:'addList',data:{name:name,sort_order:tmp.sort_order}})
+    .then(function(){scheduleBgSync(SYNC_FAST);})
+    .catch(function(){
+      state.lists=(state.lists||[]).filter(function(l){return l.list_id!==tmp.list_id;});
+      actionFailed("Couldn't create the list",renderGrocery,'Could not save');
+    });
+}
+function deleteCustomList(name){
+  if(isPermanentList(name))return;                      // belt and braces
+  var items=(state.grocery||[]).filter(function(g){return String(g.category)===String(name);});
+  var msg=items.length
+    ? 'Delete the "'+name+'" list and its '+items.length+' item'+(items.length>1?'s':'')+'?'
+    : 'Delete the "'+name+'" list?';
+  if(!confirm(msg))return;
+  var prevLists=(state.lists||[]).slice(),prevGroc=(state.grocery||[]).slice();
+  state.lists=(state.lists||[]).filter(function(l){return String(l.name)!==String(name);});
+  state.grocery=(state.grocery||[]).filter(function(g){return String(g.category)!==String(name);});
+  renderGrocery();
+  setSyncState('loading','Deleting...');
+  apiPost({action:'deleteList',data:{name:name}})
+    .then(function(){scheduleBgSync(SYNC_FAST);})
+    .catch(function(){
+      state.lists=prevLists;state.grocery=prevGroc;
+      actionFailed("Couldn't delete the list",renderGrocery,'Could not delete');
+    });
 }
 function toggleGrocery(id,el){var got=el.classList.contains('got');el.classList.toggle('got');el.querySelector('.gbox').classList.toggle('done');var item=state.grocery.find(function(g){return g.item_id===id;});if(item)item.status=got?'need':'got';apiPost({action:'updateGrocery',data:{item_id:id,updates:{status:got?'need':'got'}}}).catch(function(){el.classList.toggle('got');el.querySelector('.gbox').classList.toggle('done');if(item)item.status=got?'got':'need';scheduleBgSync();showToast("Couldn't update item");});}
 function clearGrocery(){if(!confirm('Remove all checked items?'))return;var prev=state.grocery.slice();state.grocery=state.grocery.filter(function(g){return g.status!=='got';});renderGrocery();apiPost({action:'clearChecked',data:{}}).catch(function(){state.grocery=prev;renderGrocery();scheduleBgSync();showToast("Couldn't clear items");});}
@@ -2925,7 +3082,7 @@ function submitReassign(){
 // ── MODALS ────────────────────────────────────────────────
 function openModal(id){document.getElementById(id).classList.remove('gone');}
 function closeModal(id){document.getElementById(id).classList.add('gone');}
-var _MODAL_BG_IDS=['modal-task','modal-project','modal-subtask','modal-grocery','modal-qs','modal-snooze','modal-mobile-menu','modal-edit-asset','modal-maint-note','modal-metric-drill','modal-reassign','modal-batch-snooze','modal-type-info','modal-task-history'];
+var _MODAL_BG_IDS=['modal-task','modal-project','modal-subtask','modal-grocery','modal-qs','modal-snooze','modal-edit-asset','modal-maint-note','modal-metric-drill','modal-reassign','modal-batch-snooze','modal-type-info','modal-task-history'];
 document.addEventListener('click',function(e){if(!e.target.id)return;var i=_MODAL_BG_IDS.indexOf(e.target.id);if(i>=0)closeModal(_MODAL_BG_IDS[i]);});
 
 // ── PROJECT / GROCERY ─────────────────────────────────────
@@ -2982,7 +3139,7 @@ function deleteEditingSubtask(){
   closeModal('modal-subtask');setSyncState('loading','Deleting...');
   apiPost({action:'deleteSubtask',data:{subtask_id:editingSubtask.subtask_id}}).then(function(){apiGet({action:'getSubtasks'}).then(function(r){state.subtasks=r||[];renderProjects();setSyncState('ok','Deleted');});});
 }
-function openAddGrocery(){document.getElementById('g-name').value='';openModal('modal-grocery');}
+function openAddGrocery(){document.getElementById('g-name').value='';syncListOptions();openModal('modal-grocery');}
 function submitGrocery(){var n=document.getElementById('g-name').value.trim();if(!n)return;closeModal('modal-grocery');setSyncState('loading','Saving...');var tempId='tmp_'+Date.now();var cat=document.getElementById('g-cat').value;(function addAttempt(){var tid2=tempId;var tempItem={item_id:tid2,name:n,category:cat,added_by:currentUser,status:'need',_temp:true};state.grocery.push(tempItem);renderGrocery();apiPost({action:'addGroceryItem',data:{name:n,category:cat,added_by:currentUser}}).then(function(){scheduleBgSync(SYNC_FAST);}).catch(function(){state.grocery=state.grocery.filter(function(g){return g.item_id!==tid2;});actionFailed("Couldn't add item",renderGrocery,'Could not save',addAttempt);});})();}
 
 // ── UTILS ─────────────────────────────────────────────────
@@ -3043,7 +3200,11 @@ HTML = f"""<!DOCTYPE html>
 </body>
 </html>"""
 
-out = "/mnt/user-data/outputs/LoonHQ.html"
+# Write index.html straight into the repo. This used to emit to an absolute path outside
+# the repo and require a manual copy, which meant the build could not run anywhere else
+# (CI included) and left room for index.html to drift from its source. Same class of bug as
+# the logo path. Override with LOONHQ_OUT if you really need it elsewhere.
+out = _os.environ.get("LOONHQ_OUT") or _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "index.html")
 with open(out, "w", encoding="utf-8") as f:
     f.write(HTML)
 

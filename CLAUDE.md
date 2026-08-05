@@ -20,19 +20,22 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 - icons.py — the inline icon set (39 hand-authored SVGs); build_v4.py imports it
 - icon.webp / logo_uri.txt — home-screen icon and app logo, both IN the repo
 - build_v4.py — Python build script that generates index.html
-- qa_harness.js — Node.js DOM mock + 280 frontend runtime checks
-- appscript_harness.js — SpreadsheetApp mock + 75 server-side checks (correctness, API cost, container reuse)
-- e2e_harness.js — Playwright/Chromium checks + 70 real-browser checks (CSS, events, layout)
+- qa_harness.js — Node.js DOM mock + 292 frontend runtime checks
+- appscript_harness.js — SpreadsheetApp mock + 88 server-side checks (correctness, API cost, container reuse)
+- e2e_harness.js — Playwright/Chromium checks + 80 real-browser checks (CSS, events, layout)
+- .github/workflows/test.yml — CI: build, index.html-matches-source check, both test suites
 - LoonHQ_AppScript_v9.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
 
 ## Build workflow
 Run: python3 build_v4.py
-Then copy output and extract (QA harness reads from /home/claude/extracted.js):
-  cp /mnt/user-data/outputs/LoonHQ.html index.html
+It writes index.html IN PLACE (v9.2). There is no copy step any more; the old
+/mnt/user-data/outputs path was outside the repo, so the build could not run anywhere else
+and index.html could silently drift from its source. Override with LOONHQ_OUT if needed.
+Then extract for the QA harness (it reads /home/claude/extracted.js):
   python3 -c "import re; html=open('index.html').read(); scripts=re.findall(r'<script>(.*?)</script>',html,re.DOTALL); open('/home/claude/extracted.js','w').write(max(scripts,key=len))"
   node --check /home/claude/extracted.js
-  node qa_harness.js
+  TZ=America/Denver node qa_harness.js
 Apps Script changes: node appscript_harness.js (reads LoonHQ_AppScript_*.js from the repo root)
 Real-browser pass (optional, needs global playwright + /opt/pw-browsers/chromium):
   npx --yes http-server . -p 8099 -s &
@@ -62,7 +65,7 @@ DO NOT recommend clearing, resetting, or deleting sheet data under any circumsta
 without explicit approval AND a second confirmation from Frankie. This is a hard rule.
 Real user data is live in the sheet.
 
-## Current version: v9.1
+## Current version: v9.2
 index.html in the repo is the live deployed build. build_v4.py is the source of truth.
 
 ## AppScript deploy state
@@ -324,6 +327,39 @@ its own unfiltered feed. Do not "fix" it by loosening isCompletionLog.
 - build_v4.py is the source of truth — edit it, then run python3 build_v4.py to regenerate index.html
 - Never edit index.html directly
 
+## v9.2 — LISTS, DEAD CODE CLEANUP, CI (2026-08-05)
+- SECTION RENAMED: "Shopping List"/"Shop" is now "Lists" everywhere.
+- CUSTOM LISTS. Food, Costco and Household are PERMANENT: hardcoded in PERMANENT_LISTS,
+  cannot be renamed or deleted, and never get a delete button. Everything else is a custom
+  list stored in the new `lists` tab (list_id, name, is_permanent, created_at, sort_order).
+  Grocery items still reference a list by NAME through their existing `category` column,
+  which is why this needed NO migration of existing items. Sections render permanent-first,
+  then custom in creation order. An item whose list was deleted falls back to Food rather
+  than vanishing.
+- clearChecked is still global: it matches on status alone, so it spans every list.
+- DRAG TO REORDER NOW WORKS ON PHONES. It used the HTML5 drag-and-drop API (draggable,
+  dragstart, drop), which does not fire AT ALL on touch devices, so the handles did nothing
+  on a phone and always had. Rewritten with pointer events. Two traps, both hit on the
+  first attempt and both now covered by browser tests:
+    1. Inserting BEFORE the row you are hovering is a no-op when you are already above it.
+       Derive the insertion point from the pointer position, not from a hit test.
+    2. Moving a node in the DOM RELEASES its pointer capture, so every later move and the
+       final pointerup went nowhere and the order was never saved. Re-acquire capture after
+       each move and also listen on the document.
+    3. The "+ Add item" input must stay last; insert before it, never after.
+- BUILD NOW WRITES index.html IN PLACE. It used to emit to /mnt/user-data/outputs and need a
+  manual copy, so it could not run in CI and index.html could drift from its source.
+- CI added (.github/workflows/test.yml): builds, fails if index.html differs from a fresh
+  build, then runs both test suites under TZ=America/Denver.
+- DELETED as dead: creditFor (encoded the pre-v9 credit rule, contradicted defaultCreditFor,
+  called nowhere), openMobileMenu, cancelAllPending, toggleLegend, the _completing set, and
+  modal-mobile-menu from _MODAL_BG_IDS.
+- The stale-data badge is now POLLED every 10s while the app is open (startStaleWatch).
+  checkStale existed but was never called, so the badge only ever appeared on return from
+  background, never while the app sat open, which is the case it was built for.
+- Undo is now ONE batchUncomplete request instead of one uncompleteTask per task, and has
+  test coverage for the first time.
+
 ## v9.1 — NO PINS, NO EXTERNAL DEPENDENCIES (2026-08-05)
 - PIN LOGIN REMOVED ENTIRELY. There is no PINS map, no pin-input, no validation. Tapping a
   name signs you in and persists to localStorage. The PIN never protected anything: the
@@ -372,7 +408,8 @@ duplicate-write class of bug this app has had three times.
   must be testable through a predicate or it cannot be covered.
 - defaultCreditFor derives credit from ASSIGNMENT: owner both -> both, done_together ->
   both, owner one person -> that person, empty -> current user, personal -> the owner.
-  creditFor() still exists for legacy paths but the v9 flow uses defaultCreditFor.
+  creditFor() was DELETED in v9.2: it encoded the pre-v9 rule ("whoever tapped gets credit")
+  which directly contradicts defaultCreditFor, and nothing called it. Do not reintroduce it.
 - Section 12E: a failed commit does NOT auto-retry. It shows "Couldn't confirm" and
   restores the card. Never re-arm _toastRetry on a completion failure.
 - showToast() disarms any armed undo. Only one toast exists at a time, so without that a
@@ -529,6 +566,34 @@ after this list was written. Ordered by how much they hurt.
      way to check.
    - NOTE the row count was 307 not 308: deleting a test task also removes its completion
      rows, which is the cascade in deleteTask working as intended.
+
+## Known quirks and small debts (carried over from the v9.1 review)
+- "EITHER OF US" CIRCLES STILL SHOW F.M. Pre-existing, not introduced by v9. The old design
+  distinguished F-dot-M (either) from F-and-M (both); v9 removed the letters from "both"
+  only, as specified. So the ONLY circle still showing letters is the "either of us" one,
+  which can now read as "both". Decide whether to drop the letters there too.
+- CSS IS A PLAIN STRING, NOT AN F-STRING. A {placeholder} written into the CSS block is
+  never substituted and ships to the browser as literal text. This silently produced a page
+  with no logo at all. If you need a value in the CSS, substitute it explicitly where CSS is
+  inserted into the HTML (see how LOGO_URI_PLACEHOLDER is handled).
+- _recentCommit entries are only cleaned when read. Entries for tasks never looked at again
+  persist for the session. Negligible for two people; would matter at thousands of tasks.
+- hasPerson USES SUBSTRING MATCHING, not exact tokens. Safe for "Frankie" and "Meredith",
+  would break if a third person's name contained another's.
+- THE REASSIGN DIALOG DOES NOT RESTRICT BY SCOPE, so a personal completion can be credited
+  to both people after the fact, which the rest of the app treats as impossible.
+- APPS SCRIPT COST NOTE: the dedup check reads the contiguous span from task_id to
+  completed_at (4 columns), not two columns and not the whole log.
+
+## task_log_archive tab — INTENTIONAL, leave it
+Holds the 101 snooze/edit rows purged on 2026-07-30. Kept deliberately as the raw material
+for a possible future "task health" feature (snooze-without-completion patterns). Nothing
+reads it today. Do not delete it and do not treat it as clutter.
+
+## Do NOT write investigation, plan or report files into the repo
+Frankie asked for this explicitly on 2026-08-05. Findings belong in CLAUDE.md, not in
+separate OPTIMIZATION_PLAN.md / INVESTIGATION_NOTES.md style documents. Report in chat and
+record anything durable here. Only create such a file if he asks for one by name.
 
 ## Pending backlog
 ARCHITECTURE (big, suggest tackling in Claude Code):

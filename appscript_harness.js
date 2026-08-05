@@ -765,6 +765,129 @@ run('v9 COST the dedup check reads a column span, not the whole log', () => {
   if (ops.cellsRead > 1500) throw new Error('read ' + ops.cellsRead + ' cells, a full scan is 2700');
 });
 
+// ---- v9.2 batchUncomplete (Step 6) -----------------------------------------
+run('v9.2 batchUncomplete removes the log rows and restores the tasks', () => {
+  const log = new Sheet('task_log', [HEADERS.task_log.slice(),
+    ['u1','t1','A','Frankie','2026-08-01T10:00:00Z','household','','','completion'],
+    ['u2','t2','B','Frankie','2026-08-01T10:00:00Z','household','','','completion'],
+    ['keep','t9','C','Frankie','2026-08-01T10:00:00Z','household','','','completion']]);
+  const sheets = freshBook({ task_log: log });
+  const st = TASK_HDR.indexOf('status');
+  sheets.tasks.data[1][st] = 'done'; sheets.tasks.data[2][st] = 'done';
+  const r = batchUncomplete({ items: [{log_id:'u1',task_id:'t1'},{log_id:'u2',task_id:'t2'}] });
+  if (r.restored !== 2) throw new Error('restored ' + r.restored);
+  const left = log.data.slice(1).map(x => x[0]).join(',');
+  if (left !== 'keep') throw new Error('wrong log rows left: ' + left);
+  if (String(sheets.tasks.data[1][st]) !== 'active') throw new Error('t1 not restored to active');
+  if (String(sheets.tasks.data[2][st]) !== 'active') throw new Error('t2 not restored to active');
+});
+run('v9.2 COST undoing 20 tasks does not cost one delete call per task', () => {
+  const rows = [HEADERS.task_log.slice()];
+  const items = [];
+  for (let i = 0; i < 20; i++) {
+    rows.push(['u' + i, 't' + i, 'T', 'F', '2026-08-01T10:00:00Z', 'household', '', '', 'completion']);
+    items.push({ log_id: 'u' + i, task_id: 't' + i });
+  }
+  freshBook({ task_log: new Sheet('task_log', rows) });
+  resetOps();
+  batchUncomplete({ items: items });
+  const deletes = ops.deleteRow + ops.deleteRows;
+  if (deletes > 3) throw new Error(deletes + ' delete calls for 20 contiguous rows');
+});
+run('v9.2 batchUncomplete with an empty list is a safe no-op', () => {
+  const sheets = freshBook();
+  const before = sheets.task_log.data.length;
+  if (batchUncomplete({ items: [] }).restored !== 0) throw new Error('did something');
+  if (batchUncomplete({}).restored !== 0) throw new Error('did something with no items key');
+  if (sheets.task_log.data.length !== before) throw new Error('log changed');
+});
+run('v9.2 batchUncomplete is reachable through doPost and survives container reuse', () => {
+  freshBook();
+  let out = JSON.parse(doPost({ postData: { contents: JSON.stringify({ action: 'batchUncomplete', data: { items: [{ log_id: 'l3', task_id: 't1' }] } }) } }));
+  if (out.error) throw new Error('doPost rejected it: ' + out.error);
+  newExecution();
+  out = JSON.parse(doPost({ postData: { contents: JSON.stringify({ action: 'batchUncomplete', data: { items: [{ log_id: 'l4', task_id: 't2' }] } }) } }));
+  if (out.error) throw new Error('failed on a reused container: ' + out.error);
+});
+
+// ---- v9.2 custom lists ------------------------------------------------------
+function bookWithLists(extra) {
+  return freshBook(Object.assign({
+    lists: new Sheet('lists', [HEADERS.lists.slice()]),
+    grocery: new Sheet('grocery', [HEADERS.grocery.slice(),
+      ['g1','Milk','Food','need','Frankie','',1],
+      ['g2','Paper towels','Household','need','Frankie','',2],
+      ['g3','Batteries','Costco','got','Frankie','',3]]),
+  }, extra || {}));
+}
+run('v9.2 lists is a safe append at the END of HEADERS', () => {
+  if (!HEADERS.lists) throw new Error('no lists header defined');
+  const keys = Object.keys(HEADERS);
+  if (HEADERS.lists.join(',') !== 'list_id,name,is_permanent,created_at,sort_order')
+    throw new Error('unexpected shape: ' + HEADERS.lists.join(','));
+});
+run('v9.2 addList creates a custom list', () => {
+  const sheets = bookWithLists();
+  const r = addList({ name: 'Hardware store' });
+  if (!r.ok || !r.list_id) throw new Error('failed: ' + JSON.stringify(r));
+  const rows = sheets.lists.data.slice(1);
+  if (rows.length !== 1) throw new Error('expected 1 list row, got ' + rows.length);
+  if (rows[0][HEADERS.lists.indexOf('name')] !== 'Hardware store') throw new Error('name not stored');
+});
+run('v9.2 addList is idempotent, so a retry cannot double-add', () => {
+  const sheets = bookWithLists();
+  addList({ name: 'Camping' });
+  const r = addList({ name: 'camping' });          // different case, same list
+  if (!r.duplicate) throw new Error('a duplicate name should be reported, not created');
+  if (sheets.lists.data.slice(1).length !== 1) throw new Error('a duplicate row was written');
+});
+run('v9.2 addList rejects an empty name', () => {
+  bookWithLists();
+  if (!addList({ name: '   ' }).error) throw new Error('empty name should be refused');
+});
+run('v9.2 deleteList removes the list AND its items, leaving other lists alone', () => {
+  const sheets = bookWithLists();
+  addList({ name: 'Garage' });
+  sheets.grocery.data.push(['g4','Oil','Garage','need','Frankie','',4]);
+  sheets.grocery.data.push(['g5','Rags','Garage','need','Frankie','',5]);
+  deleteList({ name: 'Garage' });
+  if (sheets.lists.data.slice(1).length !== 0) throw new Error('the list row survived');
+  const left = sheets.grocery.data.slice(1).map(r => r[0]).join(',');
+  if (left !== 'g1,g2,g3') throw new Error('wrong grocery rows left: ' + left);
+});
+run('v9.2 deleting a custom list never touches the permanent lists', () => {
+  const sheets = bookWithLists();
+  addList({ name: 'Food extras' });
+  deleteList({ name: 'Food extras' });
+  const cats = sheets.grocery.data.slice(1).map(r => r[2]).sort().join(',');
+  if (cats !== 'Costco,Food,Household') throw new Error('permanent list items disturbed: ' + cats);
+});
+run('v9.2 getAllData returns the lists alongside everything else', () => {
+  bookWithLists();
+  addList({ name: 'Pharmacy' });
+  const d = getAllData();
+  if (!Array.isArray(d.lists)) throw new Error('lists missing from the payload');
+  if (d.lists.length !== 1 || d.lists[0].name !== 'Pharmacy') throw new Error(JSON.stringify(d.lists));
+});
+run('v9.2 clearChecked spans every list, permanent and custom', () => {
+  const sheets = bookWithLists();
+  addList({ name: 'Garden' });
+  sheets.grocery.data.push(['g6','Seeds','Garden','got','Frankie','',6]);
+  sheets.grocery.data.push(['g7','Soil','Garden','need','Frankie','',7]);
+  const r = clearChecked();
+  if (r.removed !== 2) throw new Error('expected 2 checked items removed, got ' + r.removed);
+  const left = sheets.grocery.data.slice(1).map(r2 => r2[0]).sort().join(',');
+  if (left !== 'g1,g2,g7') throw new Error('wrong survivors: ' + left);
+});
+run('v9.2 list actions are reachable through doPost and survive container reuse', () => {
+  bookWithLists();
+  let out = JSON.parse(doPost({ postData: { contents: JSON.stringify({ action: 'addList', data: { name: 'Trip' } }) } }));
+  if (out.error) throw new Error('addList via doPost: ' + out.error);
+  newExecution();
+  out = JSON.parse(doPost({ postData: { contents: JSON.stringify({ action: 'deleteList', data: { name: 'Trip' } }) } }));
+  if (out.error) throw new Error('deleteList on a reused container: ' + out.error);
+});
+
 // ---- container reuse: THE v8.11 REGRESSION ---------------------------------
 // This is the bug that made task creation fail for Frankie on 2026-07-30. The item-7
 // caching stored Spreadsheet/Sheet handles in globals, and nothing cleared them when a new
