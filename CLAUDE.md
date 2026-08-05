@@ -20,7 +20,7 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 - icons.py — the inline icon set (39 hand-authored SVGs); build_v4.py imports it
 - icon.webp / logo_uri.txt — home-screen icon and app logo, both IN the repo
 - build_v4.py — Python build script that generates index.html
-- qa_harness.js — Node.js DOM mock + 304 frontend runtime checks
+- qa_harness.js — Node.js DOM mock + 307 frontend runtime checks
 - appscript_harness.js — SpreadsheetApp mock + 88 server-side checks (correctness, API cost, container reuse)
 - e2e_harness.js — Playwright/Chromium checks + 86 real-browser checks (CSS, events, layout)
 - .github/workflows/test.yml — CI: build, index.html-matches-source check, both test suites
@@ -65,7 +65,7 @@ DO NOT recommend clearing, resetting, or deleting sheet data under any circumsta
 without explicit approval AND a second confirmation from Frankie. This is a hard rule.
 Real user data is live in the sheet.
 
-## Current version: v9.3
+## Current version: v9.2.1
 index.html in the repo is the live deployed build. build_v4.py is the source of truth.
 
 ## AppScript deploy state
@@ -327,7 +327,7 @@ its own unfiltered feed. Do not "fix" it by loosening isCompletionLog.
 - build_v4.py is the source of truth — edit it, then run python3 build_v4.py to regenerate index.html
 - Never edit index.html directly
 
-## v9.3 — INSTANT STARTUP FROM CACHE (2026-08-05). Performance only, no feature changes.
+## v9.2.1 — INSTANT STARTUP FROM CACHE (2026-08-05). Performance only, no feature changes.
 MEASURED, with an 8s Apps Script response AND the font CDN hanging:
   first launch (no cache) 8175ms  ->  every launch after that 83ms.
 - state is written to localStorage (CACHE_KEY 'loonhq_state_v1') after every successful
@@ -353,7 +353,20 @@ MEASURED, with an 8s Apps Script response AND the font CDN hanging:
   broken rather than pending.
 - PING was already fire-and-forget and still is: apiGet({action:'ping'}).catch(...) with no
   await, never chained ahead of the data fetch. A test asserts this so it stays that way.
-- APPS SCRIPT UNCHANGED in v9.3. getAllData is already at the floor for plain SpreadsheetApp:
+- BOOT RESILIENCE, and the reason it mattered. The 25s request timeout applied to reads as
+  well as writes. A cold container plus 8 sheet reads can exceed that, so the FIRST fetch
+  aborted, nothing was ever cached, and every later launch failed identically: a loop where
+  the cache could never be written and the user saw a blank screen every time.
+  * GET_TIMEOUT (60s) for reads, API_TIMEOUT (25s) still for writes. A read is idempotent so
+    it can wait and be retried; a write is NOT, and retrying one is how this app produced
+    duplicate completions. Never give POSTs the long timeout.
+  * fetchWithRetry gives a cold server a couple of chances on first launch.
+  * showBootError puts an explicit "Couldn't load your data" panel with a Try again button
+    on screen when there is no cache AND the fetch failed. It refuses to appear when tasks
+    are already showing, so it can never cover real data.
+  * Verified in Chromium: a 32s server now loads (12 tasks, one fetch) where it previously
+    aborted at 25s and left a blank screen.
+- APPS SCRIPT UNCHANGED in v9.2.1. getAllData is already at the floor for plain SpreadsheetApp:
   1 openById + 8 getValues, one per tab. Combining them would need the Advanced Sheets
   Service (spreadsheets.values.batchGet), which the user must enable by hand in the editor.
   Not worth it now that the cache means startup no longer waits for the server at all.
@@ -666,7 +679,25 @@ buried the takeaway in technical prose.
 - Sustainability = efficiency + resilience + durability, not perfection
 - For any plumbing/drain/appliance advice: Frankie had a basement water main backup, washing machine suspected contributor, no scope done yet
 
-## Versioning rules
+## Versioning rules (Frankie's scheme, confirmed 2026-08-05 — this IS semantic versioning)
+MAJOR.MINOR.PATCH, e.g. v9.2.1. This matches the industry standard (semver) closely enough
+that no translation is needed.
+- MAJOR (v9 -> v10): new sections, or a fundamental change to how something works. The
+  multi-tap credit rewrite earned v8 -> v9. Adding meal planning would earn v10.
+- MINOR (v9.2 -> v9.3): adding to or meaningfully changing EXISTING functionality. Custom
+  lists, a new batch action, a new field. Nothing pre-existing breaks.
+- PATCH (v9.2 -> v9.2.1): bugs, performance, wording, layout. No functionality added or
+  changed. The localStorage cache was a PATCH: the app does exactly what it did before,
+  faster.
+When unsure, ask: did anything become possible that was not possible before? Yes and it is
+a whole new area -> MAJOR. Yes within something that exists -> MINOR. No -> PATCH.
+
+## MOBILE IS THE PRODUCT (confirmed 2026-08-05)
+99.9% of use is on phones; the desktop layout is a backup. Prioritise mobile in every fix,
+test at phone width first (the browser harness runs at 390-430px), and treat a desktop-only
+regression as lower severity than a mobile one. The reverse is never true.
+
+## Old versioning rules
 - Major versions (v8, v9...) = significant new features or architectural changes
 - Minor versions (v8.1, v8.2...) = bug fixes, UI tweaks, small additions
 - The file in the repo is always index.html — never named with a version number

@@ -221,6 +221,12 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .swipe-bg.cc-m{background:var(--user-m)}
 .swipe-bg.cc-both{background:linear-gradient(135deg,var(--user-f) 50%,var(--user-m) 50%)}
 /* Section 9: stale-data nudge */
+.boot-error{position:absolute;top:0;left:0;right:0;bottom:0;z-index:60;background:var(--bg);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:32px;text-align:center}
+.boot-error.gone{display:none}
+.boot-error-title{font-size:17px;font-weight:600;color:var(--text)}
+.boot-error-msg{font-size:13.5px;color:var(--text2)}
+.boot-error-hint{font-size:12.5px;color:var(--text3);margin-bottom:6px}
 .stale-badge{display:none;align-items:center;gap:6px;justify-content:center;padding:6px 10px;
   background:var(--amber-light,#FDF3E0);color:var(--terra);font-size:12px;cursor:pointer;
   border-bottom:1px solid var(--border)}
@@ -717,6 +723,12 @@ input[type=date].form-input::-webkit-calendar-picker-indicator{opacity:.5}
         <button class="btn btn-icon" onclick="refreshData()"><i class="ti ti-refresh"></i></button>
         <button class="btn primary" id="topbtn" onclick="handleAdd()"><i class="ti ti-plus"></i> <span id="topbtnlbl">Add task</span></button>
       </div>
+    </div>
+    <div class="boot-error gone" id="boot-error">
+      <div class="boot-error-title">Couldn't load your data</div>
+      <div class="boot-error-msg"></div>
+      <div class="boot-error-hint">Your tasks are safe. This is a connection problem.</div>
+      <button class="btn primary" onclick="retryBoot()"><i class="ti ti-refresh"></i> Try again</button>
     </div>
     <div class="loading-overlay" id="loader"><div class="spinner"></div><div style="font-size:13px;color:var(--text2)">Syncing Loon HQ...</div></div>
 
@@ -1480,19 +1492,21 @@ function _apiParse(r){return r.json().then(function(d){if(d&&d.error){var e=new 
 // Apps Script can hang: a cold start, a quota hiccup, a dead connection. Without a timeout
 // the promise never settles, so the optimistic card stays pending forever and no .catch()
 // ever runs, which means no toast and no retry. Bound every request.
-var API_TIMEOUT=25000;
-function _fetchTimeout(url,opts){
+var API_TIMEOUT=25000;      // writes: short, because a retry could duplicate
+var GET_TIMEOUT=60000;      // reads: long, because a cold Apps Script container is slow
+                            // and a read can never duplicate anything
+function _fetchTimeout(url,opts,ms){
   if(typeof AbortController==='undefined')return fetch(url,opts);
   var ctl=new AbortController(),timer=null;
   var done=function(){if(timer){clearTimeout(timer);timer=null;}};
-  timer=setTimeout(function(){timer=null;ctl.abort();},API_TIMEOUT);
+  timer=setTimeout(function(){timer=null;ctl.abort();},ms||API_TIMEOUT);
   return fetch(url,Object.assign({},opts||{},{signal:ctl.signal})).then(
     function(r){done();return r;},
     function(e){done();
       if(e&&(e.name==='AbortError'||e.code===20)){var te=new Error('Request timed out');te.timedOut=true;throw te;}
       throw e;});
 }
-function apiGet(params){var url=API+'?'+Object.entries(params).map(function(p){return p[0]+'='+encodeURIComponent(p[1]);}).join('&');return _fetchTimeout(url).then(_apiParse);}
+function apiGet(params){var url=API+'?'+Object.entries(params).map(function(p){return p[0]+'='+encodeURIComponent(p[1]);}).join('&');return _fetchTimeout(url,null,GET_TIMEOUT).then(_apiParse);}
 // Every POST mutates. Track them so refreshData can tell when a getAllData payload
 // may predate a write that has not been acknowledged yet.
 function apiPost(body){
@@ -1556,8 +1570,9 @@ function refreshData(silent){
     document.getElementById('loader').style.display='none';
     document.getElementById('v-'+currentView).classList.remove('gone');
     // Server reachable but rejected the request: keep cached data, don't fall back to STATIC_ASSETS.
-    if(err&&err.apiError){setSyncState('err','Sync failed');return;}
+    if(err&&err.apiError){setSyncState('err','Sync failed');showBootError('The server rejected the request.');return;}
     state.assets=STATIC_ASSETS;state.maintenance_logs=[];renderAll();setSyncState('err','Offline');
+    showBootError(err&&err.timedOut?'The server took too long to answer.':'Could not reach the server.');
   });
 }
 // Debounced, so a burst of actions still collapses into one sync. The delay is a parameter
@@ -1620,10 +1635,38 @@ function applyCachedState(c){
 }
 // Startup: paint from cache first, then reconcile in the background. Only the very first
 // launch (or cleared storage) ever sees a loading screen.
+// Shown only when the app has NOTHING to display: no cache and the first fetch failed.
+// Before this, that situation produced a silent blank screen with no way forward, and
+// because nothing was ever cached the next launch failed exactly the same way.
+function showBootError(reason){
+  if((state.tasks||[]).length)return;          // we have something on screen; leave it alone
+  var el=document.getElementById('boot-error');
+  if(!el)return;
+  var msg=el.querySelector('.boot-error-msg');
+  if(msg)msg.textContent=reason||'Could not load your data.';
+  el.classList.remove('gone');
+}
+function hideBootError(){var el=document.getElementById('boot-error');if(el)el.classList.add('gone');}
+function retryBoot(){
+  hideBootError();
+  var l=document.getElementById('loader');if(l)l.style.display='flex';
+  fetchWithRetry(2);
+}
+// A read is safe to retry, so give a cold container a couple of chances before giving up.
+function fetchWithRetry(triesLeft){
+  return refreshData(false).then(function(){
+    if((state.tasks||[]).length||!triesLeft)return;
+    if(document.getElementById('boot-error')&&!document.getElementById('boot-error').classList.contains('gone')){
+      hideBootError();
+      var l=document.getElementById('loader');if(l)l.style.display='flex';
+      return fetchWithRetry(triesLeft-1);
+    }
+  });
+}
 function bootData(){
   var c=loadStateCache();
   if(!c){
-    refreshData(false);          // nothing cached: show the loader, as before
+    fetchWithRetry(2);           // nothing cached: show the loader and retry a cold server
     return false;
   }
   applyCachedState(c);

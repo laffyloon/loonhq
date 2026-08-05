@@ -1867,6 +1867,36 @@ run('v9.3 the login ping is fire-and-forget, never awaited', ()=>{
   if(!/apiGet\(\{action:'ping'\}\)\.catch\(/.test(src)) throw new Error('ping should be fired with its own catch');
 });
 
+// ---- v9.2.1 boot resilience ----
+run('v9.2.1 reads get a longer timeout than writes', ()=>{
+  if(typeof GET_TIMEOUT==='undefined') throw new Error('no GET_TIMEOUT');
+  if(GET_TIMEOUT<=API_TIMEOUT) throw new Error('a read must be allowed longer than a write: '+GET_TIMEOUT+' vs '+API_TIMEOUT);
+  if(GET_TIMEOUT<45000) throw new Error('too short for a cold Apps Script container: '+GET_TIMEOUT);
+  const src=fs.readFileSync('/home/claude/extracted.js','utf8');
+  if(!/_fetchTimeout\(url,null,GET_TIMEOUT\)/.test(src)) throw new Error('apiGet does not use GET_TIMEOUT');
+  // writes must NOT get the long timeout; a retryable write is how duplicates happened
+  if(/_fetchTimeout\(API,\{method:'POST'[^)]*\},GET_TIMEOUT/.test(src)) throw new Error('POSTs must keep the short timeout');
+});
+run('v9.2.1 a failed first load shows an actionable error, never a blank screen', ()=>{
+  const svT=state.tasks;
+  state.tasks=[];
+  el('boot-error').classList.add('gone');
+  showBootError('Could not reach the server.');
+  if(el('boot-error').classList.contains('gone')) throw new Error('the error panel should be visible with no data');
+  hideBootError();
+  if(!el('boot-error').classList.contains('gone')) throw new Error('hideBootError did not hide it');
+  state.tasks=svT;
+});
+run('v9.2.1 the error panel never covers data we already have', ()=>{
+  const svT=state.tasks;
+  state.tasks=[{task_id:'have1',name:'Something',type:'one_off',due_date:todayStr(),status:'active',scope:'household',owner:''}];
+  el('boot-error').classList.add('gone');
+  showBootError('Could not reach the server.');
+  if(!el('boot-error').classList.contains('gone'))
+    throw new Error('with tasks on screen the error panel must stay hidden');
+  state.tasks=svT;
+});
+
 // ---- report ----
 asyncChain.then(tick).then(tick).then(function(){
 let fails = 0;
