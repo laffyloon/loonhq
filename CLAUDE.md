@@ -17,10 +17,12 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 
 ## Repo structure
 - index.html — the entire app (built output, source of truth for deployment)
+- icons.py — the inline icon set (39 hand-authored SVGs); build_v4.py imports it
+- icon.webp / logo_uri.txt — home-screen icon and app logo, both IN the repo
 - build_v4.py — Python build script that generates index.html
-- qa_harness.js — Node.js DOM mock + 276 frontend runtime checks
+- qa_harness.js — Node.js DOM mock + 280 frontend runtime checks
 - appscript_harness.js — SpreadsheetApp mock + 75 server-side checks (correctness, API cost, container reuse)
-- e2e_harness.js — Playwright/Chromium checks + 62 real-browser checks (CSS, events, layout)
+- e2e_harness.js — Playwright/Chromium checks + 70 real-browser checks (CSS, events, layout)
 - LoonHQ_AppScript_v9.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
 
@@ -60,7 +62,7 @@ DO NOT recommend clearing, resetting, or deleting sheet data under any circumsta
 without explicit approval AND a second confirmation from Frankie. This is a hard rule.
 Real user data is live in the sheet.
 
-## Current version: v9
+## Current version: v9.1
 index.html in the repo is the live deployed build. build_v4.py is the source of truth.
 
 ## AppScript deploy state
@@ -321,6 +323,31 @@ its own unfiltered feed. Do not "fix" it by loosening isCompletionLog.
 - Delegated click handlers for: data-sub, data-addsub, data-editproj, data-editsub, .snooze-opt[data-snooze]
 - build_v4.py is the source of truth — edit it, then run python3 build_v4.py to regenerate index.html
 - Never edit index.html directly
+
+## v9.1 — NO PINS, NO EXTERNAL DEPENDENCIES (2026-08-05)
+- PIN LOGIN REMOVED ENTIRELY. There is no PINS map, no pin-input, no validation. Tapping a
+  name signs you in and persists to localStorage. The PIN never protected anything: the
+  Apps Script endpoint accepts requests from anyone holding its URL, so the PIN only hid
+  the screen, not the data. Removing it deleted friction, not security. The endpoint is
+  still open; see OPTIMIZATION_PLAN.md Step 1 if that is ever revisited.
+- THE APP NO LONGER DEPENDS ON ANY EXTERNAL SERVER TO START. Measured with the font CDN
+  hanging for 6s: DOMContentLoaded went from 6029ms to 36ms, usable at 211ms.
+  * Google Fonts loads via media="print" + onload="this.media='all'", so it can never
+    block the first paint. A <noscript> copy keeps it working without JS.
+  * The Tabler icon webfont is GONE. All 39 icons used by the app are inlined from
+    icons.py as SVG data URIs, painted with mask-image + background-color:currentColor so
+    they still inherit colour exactly as the font glyphs did.
+- ICON ENCODING TRAP: build the SVG with plain characters and encode ONCE, '%' first.
+  The first attempt pre-wrote stroke='%23000' then escaped '%' again, yielding
+  stroke='%2523000'. That is not a valid colour, so nothing drew and every icon shipped as
+  an empty box while still reporting a valid mask-image. A test that only checks "a mask is
+  set" cannot catch this; e2e now decodes each URI and rasterises it.
+- The build ABORTS if any ti-* class used in the markup has no drawing in icons.py.
+- apple-touch-icon was ALSO building empty since 2026-07-13 (same outside-the-repo path bug
+  as the logo). Recovered from 240e11e and committed as icon.webp. It is a SEPARATE file,
+  not inlined: at 512x512 it is 46KB, worth a request at install time but not on every load.
+- APPS SCRIPT UNCHANGED in v9.1. The file stays LoonHQ_AppScript_v9.js deliberately, so its
+  name does not imply a redeploy that is not needed.
 
 ## v9 — MULTI-TAP CREDIT CYCLING (2026-08-04). Read this before touching completion.
 THE SINGLE WRITE RULE: flushPending() is the ONLY function that writes a completion.

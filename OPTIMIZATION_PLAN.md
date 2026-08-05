@@ -12,7 +12,7 @@ A note on what this review found overall: **the app's own code is fast.** Render
 
 ## Critical
 
-### [ ] Step 1: Both login PINs and the database endpoint are readable by anyone who finds the site
+### [~] Step 1: Both login PINs and the database endpoint are readable by anyone who finds the site  — **PARTIAL (v9.1): PINs removed entirely; the open endpoint REMAINS**
 - **Finding:** `index.html` (built from `build_v4.py`) — the file served publicly contains `PINS={Frankie:'225522',Meredith:'8627'}` in plain text, along with the Apps Script `/exec` URL. | Evidence: `Verified` — `grep -o "PINS={[^}]*}" index.html` returns both PINs; the endpoint appears once in the same file.
 - **Impact:** Anyone who loads the site can read both PINs by viewing the page source, so the login screen stops anyone casual and nobody else. Worse, the Apps Script endpoint accepts requests from anyone who has the URL, with no check of who is asking. That means a stranger with the address could read the entire household database (every task, note, and completion) or write to it, including deleting tasks, without ever seeing the login screen. The PIN is decoration; the real front door has no lock.
 - **Task:** Decide how much this matters to you, then pick one of three routes. (a) Accept it and rely on the URL staying unknown, but stop pretending the PIN is security. (b) Make the site itself private, which on GitHub Pages means moving off the free public tier or putting it behind something like Cloudflare Access. (c) Add a shared secret that the app sends with every request and the Apps Script checks before doing anything, which stops strangers hitting the endpoint directly even if they find the URL. Route (c) is the smallest real improvement, though the secret still ships inside the page, so it raises the bar rather than closing the hole.
@@ -31,7 +31,7 @@ A note on what this review found overall: **the app's own code is fast.** Render
 
 ## High
 
-### [ ] Step 2: The app cannot start until two external services respond
+### [x] Step 2: The app cannot start until two external services respond  — **DONE, 6029ms to 36ms with the CDN hanging**
 - **Finding:** `build_v4.py` head section — three render-blocking external resources: two Google Fonts stylesheets and the Tabler icon font from jsdelivr. | Evidence: `Verified` — Playwright, local server, 40-task fixture: when those requests fail immediately, `DOMContentLoaded` is **106ms**. When they hang for six seconds, `DOMContentLoaded` is **6,029ms**. The app's own 267KB parses and runs in roughly 60ms either way.
 - **Impact:** On a good connection this costs nothing. On a bad one, the app is frozen on a blank or unstyled screen for as long as the slowest of two third-party servers takes to answer, even though every byte of the app itself has already arrived. You have been debugging slow saves for weeks; this is a separate stall that happens before the app even runs, and it is invisible in the Apps Script logs. If the icon CDN fails outright, every icon in the app disappears, because they are font glyphs rather than images.
 - **Task:** Stop letting those two services gate startup. Load the fonts without blocking (so text appears immediately in a fallback font and swaps when the real one arrives), and either self-host the handful of icons actually used or inline them, so a CDN outage cannot strip the interface.

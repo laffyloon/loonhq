@@ -93,8 +93,8 @@ const ok = (n, cond, detail) => results.push([cond ? 'PASS' : 'FAIL', n + (cond 
   await page.goto(BASE + '/index.html');
 
   // ---- login ----
+  // v9.1: picking a name signs you straight in, no PIN step
   await page.click('.who-btn:has-text("Frankie")');
-  await page.fill('#pin-input', '225522');
   await page.waitForSelector('#main-app:not(.gone)', { timeout: 8000 });
   await page.waitForFunction(() => document.querySelectorAll('.tc').length > 0, { timeout: 8000 });
   ok('login renders the task list', (await page.locator('.tc').count()) > 0, 'no task cards');
@@ -296,6 +296,53 @@ const ok = (n, cond, detail) => results.push([cond ? 'PASS' : 'FAIL', n + (cond 
   const fast = await page.evaluate(() => ({ f: window.SYNC_FAST, s: window.SYNC_SLOW }));
   ok('a successful write schedules a fast reconcile', fast.f > 0 && fast.f <= 1000, JSON.stringify(fast));
   ok('rollbacks still back off', fast.s >= 3000, JSON.stringify(fast));
+
+  // ---- v9.1: no PIN, and no external dependency for startup or icons -------
+  const noPin = await page.evaluate(() => ({
+    pinInput: !!document.getElementById('pin-input'),
+    pinWrap: !!document.getElementById('pin-wrap'),
+    pinsGlobal: typeof PINS !== 'undefined',
+  }));
+  ok('the PIN screen is gone entirely', !noPin.pinInput && !noPin.pinWrap && !noPin.pinsGlobal, JSON.stringify(noPin));
+
+  const blocking = await page.evaluate(() => {
+    const out = { renderBlocking: [], iconFont: 0 };
+    [...document.querySelectorAll('link[rel="stylesheet"]')].forEach(l => {
+      if (l.closest('noscript')) return;                 // only applies without JS
+      if (/^https?:/.test(l.getAttribute('href') || '') && l.media !== 'print') out.renderBlocking.push(l.href);
+    });
+    [...document.styleSheets].forEach(() => {});
+    out.iconFont = document.documentElement.innerHTML.includes('icons-webfont') ? 1 : 0;
+    return out;
+  });
+  ok('nothing external blocks the first paint', blocking.renderBlocking.length === 0, JSON.stringify(blocking.renderBlocking));
+  ok('the icon CDN is gone', blocking.iconFont === 0, 'icons-webfont still referenced');
+
+  // Checking that a mask is SET is not enough: a malformed data URI still reports a mask
+  // but draws nothing, which shipped once and left every icon as an empty box. Decode the
+  // URI and confirm the browser can actually rasterise it.
+  const iconPaint = await page.evaluate(async () => {
+    const els = [...document.querySelectorAll('.ti')].filter(e => e.offsetParent !== null);
+    const noMask = [], tooSmall = [], uris = new Set();
+    els.forEach(e => {
+      const s = getComputedStyle(e), r = e.getBoundingClientRect();
+      const mi = s.maskImage || s.webkitMaskImage || '';
+      if (!mi || mi === 'none') { noMask.push(e.className); return; }
+      const m = mi.match(/url\(["']?(data:image\/svg\+xml,[^"')]+)["']?\)/);
+      if (m) uris.add(m[1]);
+      if (r.width < 8 || r.height < 8) tooSmall.push(e.className + '@' + Math.round(r.width));
+    });
+    // every distinct icon must decode into a real, rasterisable SVG
+    const broken = [];
+    for (const u of uris) {
+      const okImg = await new Promise(res => { const i = new Image(); i.onload = () => res(i.width > 0); i.onerror = () => res(false); i.src = u; });
+      if (!okImg) broken.push(decodeURIComponent(u.slice(0, 90)));
+    }
+    return { visible: els.length, distinct: uris.size, noMask: noMask.slice(0, 3), tooSmall: tooSmall.slice(0, 3), broken: broken.slice(0, 2) };
+  });
+  ok('every visible icon has a mask set', iconPaint.visible > 10 && iconPaint.noMask.length === 0, JSON.stringify(iconPaint));
+  ok('every icon is big enough to see', iconPaint.tooSmall.length === 0, JSON.stringify(iconPaint.tooSmall));
+  ok('every icon data URI actually decodes and rasterises', iconPaint.broken.length === 0, JSON.stringify(iconPaint.broken));
 
   // ---- the logo must actually render -----------------------------------------
   // It built as src="" for two weeks because build_v4.py read it from a path outside the

@@ -109,8 +109,9 @@ global.Set = Set;
 global.__cssText = (function(){
   try{
     const html = fs.readFileSync('index.html','utf8');
-    const m = html.match(/<style>([\s\S]*?)<\/style>/);
-    return m ? m[1] : '';
+    // the page has more than one <style> block (app styles, then the inline icon set)
+    const all = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map(m => m[1]);
+    return all.join('\n');
   }catch(e){ return ''; }
 })();
 let js = fs.readFileSync('/home/claude/extracted.js','utf8');
@@ -1548,6 +1549,49 @@ run('v9 every per-user colour reads the --user-* variables', ()=>{
     if(!/--user-[fm]/.test(chunk)) throw new Error(r+' does not use a --user-* variable: '+chunk);
   });
   if(/stroke="var\(--purple\)"|stroke="var\(--yellow\)"/.test(css)) throw new Error('trend chart still uses the old palette');
+});
+
+// ══ v9.1 NO PIN + INLINE ICONS ══════════════════════════════════════════════
+run('v9.1 there is no PIN map anywhere in the app', ()=>{
+  if(typeof PINS!=='undefined') throw new Error('a PINS map still exists');
+  const js=fs.readFileSync('/home/claude/extracted.js','utf8');
+  if(/225522|8627/.test(js)) throw new Error('a PIN literal is still in the shipped code');
+  if(/pin-input|submitPin/.test(js)) throw new Error('PIN entry code is still present');
+});
+run('v9.1 picking a user signs in immediately and persists the choice', ()=>{
+  const saved=currentUser;
+  currentUser=null;
+  localStorage.removeItem('loonhq_user');
+  selectUser('Meredith', null);
+  if(currentUser!=='Meredith') throw new Error('selectUser did not set the current user');
+  if(localStorage.getItem('loonhq_user')!=='Meredith') throw new Error('the choice was not persisted');
+  selectUser('Frankie', null);
+  if(currentUser!=='Frankie') throw new Error('switching users failed');
+  currentUser=saved||'Frankie';
+});
+run('v9.1 icons are inlined, with no external icon font', ()=>{
+  const css=__cssText||'';
+  if(!css) return;
+  // check for an actual external reference, not the word "Tabler" in a comment
+  const remote=(css.match(/url\(\s*["']?https?:\/\/[^)]*\)/g)||[]);
+  if(remote.length) throw new Error('the stylesheet still pulls from outside: '+remote.slice(0,2).join(' '));
+  if(/@tabler\/icons-webfont|jsdelivr\.net/.test(css)) throw new Error('the icon CDN is still referenced');
+  const defs=new Set((css.match(/--i-[a-z0-9-]+:url/g)||[]).map(x=>x.slice(4,-4)));
+  if(defs.size<30) throw new Error('expected the full inline icon set, found '+defs.size);
+  if(!/\.ti\{[^}]*mask/.test(css.replace(/\s+/g,''))===false){} // presence checked below
+  if(!/mask-image/.test(css)) throw new Error('icons are not painted via mask-image');
+  if(!/background-color:currentColor/.test(css.replace(/\s+/g,'')))
+    throw new Error('icons must inherit colour via currentColor, as the font glyphs did');
+});
+run('v9.1 every icon the app uses has a drawing', ()=>{
+  const css=__cssText||'';
+  const html=fs.readFileSync('index.html','utf8');
+  if(!css) return;
+  const used=new Set((html.match(/\bti-[a-z0-9-]+/g)||[]).map(x=>x.slice(3)));
+  used.delete('');
+  const drawn=new Set((css.match(/--i-[a-z0-9-]+:url/g)||[]).map(x=>x.slice(4,-4)));
+  const missing=[...used].filter(u=>!drawn.has(u));
+  if(missing.length) throw new Error('icons used but never drawn: '+missing.join(', '));
 });
 
 // ---- report ----

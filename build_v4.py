@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""LoonHQ v9 build. Source of truth for index.html: edit this file, then run
+"""LoonHQ v9.1 build. Source of truth for index.html: edit this file, then run
    python3 build_v4.py. Never edit index.html directly."""
 
 API = "https://script.google.com/macros/s/AKfycbzL362NjJliCBSbR9uIo1lacPEk5uYw1C-SO8OvlLQ2QMCVC3lFh7y8Gs8z0Gn0lVSK/exec"
@@ -13,7 +13,20 @@ _LOGO_PATH = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "logo_u
 with open(_LOGO_PATH) as f: LOGO = f.read().strip()
 if not LOGO.startswith("data:image/"):
     raise SystemExit("build aborted: %s is missing or not a data URI (logo would render blank)" % _LOGO_PATH)
-with open("/home/claude/icon_uri.txt") as f: ICON = f.read().strip()
+# The home-screen icon. It used to be read from a path OUTSIDE the repo, so it built empty
+# from 2026-07-13 onward; recovered from commit 240e11e. It is a SEPARATE file rather than
+# an inline data URI: at 512x512 it is 47KB, which is worth a request at install time but
+# not worth adding to every single page load. Same origin, so no external dependency.
+_ICON_FILE = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "icon.webp")
+if not _os.path.exists(_ICON_FILE):
+    raise SystemExit("build aborted: %s is missing (home-screen icon would be blank)" % _ICON_FILE)
+ICON = "icon.webp"
+
+# Icons are inlined rather than fetched from a CDN. See icons.py for the reasoning and for
+# how to add one. The build scans for every `ti-*` class actually used and aborts if one has
+# no drawing, so a typo shows up here instead of as a blank square in the app.
+import re as _re
+from icons import build_icon_css as _build_icon_css
 
 # ─── CSS ──────────────────────────────────────────────────────────────────────
 CSS = """
@@ -64,11 +77,6 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 .who-avatar{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:600;background:var(--bg2);color:var(--text2)}
 .who-btn.sel-f .who-avatar{background:var(--user-f);color:#fff}
 .who-btn.sel-m .who-avatar{background:var(--user-m);color:#fff}
-.pin-wrap{display:flex;flex-direction:column;align-items:center;gap:14px;width:100%;max-width:320px}
-.pin-label{font-size:13px;color:var(--text2)}
-.pin-input{width:100%;padding:14px 16px;font-size:22px;text-align:center;letter-spacing:.4em;border:1.5px solid var(--border);border-radius:12px;background:var(--card);color:var(--text);outline:none;font-family:'DM Mono',monospace}
-.pin-input:focus{border-color:var(--green)}
-.pin-err{font-size:12.5px;color:var(--red);min-height:18px}
 
 /* APP SHELL */
 .app{display:flex;height:100vh;height:100dvh}
@@ -581,11 +589,6 @@ def HTML_BODY(logo, icon):
     <button class="who-btn" id="login-f" onclick="selectUser('Frankie',this)"><div class="who-avatar">F</div><div>Frankie</div></button>
     <button class="who-btn" id="login-m" onclick="selectUser('Meredith',this)"><div class="who-avatar">M</div><div>Meredith</div></button>
   </div>
-  <div class="pin-wrap" id="pin-wrap" style="visibility:hidden">
-    <div class="pin-label" id="pin-label">Enter PIN</div>
-    <input class="pin-input" id="pin-input" type="tel" inputmode="numeric" autocomplete="off" placeholder="&bull;&bull;&bull;&bull;" maxlength="6">
-    <div class="pin-err" id="pin-err"></div>
-  </div>
 </div>
 
 <div class="app gone" id="main-app">
@@ -991,7 +994,7 @@ def HTML_BODY(logo, icon):
       <button class="qs-btn f" onclick="quickSwitch('Frankie')"><div class="qa">F</div><div class="qn">Frankie</div></button>
       <button class="qs-btn m" onclick="quickSwitch('Meredith')"><div class="qa">M</div><div class="qn">Meredith</div></button>
     </div>
-    <div class="qs-logout" onclick="logout()">Log out (requires PIN to return)</div>
+    <div class="qs-logout" onclick="logout()">Log out</div>
   </div>
 </div>
 
@@ -1145,7 +1148,6 @@ def HTML_BODY(logo, icon):
 JS = """
 <script>
 var API='__API__';
-var PINS={Frankie:'225522',Meredith:'8627'};
 var state={tasks:[],projects:[],subtasks:[],grocery:[],assets:[],task_log:[],maintenance_logs:[]};
 var currentUser=null,currentView='tasks',taskTab='today';
 var loginUserPick=null,pickedOwner='',pickedScope='household',pickedUrgency='this_week';
@@ -1361,23 +1363,23 @@ window.onload=function(){
 function showLogin(){document.getElementById('login-screen').classList.remove('gone');document.getElementById('main-app').classList.add('gone');}
 function showApp(){document.getElementById('login-screen').classList.add('gone');document.getElementById('main-app').classList.remove('gone');updateUserDisplay();}
 
+// v9.1: no PIN. The PIN never protected anything (the Apps Script endpoint accepts
+// requests from anyone who has its URL), so it was friction that looked like security.
+// Picking a name signs you in and the choice persists in localStorage.
 function selectUser(name,btn){
   loginUserPick=name;
-  document.querySelectorAll('.who-btn').forEach(function(b){b.className='who-btn';});
-  btn.className='who-btn sel-'+name.charAt(0).toLowerCase();
-  document.getElementById('pin-wrap').style.visibility='visible';
-  document.getElementById('pin-label').textContent='Enter '+name+"'s PIN";
-  var p=document.getElementById('pin-input');p.value='';p.focus();
-}
-document.getElementById('pin-input').addEventListener('input',function(e){
-  var val=e.target.value;document.getElementById('pin-err').textContent='';
-  if(!loginUserPick)return;
-  if(val.length>=PINS[loginUserPick].length){
-    if(val===PINS[loginUserPick]){currentUser=loginUserPick;localStorage.setItem('loonhq_user',currentUser);showApp();refreshData();apiGet({action:'ping'}).catch(function(){});}
-    else{document.getElementById('pin-err').textContent='Incorrect PIN';e.target.value='';}
+  if(btn){
+    document.querySelectorAll('.who-btn').forEach(function(b){b.className='who-btn';});
+    btn.className='who-btn sel-'+name.charAt(0).toLowerCase();
   }
-});
-function logout(){flushPending();localStorage.removeItem('loonhq_user');currentUser=null;loginUserPick=null;closeModal('modal-qs');document.querySelectorAll('.who-btn').forEach(function(b){b.className='who-btn';});document.getElementById('pin-wrap').style.visibility='hidden';document.getElementById('pin-input').value='';showLogin();}
+  currentUser=name;
+  localStorage.setItem('loonhq_user',name);
+  showApp();
+  refreshData();
+  apiGet({action:'ping'}).catch(function(){});   // warm the Apps Script container
+}
+
+function logout(){flushPending();localStorage.removeItem('loonhq_user');currentUser=null;loginUserPick=null;closeModal('modal-qs');document.querySelectorAll('.who-btn').forEach(function(b){b.className='who-btn';});showLogin();}
 function updateUserDisplay(){
   var ch=currentUser.charAt(0),cls=currentUser==='Frankie'?'f':'m';
   var av=document.getElementById('user-avatar');av.textContent=ch;av.className='user-av '+cls;
@@ -3001,6 +3003,16 @@ function fmtDateShort(d){if(!d)return'';try{var ds=String(d).split('T')[0];var d
 body = HTML_BODY(LOGO, ICON)
 js   = JS.replace('__API__', API)
 
+# Scan every ti-* class this build actually emits, then draw exactly those.
+# The markup lives inside the HTML f-string further down, so scan this file's own source:
+# that covers every ti-* class the build can possibly emit.
+with open(_os.path.abspath(__file__)) as _f: _SELF_SRC = _f.read()
+_USED_ICONS = sorted(set(_re.findall(r'\bti-([a-z0-9-]+)', _SELF_SRC)))
+ICON_CSS, _MISSING = _build_icon_css(_USED_ICONS)
+if _MISSING:
+    raise SystemExit("build aborted: no drawing for icon(s): " + ", ".join(_MISSING)
+                     + "\nAdd them to ICON_PATHS in icons.py.")
+
 HTML = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -3013,9 +3025,16 @@ HTML = f"""<!DOCTYPE html>
 <link rel="apple-touch-icon" href="{ICON}">
 <title>Loon HQ</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Loaded as print then flipped to all on load, so a slow or dead Google Fonts server
+     can never block the first paint. Measured before this change: 6.0s to interactive
+     when the font CDN hung. The cost is a brief flash of the fallback font. -->
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap"
+      rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+<!-- icons are inlined; see icons.py -->
 <style>{CSS.replace('LOGO_URI_PLACEHOLDER', "url('" + LOGO + "')")}</style>
+<style>{ICON_CSS}</style>
 </head>
 <body>
 {body}
