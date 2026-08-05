@@ -259,21 +259,30 @@ const ok = (n, cond, detail) => results.push([cond ? 'PASS' : 'FAIL', n + (cond 
   await page.waitForSelector('#modal-task:not(.gone)');
   await page.fill('#t-name', 'Ghost check');
   await page.click('#modal-task .btn.primary');
-  await page.waitForSelector('.tc.loading', { timeout: 5000 });
-  ok('a pending card appears immediately', await page.locator('.tc.loading').count() === 1, 'no pending card');
-  const anim = await page.evaluate(() => {
-    const el = document.querySelector('.tc.loading');
-    const s = getComputedStyle(el);
-    return { name: s.animationName, iter: s.animationIterationCount, op: s.opacity };
+  // v9.3: an optimistically added task renders as a NORMAL, interactive card. It used to
+  // get a dimmed ".loading" treatment with a "saving..." suffix that sat there for the whole
+  // round trip, which read as broken rather than as pending.
+  await page.waitForSelector('.tc-wrap:has-text("Ghost check")', { timeout: 5000 });
+  const added = await page.evaluate(() => {
+    const wrap = [...document.querySelectorAll('.tc-wrap')].find(w => /Ghost check/.test(w.textContent));
+    if (!wrap) return { found: false };
+    const card = wrap.querySelector('.tc');
+    const s = getComputedStyle(card);
+    const name = wrap.querySelector('.tn');
+    return {
+      found: true,
+      dimmed: card.classList.contains('loading'),
+      opacity: s.opacity,
+      animation: s.animationName,
+      savingSuffix: name ? getComputedStyle(name, '::after').content : null,
+      hasCircle: !!wrap.querySelector('.circ'),
+    };
   });
-  ok('the pending card does NOT run an infinite animation',
-     anim.name === 'none' && anim.iter !== 'infinite', JSON.stringify(anim));
-  ok('the pending card is dimmed but readable', parseFloat(anim.op) >= 0.4 && parseFloat(anim.op) < 1, 'opacity=' + anim.op);
-  const savingLabel = await page.evaluate(() => {
-    const el = document.querySelector('.tc.loading .tn');
-    return el ? getComputedStyle(el, '::after').content : null;
-  });
-  ok('the pending card says what it is doing', savingLabel && /saving/i.test(savingLabel), 'after-content=' + savingLabel);
+  ok('a newly added task appears immediately', added.found, JSON.stringify(added));
+  ok('it is NOT dimmed or marked as loading', added.found && !added.dimmed && parseFloat(added.opacity) === 1, JSON.stringify(added));
+  ok('it carries no "saving..." suffix', !added.savingSuffix || !/saving/i.test(added.savingSuffix), 'after=' + added.savingSuffix);
+  ok('it runs no animation', added.animation === 'none', 'animation=' + added.animation);
+  ok('it is interactive straight away', added.hasCircle, 'no completion circle on the new card');
 
   // b) a hung request must time out, surface a toast, and roll the card back
   await page.waitForSelector('#toast-msg.on', { timeout: 8000 });
@@ -565,6 +574,62 @@ const ok = (n, cond, detail) => results.push([cond ? 'PASS' : 'FAIL', n + (cond 
   });
   ok('the "+ Add item" row stays last after a drag', lastRow.addIsLast, JSON.stringify(lastRow));
   await page.screenshot({ path: OUT + '/10-lists.png' });
+
+  // ---- v9.3: the app must paint from cache, not wait for the server -----------
+  // Measured before this change with an 8s server: 8159ms to first task. After: 122ms.
+  await page.unroute('**script.google.com**');
+  let served = 0;
+  await page.route('**script.google.com**', async route => {
+    const req = route.request();
+    if (req.url().includes('action=ping')) return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+    if (req.method() === 'POST') return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+    served++;
+    await new Promise(r => setTimeout(r, 4000));      // stand in for a cold container
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(FIXTURE) });
+  });
+  // Seed the cache explicitly. By this point earlier tests have emptied state.tasks, so
+  // saving whatever is in memory would cache nothing and there would be no cards to paint.
+  const seeded = await page.evaluate(() => {
+    const today = new Date().toISOString().split('T')[0];
+    state.tasks = [
+      { task_id: 'cache1', name: 'Cached one', type: 'one_off', due_date: today, owner: '', scope: 'household', status: 'active' },
+      { task_id: 'cache2', name: 'Cached two', type: 'one_off', due_date: today, owner: '', scope: 'household', status: 'active' },
+    ];
+    state.projects = []; state.subtasks = []; state.grocery = []; state.lists = [];
+    state.task_log = []; state.maintenance_logs = [];
+    rebuildDerivedIndexes();
+    saveStateCache();
+    const raw = localStorage.getItem('loonhq_state_v1');
+    return raw ? JSON.parse(raw).tasks.length : 0;
+  });
+  ok('the state cache is written with the current tasks', seeded === 2, 'cached ' + seeded + ' tasks');
+
+  // Time this INSIDE the page. performance.now() is relative to that document's navigation
+  // start, so it measures the app rather than Playwright's polling or any request another
+  // test left hanging. Standalone wall-clock for the same thing was 8159ms -> 122ms.
+  await page.reload({ waitUntil: 'commit' });
+  await page.waitForFunction(() => {
+    if (document.querySelectorAll('.tc').length > 0) {
+      if (window.__paintAt === undefined) window.__paintAt = performance.now();
+      return true;
+    }
+    return false;
+  }, { timeout: 20000 });
+  const paintMs = Math.round(await page.evaluate(() => window.__paintAt));
+  ok('the app paints from cache without waiting for the server', paintMs < 2000,
+     paintMs + 'ms from navigation start, with the server taking 4000ms');
+  const boot = await page.evaluate(() => ({
+    loader: getComputedStyle(document.getElementById('loader')).display,
+    cards: document.querySelectorAll('.tc').length,
+  }));
+  ok('no loading screen when a cache exists', boot.loader === 'none', JSON.stringify(boot));
+  ok('cached tasks are actually on screen', boot.cards > 0, JSON.stringify(boot));
+
+  // a corrupt cache must not brick startup
+  await page.evaluate(() => localStorage.setItem('loonhq_state_v1', '{broken'));
+  await page.reload({ waitUntil: 'commit' });
+  await page.waitForFunction(() => document.querySelectorAll('.tc').length > 0, { timeout: 20000 });
+  ok('a corrupt cache falls back to a normal fetch instead of breaking', true);
 
   ok('no uncaught page errors', errors.length === 0, errors.slice(0, 5).join(' ~ '));
 

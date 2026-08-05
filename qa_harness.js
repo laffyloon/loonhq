@@ -1758,6 +1758,115 @@ run('v9.2 drag uses pointer events, not the HTML5 API that never fired on touch'
   if(!/pointermove/.test(src)||!/pointerup/.test(src)) throw new Error('incomplete pointer drag');
 });
 
+// ══ v9.3 LOCAL STATE CACHE ══════════════════════════════════════════════════
+runAsync('v9.3 a successful fetch writes the state cache', async ()=>{
+  localStorage.removeItem(CACHE_KEY);
+  _inFlightWrites=[];_lastWriteAt=0;_lastPayloadSig=null;
+  await refreshData(true); await tick(); await tick();
+  const raw=localStorage.getItem(CACHE_KEY);
+  if(!raw) throw new Error('nothing was cached after a fetch');
+  const c=JSON.parse(raw);
+  if(!c.at) throw new Error('cache has no timestamp');
+  if(!Array.isArray(c.tasks)) throw new Error('cache has no tasks array');
+  ['tasks','projects','subtasks','grocery','lists','task_log','assets','maintenance_logs']
+    .forEach(function(k){ if(!(k in c)) throw new Error('cache is missing '+k); });
+});
+run('v9.3 the cache round-trips through load and apply', ()=>{
+  const svT=state.tasks, svG=state.grocery;
+  state.tasks=[{task_id:'c1',name:'Cached task',type:'one_off',due_date:todayStr(),status:'active',scope:'household',owner:''}];
+  state.grocery=[{item_id:'ci1',name:'Cached milk',category:'Food',status:'need',sort_order:1}];
+  saveStateCache();
+  state.tasks=[];state.grocery=[];rebuildDerivedIndexes();
+  const c=loadStateCache();
+  if(!c) throw new Error('cache did not load back');
+  applyCachedState(c);
+  if(state.tasks.length!==1||state.tasks[0].task_id!=='c1') throw new Error('tasks not restored');
+  if(state.grocery.length!==1) throw new Error('grocery not restored');
+  if(!_taskById['c1']) throw new Error('derived indexes not rebuilt after restoring the cache');
+  state.tasks=svT;state.grocery=svG;rebuildDerivedIndexes();
+});
+run('v9.3 bootData renders from cache and does NOT show the loader', ()=>{
+  const svT=state.tasks;
+  state.tasks=[{task_id:'boot1',name:'From cache',type:'one_off',due_date:todayStr(),status:'active',scope:'household',owner:''}];
+  saveStateCache();
+  state.tasks=[];rebuildDerivedIndexes();
+  el('loader').style.display='flex';
+  const usedCache=bootData();
+  if(!usedCache) throw new Error('bootData should have used the cache');
+  if(state.tasks.length!==1) throw new Error('state not populated from cache');
+  if(el('loader').style.display!=='none') throw new Error('the loader must be hidden when rendering from cache');
+  state.tasks=svT;rebuildDerivedIndexes();
+});
+run('v9.3 with no cache, bootData falls back to a normal loading fetch', ()=>{
+  localStorage.removeItem(CACHE_KEY);
+  const usedCache=bootData();
+  if(usedCache) throw new Error('there was no cache, so it must not claim to have used one');
+});
+run('v9.3 a corrupt cache is ignored rather than crashing the app', ()=>{
+  localStorage.setItem(CACHE_KEY,'{not json at all');
+  if(loadStateCache()!==null) throw new Error('malformed JSON should be ignored');
+  localStorage.setItem(CACHE_KEY,JSON.stringify({at:Date.now()}));   // no tasks array
+  if(loadStateCache()!==null) throw new Error('a cache without tasks should be ignored');
+  localStorage.removeItem(CACHE_KEY);
+});
+run('v9.3 a cache older than 24h still renders, it just says it is syncing', ()=>{
+  const svT=state.tasks;
+  state.tasks=[{task_id:'old1',name:'Old cached',type:'one_off',due_date:todayStr(),status:'active',scope:'household',owner:''}];
+  saveStateCache();
+  const c=JSON.parse(localStorage.getItem(CACHE_KEY));
+  c.at=Date.now()-(CACHE_STALE_MS+60000);
+  localStorage.setItem(CACHE_KEY,JSON.stringify(c));
+  state.tasks=[];rebuildDerivedIndexes();
+  const usedCache=bootData();
+  if(!usedCache) throw new Error('an old cache must still be rendered, never a blank screen');
+  if(state.tasks.length!==1) throw new Error('old cache was not applied');
+  state.tasks=svT;rebuildDerivedIndexes();
+});
+runAsync('v9.3 an unchanged payload does not trigger a re-render', async ()=>{
+  _inFlightWrites=[];_lastWriteAt=0;_lastPayloadSig=null;
+  await refreshData(true); await tick(); await tick();
+  const first=_lastPayloadSig;
+  if(!first) throw new Error('no payload signature recorded');
+  await refreshData(true); await tick(); await tick();
+  if(_lastPayloadSig!==first) throw new Error('an identical payload produced a different signature');
+});
+// ---- stale check is advisory only ----
+run('v9.3 the stale check runs every 2 minutes, not every 10 seconds', ()=>{
+  if(STALE_CHECK_MS!==120000) throw new Error('expected 120000, got '+STALE_CHECK_MS);
+  const src=fs.readFileSync('/home/claude/extracted.js','utf8');
+  if(!/setInterval\(checkStale,STALE_CHECK_MS\)/.test(src)) throw new Error('the interval does not use STALE_CHECK_MS');
+});
+run('v9.3 checkStale only shows the badge, it never fetches', ()=>{
+  __posts.length=0;
+  const svFetch=global.fetch; let gets=0;
+  global.fetch=function(u,o){ if(!o||o.method!=='POST')gets++; return svFetch.apply(null,arguments); };
+  const sv=_lastFetch;
+  _lastFetch=Date.now()-(STALE_MS+5000);
+  checkStale();
+  if(gets!==0) throw new Error('checkStale issued '+gets+' request(s); it must be advisory only');
+  if(!el('stale-badge').classList.contains('on')) throw new Error('the badge should be showing');
+  _lastFetch=sv; global.fetch=svFetch; hideStaleBadge();
+});
+run('v9.3 returning to the app no longer auto-fetches', ()=>{
+  const src=fs.readFileSync('/home/claude/extracted.js','utf8');
+  const vis=src.slice(src.indexOf("visibilitychange"), src.indexOf("visibilitychange")+700);
+  if(/refreshData\(true\)/.test(vis)) throw new Error('the visibility handler still auto-fetches');
+});
+run('v9.3 an optimistically added task renders as a normal card', ()=>{
+  const src=fs.readFileSync('/home/claude/extracted.js','utf8');
+  if(/_temp\?' loading'/.test(src)) throw new Error('temp tasks still get the dimmed loading class');
+  const css=__cssText||'';
+  if(/\.tc\.loading\{/.test(css)) throw new Error('the dimmed .tc.loading style is still defined');
+  if(/saving\.\.\./.test(css)) throw new Error('the "saving..." suffix is still in the stylesheet');
+});
+run('v9.3 the login ping is fire-and-forget, never awaited', ()=>{
+  const src=fs.readFileSync('/home/claude/extracted.js','utf8');
+  // it must not be awaited nor chained ahead of the data fetch
+  if(/await\s+apiGet\(\{action:'ping'\}/.test(src)) throw new Error('ping is awaited');
+  if(/apiGet\(\{action:'ping'\}\)\s*\.then\([^)]*bootData/.test(src)) throw new Error('the data fetch is chained behind ping');
+  if(!/apiGet\(\{action:'ping'\}\)\.catch\(/.test(src)) throw new Error('ping should be fired with its own catch');
+});
+
 // ---- report ----
 asyncChain.then(tick).then(tick).then(function(){
 let fails = 0;

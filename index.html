@@ -101,8 +101,6 @@ button{font-family:inherit}input,select,textarea{font-family:inherit;-webkit-app
 /* A pending card must read as 'not saved yet', not as a malfunction. It used to run
    pulse 1s infinite, flashing opacity between 1 and .3 for as long as the sync took,
    which looked exactly like a ghost fading in and out. Static dim, no animation. */
-.tc.loading{opacity:.6}
-.tc.loading .tn::after{content:' saving...';font-size:11px;color:var(--text3);letter-spacing:.02em}
 .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(12px);background:rgba(30,30,30,.95);color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .22s,transform .22s;z-index:9999;pointer-events:none;white-space:nowrap;max-width:90vw;text-align:center}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.tappable{pointer-events:auto;cursor:pointer;text-decoration:none}
@@ -1432,11 +1430,17 @@ var STATIC_ASSETS=[
 ];
 
 // ── BOOT ──────────────────────────────────────────────────
-window.onload=function(){
+// Boot as soon as the DOM is parsed, NOT on window.onload. onload waits for every
+// subresource, including the Google Fonts stylesheet, so a slow font server delayed the
+// cached paint by the full font timeout: measured at 12.9s in the browser harness. The
+// whole point of the cache is that nothing on the network gates the first screen.
+function bootApp(){
   var s=localStorage.getItem('loonhq_user');
-  if(s==='Frankie'||s==='Meredith'){currentUser=s;showApp();refreshData();apiGet({action:'ping'}).catch(function(){});}
-  else showLogin();
-};
+  if(s==='Frankie'||s==='Meredith'){currentUser=s;showApp();bootData();apiGet({action:'ping'}).catch(function(){});}
+  else showLogin();}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootApp);
+else bootApp();
+
 function showLogin(){
   stopStaleWatch();document.getElementById('login-screen').classList.remove('gone');document.getElementById('main-app').classList.add('gone');}
 function showApp(){document.getElementById('login-screen').classList.add('gone');document.getElementById('main-app').classList.remove('gone');updateUserDisplay();startStaleWatch();}
@@ -1453,8 +1457,9 @@ function selectUser(name,btn){
   currentUser=name;
   localStorage.setItem('loonhq_user',name);
   showApp();
-  refreshData();
-  apiGet({action:'ping'}).catch(function(){});   // warm the Apps Script container
+  bootData();
+  apiGet({action:'ping'}).catch(function(){});   // fire-and-forget: never awaited, so a cold
+                                                 // container cannot delay the data fetch
 }
 
 function logout(){flushPending();localStorage.removeItem('loonhq_user');currentUser=null;loginUserPick=null;closeModal('modal-qs');document.querySelectorAll('.who-btn').forEach(function(b){b.className='who-btn';});showLogin();}
@@ -1525,13 +1530,16 @@ function refreshData(silent){
       renderAll();scheduleBgSync();return;   // keep the UI honest while we wait
     }
     _lastFetch=Date.now();
+    // If nothing actually changed there is no reason to rebuild the list underneath the
+    // user. Cheap to compute next to a full render.
+    var sig=JSON.stringify(data);
+    var unchanged=(sig===_lastPayloadSig);
+    _lastPayloadSig=sig;
     // Server state is now authoritative for everything that was pending.
     _recentlyCompleted.clear();
     state.tasks=data.tasks||[];state.projects=data.projects||[];state.subtasks=data.subtasks||[];
     state.grocery=data.grocery||[];state.lists=data.lists||[];state.task_log=data.task_log||[];
-    rebuildTaskIndex();
-    _subtasksByProj={};(state.subtasks||[]).forEach(function(s){var k=String(s.project_id);if(!_subtasksByProj[k])_subtasksByProj[k]=[];_subtasksByProj[k].push(s);});
-    _tasksByAsset={};(state.tasks||[]).forEach(function(t){if(t.linked_asset_id){var k=String(t.linked_asset_id);if(!_tasksByAsset[k])_tasksByAsset[k]=[];_tasksByAsset[k].push(t);}});
+    rebuildDerivedIndexes();
     state.assets=(data.assets&&data.assets.length)?data.assets:STATIC_ASSETS;
     state.maintenance_logs=data.maintenance_logs||[];
     var now=Date.now();
@@ -1541,7 +1549,9 @@ function refreshData(silent){
     if(_staleGrocery.length)setTimeout(function(){_staleGrocery.forEach(function(g){apiPost({action:'deleteGrocery',data:{item_id:g.item_id}}).catch(function(){});});},0);
     document.getElementById('loader').style.display='none';
     document.getElementById('v-'+currentView).classList.remove('gone');
-    renderAll();setSyncState('ok','Synced '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
+    saveStateCache();                       // so the next launch paints instantly
+    if(!unchanged)renderAll();
+    setSyncState('ok','Synced '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
   }).catch(function(err){
     document.getElementById('loader').style.display='none';
     document.getElementById('v-'+currentView).classList.remove('gone');
@@ -1566,6 +1576,66 @@ function scheduleBgSync(delay){
   },delay||SYNC_SLOW);
 }
 function rebuildTaskIndex(){_taskById={};(state.tasks||[]).forEach(function(t){_taskById[t.task_id]=t;});}
+// Every lookup map that is derived from state. Called after a server payload AND after the
+// cache is restored, so both paths leave the app in exactly the same shape.
+function rebuildDerivedIndexes(){
+  rebuildTaskIndex();
+  _subtasksByProj={};(state.subtasks||[]).forEach(function(s){var k=String(s.project_id);if(!_subtasksByProj[k])_subtasksByProj[k]=[];_subtasksByProj[k].push(s);});
+  _tasksByAsset={};(state.tasks||[]).forEach(function(t){if(t.linked_asset_id){var k=String(t.linked_asset_id);if(!_tasksByAsset[k])_tasksByAsset[k]=[];_tasksByAsset[k].push(t);}});
+}
+
+// ── v9.3 LOCAL STATE CACHE ──────────────────────────────────────────────────
+// The app used to show nothing until Apps Script answered, which on a cold container is
+// 10-20 seconds of blank screen. The last known state is now kept in localStorage and
+// rendered immediately, with the server fetch happening behind it.
+var CACHE_KEY='loonhq_state_v1';
+var CACHE_STALE_MS=86400000;     // 24h: still render from cache, but say we are syncing
+var _lastPayloadSig=null;        // so an unchanged payload does not trigger a re-render
+function saveStateCache(){
+  try{
+    localStorage.setItem(CACHE_KEY,JSON.stringify({
+      at:Date.now(),
+      tasks:state.tasks,projects:state.projects,subtasks:state.subtasks,
+      grocery:state.grocery,lists:state.lists,task_log:state.task_log,
+      assets:state.assets,maintenance_logs:state.maintenance_logs
+    }));
+  }catch(e){ /* quota, private mode, whatever: the cache is an optimisation, never required */ }
+}
+function loadStateCache(){
+  try{
+    var raw=localStorage.getItem(CACHE_KEY);
+    if(!raw)return null;
+    var c=JSON.parse(raw);
+    if(!c||!c.at||!Array.isArray(c.tasks))return null;   // ignore anything malformed
+    return c;
+  }catch(e){return null;}
+}
+function clearStateCache(){try{localStorage.removeItem(CACHE_KEY);}catch(e){}}
+function applyCachedState(c){
+  state.tasks=c.tasks||[];state.projects=c.projects||[];state.subtasks=c.subtasks||[];
+  state.grocery=c.grocery||[];state.lists=c.lists||[];state.task_log=c.task_log||[];
+  state.assets=(c.assets&&c.assets.length)?c.assets:STATIC_ASSETS;
+  state.maintenance_logs=c.maintenance_logs||[];
+  rebuildDerivedIndexes();
+}
+// Startup: paint from cache first, then reconcile in the background. Only the very first
+// launch (or cleared storage) ever sees a loading screen.
+function bootData(){
+  var c=loadStateCache();
+  if(!c){
+    refreshData(false);          // nothing cached: show the loader, as before
+    return false;
+  }
+  applyCachedState(c);
+  var loader=document.getElementById('loader');if(loader)loader.style.display='none';
+  var view=document.getElementById('v-'+currentView);if(view)view.classList.remove('gone');
+  renderAll();
+  var age=Date.now()-c.at;
+  if(age>CACHE_STALE_MS)setSyncState('loading','Syncing...');
+  else setSyncState('ok','Showing saved data');
+  refreshData(true);             // silent: the screen is already populated
+  return true;
+}
 // Shared tail for every failed optimistic action: undo locally, tell the user, then let the
 // server settle it. The reconcile matters because a local undo can disagree with the server
 // (a batch that partly landed, an edit that added fields the snapshot never had).
@@ -1633,12 +1703,14 @@ document.addEventListener('visibilitychange',function(){
   // Backgrounding, phone lock or a browser tab switch must not strand a pending
   // completion, so commit before we lose the foreground.
   if(document.hidden){flushPending();return;}
+  // Advisory only. Returning to the app no longer triggers a fetch on its own; the badge
+  // invites one. Fetching happens when the user taps the badge or the refresh button.
   if(_lastFetch&&(Date.now()-_lastFetch)>STALE_MS)showStaleBadge();
-  if(_lastFetch&&(Date.now()-_lastFetch)>60000&&!pendingCount())refreshData(true);
 });
 // Section 9: a subtle nudge when the data on screen may be older than the other person's
 // changes. Purely advisory; tapping it flushes and refetches.
 var STALE_MS=30000;
+var STALE_CHECK_MS=120000;   // how often we LOOK; the check never fetches by itself
 function showStaleBadge(){var b=document.getElementById('stale-badge');if(b)b.classList.add('on');}
 function hideStaleBadge(){var b=document.getElementById('stale-badge');if(b)b.classList.remove('on');}
 function checkStale(){
@@ -1651,7 +1723,7 @@ function checkStale(){
 var _staleTimer=null;
 function startStaleWatch(){
   if(_staleTimer)clearInterval(_staleTimer);
-  _staleTimer=setInterval(checkStale,10000);
+  _staleTimer=setInterval(checkStale,STALE_CHECK_MS);
 }
 function stopStaleWatch(){if(_staleTimer){clearInterval(_staleTimer);_staleTimer=null;}}
 function setSyncState(s,msg){var d=document.getElementById('sync-dot'),l=document.getElementById('sync-lbl');if(d)d.className='sync-dot'+(s==='err'?' err':s==='loading'?' loading':'');if(l)l.textContent=msg;}
@@ -1946,7 +2018,10 @@ function makeTaskCard(t){
   swipeBg.innerHTML='<span class="swipe-complete-content"><i class="ti ti-check"></i><span>Complete</span></span><span class="swipe-snooze-content"><i class="ti ti-clock"></i><span>Snooze</span></span>';
   wrap.appendChild(swipeBg);
 
-  var div=document.createElement('div');div.className='tc'+(t._temp?' loading':'');
+  // v9.3: a newly added task renders as a normal, interactive card. It used to get a
+  // dimmed ".loading" treatment with a "saving..." suffix that sat there for the whole
+  // round trip, which read as broken rather than as pending.
+  var div=document.createElement('div');div.className='tc';
   if(selectMode&&selectedTaskIds.has(t.task_id))div.classList.add('selected');
 
   // Circle: tap = complete (or select in batch mode)

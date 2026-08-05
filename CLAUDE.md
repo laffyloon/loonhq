@@ -20,9 +20,9 @@ Tracks recurring household tasks, projects, shopping list, and home asset mainte
 - icons.py — the inline icon set (39 hand-authored SVGs); build_v4.py imports it
 - icon.webp / logo_uri.txt — home-screen icon and app logo, both IN the repo
 - build_v4.py — Python build script that generates index.html
-- qa_harness.js — Node.js DOM mock + 292 frontend runtime checks
+- qa_harness.js — Node.js DOM mock + 304 frontend runtime checks
 - appscript_harness.js — SpreadsheetApp mock + 88 server-side checks (correctness, API cost, container reuse)
-- e2e_harness.js — Playwright/Chromium checks + 80 real-browser checks (CSS, events, layout)
+- e2e_harness.js — Playwright/Chromium checks + 86 real-browser checks (CSS, events, layout)
 - .github/workflows/test.yml — CI: build, index.html-matches-source check, both test suites
 - LoonHQ_AppScript_v9.js — current Apps Script source (deploy separately to script.google.com)
 - CLAUDE.md — this file
@@ -65,7 +65,7 @@ DO NOT recommend clearing, resetting, or deleting sheet data under any circumsta
 without explicit approval AND a second confirmation from Frankie. This is a hard rule.
 Real user data is live in the sheet.
 
-## Current version: v9.2
+## Current version: v9.3
 index.html in the repo is the live deployed build. build_v4.py is the source of truth.
 
 ## AppScript deploy state
@@ -326,6 +326,37 @@ its own unfiltered feed. Do not "fix" it by loosening isCompletionLog.
 - Delegated click handlers for: data-sub, data-addsub, data-editproj, data-editsub, .snooze-opt[data-snooze]
 - build_v4.py is the source of truth — edit it, then run python3 build_v4.py to regenerate index.html
 - Never edit index.html directly
+
+## v9.3 — INSTANT STARTUP FROM CACHE (2026-08-05). Performance only, no feature changes.
+MEASURED, with an 8s Apps Script response AND the font CDN hanging:
+  first launch (no cache) 8175ms  ->  every launch after that 83ms.
+- state is written to localStorage (CACHE_KEY 'loonhq_state_v1') after every successful
+  getAllData, and rendered immediately on the next launch. The server fetch then happens
+  silently behind the already-painted screen.
+- bootData() is the entry point: cache present -> paint, hide loader, then refreshData(true).
+  No cache -> refreshData(false) with the loader, exactly as before. A cache older than 24h
+  (CACHE_STALE_MS) still paints immediately and just says "Syncing...". A corrupt or
+  malformed cache is ignored and falls back to a normal fetch.
+- BOOT IS ON DOMContentLoaded, NOT window.onload. This matters more than it looks: onload
+  waits for every subresource, so with a slow Google Fonts server the cached paint was still
+  gated by the font timeout, measured at 12.9s. The browser harness caught it. Never move
+  the boot back onto window.onload.
+- refreshData compares JSON.stringify(payload) against _lastPayloadSig and SKIPS renderAll
+  when nothing changed, so a background sync does not rebuild the list under the user.
+- rebuildDerivedIndexes() is shared by the cache path and the server path, so both leave
+  _taskById / _subtasksByProj / _tasksByAsset in the same state.
+- STALE CHECK IS ADVISORY ONLY NOW. Interval moved from 10s to STALE_CHECK_MS (120s), and
+  the visibilitychange handler no longer auto-fetches. It shows the badge; fetching happens
+  only when the user taps the badge or refresh. checkStale itself never issues a request.
+- OPTIMISTIC ADD renders a normal, fully interactive card. The dimmed .tc.loading style and
+  its " saving..." suffix are gone; they sat there for the whole round trip and read as
+  broken rather than pending.
+- PING was already fire-and-forget and still is: apiGet({action:'ping'}).catch(...) with no
+  await, never chained ahead of the data fetch. A test asserts this so it stays that way.
+- APPS SCRIPT UNCHANGED in v9.3. getAllData is already at the floor for plain SpreadsheetApp:
+  1 openById + 8 getValues, one per tab. Combining them would need the Advanced Sheets
+  Service (spreadsheets.values.batchGet), which the user must enable by hand in the editor.
+  Not worth it now that the cache means startup no longer waits for the server at all.
 
 ## v9.2 — LISTS, DEAD CODE CLEANUP, CI (2026-08-05)
 - SECTION RENAMED: "Shopping List"/"Shop" is now "Lists" everywhere.
